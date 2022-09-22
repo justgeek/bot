@@ -15,6 +15,7 @@ const client = new Discord.Client({
   GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildPresences]
 });
 
+
 const bottokenPath = "./bottoken.txt";
 const bottoken = fs.readFileSync(bottokenPath,'utf8')
 
