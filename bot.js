@@ -55,7 +55,8 @@ const memes = {
   '!kekw': "kekw" + ext,
   '!mad': "mad" + ext,
   '!ablaa': "ablaa" + ext,
-  '!anteshwagry': "anteshwagry" + ext,
+  '!antesh': "anteshwagry" + ext,
+  '!bom': "bom" + ext,
 }
 
 let resource, player, connection;
@@ -165,7 +166,9 @@ client.on("messageCreate", msg => {
   }
   else if (memes[message]) {//MEMES > if key is found in memes object play its value (file)
     msg.delete();
-    resource = createAudioResource(memesFolder + memes[message]);
+    const memeFile = memesFolder + memes[message];
+    resource = createAudioResource(memeFile);
+    
     player.play(resource);
     const logMessage = msg.member.displayName + ' ' + message //"Playing " + message + ' by ' + msg.member.displayName
     console.log(logMessage);
@@ -297,7 +300,7 @@ client.on("messageDelete", msg => {
 
 
 client.on("messageUpdate", (oldMessage, newMessage) => {
-
+if (oldMessage==oldMessage) return;
   const edited = `${now()}\t **${newMessage.author.username}:**\n${oldMessage.content}\n>\n${newMessage.content}`;
   console.log("edited:", edited)
   sendToChannel(IDs.channelEdit, edited);
