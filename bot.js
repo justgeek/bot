@@ -55,6 +55,7 @@ const memes = {
   '!kekw': "kekw" + ext,
   '!mad': "mad" + ext,
   '!ablaa': "ablaa" + ext,
+  '!anteshwagry': "anteshwagry" + ext,
 }
 
 let resource, player, connection;
@@ -63,6 +64,9 @@ var currentWindow = 'habal';
 
 client.on("ready", () => {
   console.log(`Logged in as ${client.user.tag}!`)
+
+  client.user.setActivity('!commands', { type: "PLAYING" });
+
   sendToChannel(IDs.channelV, 'Sup!\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t("**!commands**" for stuff)');
 
   connection = joinVoiceChannel({
@@ -93,7 +97,7 @@ client.on("messageCreate", msg => {
     const commands = [
       '**COMMANDS:**',
       // '**!round**: Prints the current CHC round number',
-      '**!playlist**: YouTube playlist link.',
+      '**!playlist**: Prints YouTube "Our Games" playlist link.',
       '**!random <names (comma separated)>**: shuffle provided players.\nExample: "**!random player1,player2,player3**"',
       '**!randomall**: create random teams of all players in your current voice channel',
       '**!randomall <voice channel members row numbers to exclude (comma separated)>**.\nExample: to exclude 3rd and 5th "**!randomall 3,5**"',
@@ -159,13 +163,14 @@ client.on("messageCreate", msg => {
     // msg.delete();
     msg.channel.send("https://www.youtube.com/playlist?list=PLhKVK0lPQ73sDSSxq09yx9QVgyr3MBR6d");
   }
-  else if (memes[message]) {//if key is found in memes object play its value (file)
+  else if (memes[message]) {//MEMES > if key is found in memes object play its value (file)
     msg.delete();
     resource = createAudioResource(memesFolder + memes[message]);
     player.play(resource);
     const logMessage = msg.member.displayName + ' ' + message //"Playing " + message + ' by ' + msg.member.displayName
     console.log(logMessage);
-    sendToChannel(IDs.channelVoice, logMessage);
+    // sendToChannel(IDs.channelVoice, logMessage);
+    sendToChannel(IDs.channelCommands, logMessage);
   }
 
   else if (message.startsWith("!random ")) {
