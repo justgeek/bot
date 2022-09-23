@@ -15,9 +15,8 @@ const client = new Discord.Client({
   GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildPresences]
 });
 
-
 const bottokenPath = "./bottoken.txt";
-const bottoken = fs.readFileSync(bottokenPath,'utf8')
+const bottoken = fs.readFileSync(bottokenPath, 'utf8')
 
 const IDs = {
   guild: '247069115204763648',//GUILD
@@ -28,32 +27,34 @@ const IDs = {
   channelEdit: '1021447609983959050',//edit text channel
   channelVoice: '1021812152186720256',//voice text channel
   channelStatus: '1020398542365401128',//status text channel
+  channelCommands: '1020315442042122330',//commands text channel
 
   voice3: '310083935298125825',//3rd voice channel
 
   Moonscarlet: '234236035846897664',
   LORD: '946751602415521873',
   Mido: '329004546900885515',
-  
+
 }
 
 const memesFolder = './memes/'
+const ext = '.m4a';
 const memes = {
-  '!bruh': "Bruh.m4a",
-  '!nooo': "nooo.mp3",
-  '!sees': "sees.mp3",
-  '!maaa': "Sheep1.mp3",
-  '!mido': "Sheep1.mp3",
-  '!cry': "Baby Crying.mp3",
-  '!letmein': "LET ME IN (MEME) (360_30)(03s).mp4",
-  '!hamood': "hamood.mp3",
-  '!wait': "no no no no wait wait wait.mp4",
-  '!lazaza': "lazaza.mp3",
-  '!omgwow': "omgwow.mp3",
-  '!ok': "ok.m4a",
-  '!nice': "nice.m4a",
-  '!kekw': "kekw.m4a",
-  '!mad': "mad.m4a",
+  '!bruh': "Bruh" + ext,
+  '!nooo': "nooo" + ext,
+  '!sees': "sees" + ext,
+  '!maaa': "Sheep1" + ext,
+  '!cry': "Baby Crying" + ext,
+  '!letmein': "LET ME IN" + ext,
+  '!hamood': "hamood" + ext,
+  '!wait': "no no no no wait wait wait" + ext,
+  '!lazaza': "lazaza2" + ext,
+  '!omgwow': "omgwow" + ext,
+  '!ok': "ok" + ext,
+  '!nice': "nice" + ext,
+  '!kekw': "kekw" + ext,
+  '!mad': "mad" + ext,
+  '!ablaa': "ablaa" + ext,
 }
 
 let resource, player, connection;
@@ -159,9 +160,12 @@ client.on("messageCreate", msg => {
     msg.channel.send("https://www.youtube.com/playlist?list=PLhKVK0lPQ73sDSSxq09yx9QVgyr3MBR6d");
   }
   else if (memes[message]) {//if key is found in memes object play its value (file)
+    msg.delete();
     resource = createAudioResource(memesFolder + memes[message]);
     player.play(resource);
-    console.log("Playing " + memes[message]);
+    const logMessage = msg.member.displayName + ' ' + message //"Playing " + message + ' by ' + msg.member.displayName
+    console.log(logMessage);
+    sendToChannel(IDs.channelVoice, logMessage);
   }
 
   else if (message.startsWith("!random ")) {
@@ -276,6 +280,8 @@ client.on("messageCreate", msg => {
 
 client.on("messageDelete", msg => {
   const message = msg.content.toLowerCase();
+  if (memes[message]) return;
+
   if (message == "!commands" || message == "!playlist") {
     return
   }
