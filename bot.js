@@ -177,7 +177,7 @@ client.on("messageCreate", (msg) => {
     msg.channel.send(
       "https://www.youtube.com/playlist?list=PLhKVK0lPQ73sDSSxq09yx9QVgyr3MBR6d"
     );
-  } else if (memes[message].toLowerCase()) {
+  } else if (memes[message]) {
     //MEMES > if key is found in memes object play its value (file)
     msg.delete();
     const memeFile = memesFolder + memes[message];
