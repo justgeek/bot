@@ -80,6 +80,7 @@ const memes = {
   "!cringe": "cringe",
   "!sheraton": "sheraton",
   "!5odlak": "5odlak",
+  "!mayenfa3sh": "mayenfa3sh",
 };
 
 let resource, player, connection;
@@ -88,7 +89,8 @@ var currentWindow = "habal";
 client.on("ready", () => {
   console.log(`Logged in as ${client.user.tag}!`);
 
-  client.user.setActivity("!commands", { type: "PLAYING" });
+  // client.user.setPresence('invisible');
+  client.user.setActivity('Use "-help"', { type: 'PLAYING', url: 'https://discordapp.com/' });
 
   sendToChannel(
     IDs.channelV,
