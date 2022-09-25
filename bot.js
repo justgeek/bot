@@ -78,6 +78,8 @@ const memes = {
   "!shan2ollak": "SHAN2OLLAK",
   "!borra7a": "borra7a",
   "!cringe": "cringe",
+  "!sheraton": "sheraton",
+  "!5odlak": "5odlak",
 };
 
 let resource, player, connection;
@@ -103,13 +105,14 @@ client.on("ready", () => {
 });
 
 client.on("messageCreate", (msg) => {
+  let message = msg.content.toLowerCase();
   if (msg.author.username + "#" + msg.author.discriminator == "Malevolent#0025")
     return;
 
   // console.log(msg.guild.emojis.cache)//show all emojis
   if (
     msg.author.username + "#" + msg.author.discriminator ==
-    "exorcismus#7611"
+    "exorcismus#7611" && !memes[message]
   ) {
     // if (msg.author.username + '#' + msg.author.discriminator == 'Moonscarlet#4105') {
     // msg.react(msg.guild.emojis.cache.get('515873f6898e0b26daf51921c65a43f7'))//BRUH
@@ -117,8 +120,7 @@ client.on("messageCreate", (msg) => {
     msg.react(msg.guild.emojis.cache.get("1018204796689322014")); //BRUH
   }
 
-  let message = msg.content.toLowerCase();
-
+  
   if (message === "!commands") {
     // msg.delete();
     const commands = [
@@ -178,7 +180,7 @@ client.on("messageCreate", (msg) => {
     msg.channel.send(
       "https://www.youtube.com/playlist?list=PLhKVK0lPQ73sDSSxq09yx9QVgyr3MBR6d"
     );
-  } else if (memes[message].toLowerCase()) {
+  } else if (memes[message]) {
     //MEMES > if key is found in memes object play its value (file)
     msg.delete();
     const memeFile = memesFolder + memes[message];
