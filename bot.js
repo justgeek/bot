@@ -90,7 +90,10 @@ client.on("ready", () => {
   console.log(`Logged in as ${client.user.tag}!`);
 
   // client.user.setPresence('invisible');
-  client.user.setActivity('Use "-help"', { type: 'PLAYING', url: 'https://discordapp.com/' });
+  client.user.setActivity('Use "-help"', {
+    type: "PLAYING",
+    url: "https://discordapp.com/",
+  });
 
   sendToChannel(
     IDs.channelV,
@@ -113,8 +116,8 @@ client.on("messageCreate", (msg) => {
 
   // console.log(msg.guild.emojis.cache)//show all emojis
   if (
-    msg.author.username + "#" + msg.author.discriminator ==
-    "exorcismus#7611" && !memes[message]
+    msg.author.username + "#" + msg.author.discriminator == "exorcismus#7611" &&
+    !memes[message]
   ) {
     // if (msg.author.username + '#' + msg.author.discriminator == 'Moonscarlet#4105') {
     // msg.react(msg.guild.emojis.cache.get('515873f6898e0b26daf51921c65a43f7'))//BRUH
@@ -122,7 +125,6 @@ client.on("messageCreate", (msg) => {
     msg.react(msg.guild.emojis.cache.get("1018204796689322014")); //BRUH
   }
 
-  
   if (message === "!commands") {
     // msg.delete();
     const commands = [
@@ -303,9 +305,8 @@ client.on("messageCreate", (msg) => {
 
             for (let i = 0; i < players.length / 2; i + 2) {
               if (players.length > 1) {
-                teams += `\n**Team ${teamNumber}:** ${players.shift()[1]} - ${
-                  players.shift()[1]
-                }`;
+                teams += `\n**Team ${teamNumber}:** ${players.shift()[1]} - ${players.shift()[1]
+                  }`;
               } else {
                 teams += `\n**Team ${teamNumber}:** ${players.shift()[1]}`;
               }
@@ -321,6 +322,8 @@ client.on("messageCreate", (msg) => {
     console.log(
       "-----------------------------------------------------------------------"
     );
+  } else if (message === "!memes") {
+
   }
 });
 
@@ -338,9 +341,8 @@ client.on("messageDelete", (msg) => {
 
 client.on("messageUpdate", (oldMessage, newMessage) => {
   if (oldMessage == oldMessage) return;
-  const edited = `${now()}\t **${newMessage.author.username}:**\n${
-    oldMessage.content
-  }\n>\n${newMessage.content}`;
+  const edited = `${now()}\t **${newMessage.author.username}:**\n${oldMessage.content
+    }\n>\n${newMessage.content}`;
   console.log("edited:", edited);
   sendToChannel(IDs.channelEdit, edited);
   console.log(
@@ -438,7 +440,7 @@ function now() {
 
 function sleep(ms) {
   const waitTill = new Date(new Date().getTime() + ms);
-  while (waitTill > new Date()) {}
+  while (waitTill > new Date()) { }
 }
 
 function getCurrentWindow() {
