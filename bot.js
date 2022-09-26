@@ -21,6 +21,7 @@ const client = new Discord.Client({
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildPresences,
+    GatewayIntentBits.GuildInvites,
   ],
 });
 
@@ -395,6 +396,22 @@ client.on("presenceUpdate", (before, after) => {
     "-----------------------------------------------------------------------"
   );
 });
+
+client.on('guildMemberAdd', member => {
+  console.log("member: %s", member)
+  
+  const chatMsg = member.user.username + "#" + member.user.discriminator + '(' + member.displayName + ') has joined the server.'
+  console.log(chatMsg)
+  sendToChannel(channelStatus, chatMsg)
+})
+
+client.on('guildMemberRemove', member => {
+  console.log("member: %s", member)
+  
+  const chatMsg = member.user.username + "#" + member.user.discriminator + '(' + member.displayName + ') has left the server.'
+  console.log(chatMsg)
+  sendToChannel(channelStatus, chatMsg)
+})
 
 // client.on('voiceStateUpdate', (before, after) => {
 
