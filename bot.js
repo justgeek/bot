@@ -82,6 +82,10 @@ const memes = {
   "!sheraton": "sheraton",
   "!5odlak": "5odlak",
   "!mayenfa3sh": "mayenfa3sh",
+  "!ma3lesh": "ma3lesh",
+  "!unacceptable": "unacceptable",
+  "!o2mor": "o2mor",
+  "!sennakkam": "sennakkam",
 };
 
 let resource, player, connection;
@@ -89,12 +93,10 @@ var currentWindow = "habal";
 
 client.on("ready", () => {
   console.log(`Logged in as ${client.user.tag}!`);
+  console.log("client.user:", client.user)
+  
 
   // client.user.setPresence('invisible');
-  client.user.setActivity('Use "-help"', {
-    type: "PLAYING",
-    url: "https://discordapp.com/",
-  });
 
   sendToChannel(
     IDs.channelV,
@@ -409,7 +411,7 @@ client.on('guildMemberRemove', member => {
   sendToChannel(IDs.channelMain, chatMsg)
 })
 
-// client.on('voiceStateUpdate', (before, after) => {
+client.on('voiceStateUpdate', (before, after) => {
 
 //   after= _lodash.get(after,'member.voice.channel.name',-1)
 //   console.log("after: %s", after)
@@ -419,7 +421,7 @@ client.on('guildMemberRemove', member => {
 //   console.log(chatMsg);
 // sendToChannel(IDs.channelVoice, chatMsg)
 //   }
-// })
+})
 
 client.login(bottoken);
 
