@@ -39,7 +39,10 @@ const IDs = {
   channelStatus: "1020398542365401128", //status text channel
   channelCommands: "1020315442042122330", //commands text channel
 
+  voice1: "247069115204763649", //1st voice channel
+  voice2: "248868783534505984", //2nd voice channel
   voice3: "310083935298125825", //3rd voice channel
+  voiceAFK: "310083935298125825", //AFK voice channel
 
   Moonscarlet: "234236035846897664",
   LORD: "946751602415521873",
@@ -96,8 +99,8 @@ var currentWindow = "habal";
 
 client.on("ready", () => {
   console.log(`Logged in as ${client.user.tag}!`);
-  console.log("client.user:", client.user)
-  
+  // console.log("client.user:", client.user)
+
 
   // client.user.setPresence('invisible');
 
@@ -192,7 +195,6 @@ client.on("messageCreate", (msg) => {
     );
   } else if (memes[message]) {
     //MEMES > if key is found in memes object play its value (file)
-    msg.delete();
     const memeFile = memesFolder + memes[message];
     resource = createAudioResource(memeFile + ext);
 
@@ -201,6 +203,8 @@ client.on("messageCreate", (msg) => {
     console.log(logMessage);
     // sendToChannel(IDs.channelVoice, logMessage);
     sendToChannel(IDs.channelCommands, logMessage);
+    msg.delete();
+
   } else if (message.startsWith("!random ")) {
     message = message.replace("!random ", "").replaceAll(" ", "");
     console.log("message: %s", message);
@@ -415,15 +419,23 @@ client.on('guildMemberRemove', member => {
 })
 
 client.on('voiceStateUpdate', (before, after) => {
+  if (after.id == client.user.id) return//if bot return
+  // console.log("before: %s", before)
+  // console.log("after: %s", after)
+  let chatMsg = '';
+  const person = after.member.displayName
 
-//   after= _lodash.get(after,'member.voice.channel.name',-1)
-//   console.log("after: %s", after)
-//   if (after!= -1) {
-//   if (after == before.member.voice.channel.name) return
-//   const chatMsg = after.member.displayName + ' has joined ' + after.member.voice.channel.name;
-//   console.log(chatMsg);
-// sendToChannel(IDs.channelVoice, chatMsg)
-//   }
+  if (before.channelId == after.channelId) { //same channel = reconnect
+    chatMsg = now() + ' ' + person + ' reconnected to ' + client.channels.cache.get(after.channelId).name;
+  } else if (before.channelId && !after.channelId) { //no after = left
+    chatMsg = now() + ' ' + person + ' left ' + client.channels.cache.get(before.channelId).name;
+  } else if ((!before.channelId && after.channelId) || (before.channelId && after.channelId)) {//no before or there is before and after
+    chatMsg = now() + ' ' + person + ' joined ' + client.channels.cache.get(after.channelId).name; //= joined
+  }
+
+  console.log(chatMsg);
+  sendToChannel(IDs.channelVoice, chatMsg)
+  // console.log("-----------------------------------------------------------------------");
 })
 
 client.login(bottoken);
