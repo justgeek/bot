@@ -401,10 +401,30 @@ client.on("presenceUpdate", (before, after) => {
       "<@" + IDs.LORD + "> \n1-7etta fel tricks?\nOR\n2-7etta fel trade?";
     sendToChannel(IDs.channelMain, chatMsg);
   }
-  console.log(
-    "-----------------------------------------------------------------------"
-  );
+  // console.log("-----------------------------------------------------------------------");
 });
+
+client.on('voiceStateUpdate', (before, after) => {
+  // if (after.id == client.user.id) return//if bot return
+  let chatMsg = '';
+  // const person = after.member.displayName
+  const person = after.member.user.username + "#" + after.member.user.discriminator
+
+  if (before.channelId == after.channelId) { //same channel = reconnect
+    chatMsg = now() + ' **' + person + '** reconnected to **' + client.channels.cache.get(after.channelId).name + '**';
+
+  } else if (before.channelId && !after.channelId) { //no after = left
+    chatMsg = now() + ' **' + person + '** left **' + client.channels.cache.get(before.channelId).name + '**';
+
+  } else if ((!before.channelId && after.channelId) || (before.channelId && after.channelId)) {//no before or there is before and after
+    chatMsg = now() + ' **' + person + '** joined **' + client.channels.cache.get(after.channelId).name + '**'; //= joined
+
+  }
+
+  console.log(chatMsg);
+  sendToChannel(IDs.channelVoice, chatMsg)
+  // console.log("-----------------------------------------------------------------------");
+})
 
 client.on('guildMemberAdd', member => {
   const chatMsg = member.user.username + "#" + member.user.discriminator + ' (' + member.displayName + ') has joined the server.'
@@ -416,26 +436,6 @@ client.on('guildMemberRemove', member => {
   const chatMsg = member.user.username + "#" + member.user.discriminator + ' (' + member.displayName + ') has left the server.'
   console.log(chatMsg)
   sendToChannel(IDs.channelMain, chatMsg)
-})
-
-client.on('voiceStateUpdate', (before, after) => {
-  if (after.id == client.user.id) return//if bot return
-  // console.log("before: %s", before)
-  // console.log("after: %s", after)
-  let chatMsg = '';
-  const person = after.member.displayName
-
-  if (before.channelId == after.channelId) { //same channel = reconnect
-    chatMsg = now() + ' ' + person + ' reconnected to ' + client.channels.cache.get(after.channelId).name;
-  } else if (before.channelId && !after.channelId) { //no after = left
-    chatMsg = now() + ' ' + person + ' left ' + client.channels.cache.get(before.channelId).name;
-  } else if ((!before.channelId && after.channelId) || (before.channelId && after.channelId)) {//no before or there is before and after
-    chatMsg = now() + ' ' + person + ' joined ' + client.channels.cache.get(after.channelId).name; //= joined
-  }
-
-  console.log(chatMsg);
-  sendToChannel(IDs.channelVoice, chatMsg)
-  // console.log("-----------------------------------------------------------------------");
 })
 
 client.login(bottoken);
