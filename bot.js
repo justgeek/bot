@@ -86,6 +86,7 @@ const memes = {
   "!unacceptable": "unacceptable",
   "!o2mor": "o2mor",
   "!sennakkam": "sennakkam",
+  "!7omar": "7omar",
 };
 
 let resource, player, connection;
