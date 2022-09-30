@@ -1,13 +1,13 @@
-const { GatewayIntentBits } = require("discord.js");
 const Discord = require("discord.js");
 const _lodash = require("lodash");
-const { isNull } = require("lodash");
 const {
   joinVoiceChannel,
   createAudioPlayer,
   createAudioResource,
+  AudioPlayer, StreamType, entersState, VoiceConnectionStatus,
 } = require("@discordjs/voice");
 const fs = require("fs");
+const discordTTS = require("discord-tts");
 const screenshot = require("screenshot-desktop");
 const sharp = require("sharp");
 const tesseract = require("node-tesseract-ocr");
@@ -15,13 +15,13 @@ const monitor = require("active-window");
 
 const client = new Discord.Client({
   intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildPresences,
-    GatewayIntentBits.GuildInvites,
+    Discord.GatewayIntentBits.Guilds,
+    Discord.GatewayIntentBits.GuildMessages,
+    Discord.GatewayIntentBits.MessageContent,
+    Discord.GatewayIntentBits.GuildVoiceStates,
+    Discord.GatewayIntentBits.GuildMembers,
+    Discord.GatewayIntentBits.GuildPresences,
+    Discord.GatewayIntentBits.GuildInvites,
   ],
 });
 
@@ -126,7 +126,7 @@ client.on("messageCreate", (msg) => {
   // console.log(msg.guild.emojis.cache)//show all emojis
   if (
     msg.author.username + "#" + msg.author.discriminator == "exorcismus#7611" &&
-    !memes[message]
+    !memes[message] && !message.startsWith("!")
   ) {
     // if (msg.author.username + '#' + msg.author.discriminator == 'Moonscarlet#4105') {
     // msg.react(msg.guild.emojis.cache.get('515873f6898e0b26daf51921c65a43f7'))//BRUH
@@ -201,7 +201,6 @@ client.on("messageCreate", (msg) => {
     player.play(resource);
     const logMessage = msg.member.displayName + " " + message; //"Playing " + message + ' by ' + msg.member.displayName
     console.log(logMessage);
-    // sendToChannel(IDs.channelVoice, logMessage);
     sendToChannel(IDs.channelCommands, logMessage);
     msg.delete();
 
@@ -246,7 +245,7 @@ client.on("messageCreate", (msg) => {
       memberVoiceChannelName,
       memberVoiceChannelId;
 
-    if (!isNull(msg.member.voice.channel)) {
+    if (!_lodash.isNull(msg.member.voice.channel)) {
       currentVoiceChannelName = msg.member.voice.channel.name;
       currentVoiceChannelId = msg.member.voice.channel.id;
       console.log("Current Voice Channel:" + currentVoiceChannelName);
@@ -261,7 +260,7 @@ client.on("messageCreate", (msg) => {
             memberFullTag = mem.user.username + "#" + mem.user.discriminator;
             memberId = mem.user.id;
 
-            if (!isNull(mem.voice.channel)) {
+            if (!_lodash.isNull(mem.voice.channel)) {
               //if member is in a voice channel
               memberVoiceChannelName = mem.voice.channel.name;
               memberVoiceChannelId = mem.voice.channel.id;
@@ -271,7 +270,8 @@ client.on("messageCreate", (msg) => {
               );
               if (
                 memberVoiceChannelId == currentVoiceChannelId &&
-                mem.displayName != "!Malevolent"
+                // mem.displayName != "!Malevolent"
+                mem.user.tag != client.user.tag
               ) {
                 //if member is in the same voice channel as me
                 players.push([memberNickname, `<@${memberId}>`]); //TO TAG IN CHAT `<@${id}>` // users  `<@&${id}>` // roles
@@ -332,14 +332,21 @@ client.on("messageCreate", (msg) => {
     console.log(
       "-----------------------------------------------------------------------"
     );
-  } else if (message === "!memes") {
-
+  } else if (message.startsWith("!")) {
+    message = message.replace("!", "")//.replaceAll(" ", "");
+    const stream = discordTTS.getVoiceStream(message);
+    const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
+    player.play(resource);
+    const logMessage = msg.member.displayName + " " + message; //"Playing " + message + ' by ' + msg.member.displayName
+    console.log(logMessage);
+    sendToChannel(IDs.channelCommands, logMessage);
+    msg.delete();
   }
 });
 
 client.on("messageDelete", (msg) => {
   const message = msg.content.toLowerCase();
-  if (memes[message]) return;
+  if (message.startsWith("!")) return;
 
   if (message == "!commands" || message == "!playlist") {
     return;
@@ -405,25 +412,49 @@ client.on("presenceUpdate", (before, after) => {
 });
 
 client.on('voiceStateUpdate', (before, after) => {
-  // if (after.id == client.user.id) return//if bot return
-  let chatMsg = '';
+  // console.log("-----------------------------------------------------------------------");
+  // console.log("before: %s", before)
+  // console.log("after: %s", after)
+
+  // after.guild.channels.cache.some(channel => {
+  //   if (channel.type === 'voice' && channel.members.has(client.user.id)) {
+  //     const botVoiceChannel = after.channel.name
+  //     console.log("botVoiceChannel: %s", botVoiceChannel) 
+  //   }
+  // });
+
+  // console.log("botVoiceChannel: %s", botVoiceChannel)
+
+  if (after.id == client.user.id) return//if bot return
+  let chatMsg = ' ';
+
   // const person = after.member.displayName
   const person = after.member.user.username + "#" + after.member.user.discriminator
 
-  if (before.channelId == after.channelId) { //same channel = reconnect
-    chatMsg = now() + ' **' + person + '** reconnected to **' + client.channels.cache.get(after.channelId).name + '**';
-
-  } else if (before.channelId && !after.channelId) { //no after = left
+  if (before.channelId && !after.channelId ||((before.channelId && after.channelId) && before.channelId != after.channelId)) { //no after = left
     chatMsg = now() + ' **' + person + '** left **' + client.channels.cache.get(before.channelId).name + '**';
 
-  } else if ((!before.channelId && after.channelId) || (before.channelId && after.channelId)) {//no before or there is before and after
+    if (before.channelId == IDs.voice3) {
+      const stream = discordTTS.getVoiceStream(after.member.displayName + ' left');
+      const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
+      player.play(resource);
+    }
+  } 
+  
+  if ((!before.channelId && after.channelId) || ((before.channelId && after.channelId) && before.channelId != after.channelId)) {//no before or there is before and after that are not the same
     chatMsg = now() + ' **' + person + '** joined **' + client.channels.cache.get(after.channelId).name + '**'; //= joined
 
+    if (after.channelId == IDs.voice3) {
+      const stream = discordTTS.getVoiceStream(after.member.displayName + ' joined');
+      const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
+      player.play(resource);
+    }
   }
 
-  console.log(chatMsg);
-  sendToChannel(IDs.channelVoice, chatMsg)
-  // console.log("-----------------------------------------------------------------------");
+  if (chatMsg != ' ') {
+    console.log(chatMsg);
+    sendToChannel(IDs.channelVoice, chatMsg)
+  }
 })
 
 client.on('guildMemberAdd', member => {
