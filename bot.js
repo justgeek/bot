@@ -93,6 +93,9 @@ const memes = {
   "!welcome": "welcome",
   "!malaksh3aza": "malaksh3aza",
   "!bravo": "bravo",
+  "!cheer": "cheer",
+  "!hru": "hru",
+  "!t3ebt": "t3ebt",
 };
 
 let resource, player, connection;
@@ -125,10 +128,7 @@ client.on("messageCreate", (msg) => {
     return;
 
   // console.log(msg.guild.emojis.cache)//show all emojis
-  if (
-    msg.author.username + "#" + msg.author.discriminator == "exorcismus#7611" &&
-    !memes[message] && !message.startsWith("!")
-  ) {
+  if (msg.author.username + "#" + msg.author.discriminator == "exorcismus#7611" && !message.startsWith("!")) {
     // if (msg.author.username + '#' + msg.author.discriminator == 'Moonscarlet#4105') {
     // msg.react(msg.guild.emojis.cache.get('515873f6898e0b26daf51921c65a43f7'))//BRUH
     // msg.react(':regional_indicator_a:')
@@ -429,24 +429,29 @@ client.on('voiceStateUpdate', (before, after) => {
   if (after.id == client.user.id) return//if bot return
   let chatMsg = ' ';
 
-  // const person = after.member.displayName
   const person = after.member.user.username + "#" + after.member.user.discriminator
+  let personTTS;
+  if (after.member.displayName == 'AG') {
+    personTTS = 'A G';
+  } else {
+    personTTS = after.member.displayName
+  }
 
-  if (before.channelId && !after.channelId ||((before.channelId && after.channelId) && before.channelId != after.channelId)) { //no after = left
+  if (before.channelId && !after.channelId || ((before.channelId && after.channelId) && before.channelId != after.channelId)) { //no after = left
     chatMsg = now() + ' **' + person + '** left **' + client.channels.cache.get(before.channelId).name + '**';
 
     if (before.channelId == IDs.voice3) {
-      const stream = discordTTS.getVoiceStream(after.member.displayName + ' left');
+      const stream = discordTTS.getVoiceStream(personTTS + ' left');
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       player.play(resource);
     }
-  } 
-  
+  }
+
   if ((!before.channelId && after.channelId) || ((before.channelId && after.channelId) && before.channelId != after.channelId)) {//no before or there is before and after that are not the same
     chatMsg = now() + ' **' + person + '** joined **' + client.channels.cache.get(after.channelId).name + '**'; //= joined
 
     if (after.channelId == IDs.voice3) {
-      const stream = discordTTS.getVoiceStream(after.member.displayName + ' joined');
+      const stream = discordTTS.getVoiceStream(personTTS + ' joined');
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       player.play(resource);
     }
