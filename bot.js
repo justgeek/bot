@@ -103,7 +103,17 @@ const memes = {
   "!5od": "5od",
   "!bash": "bash",
   "!ah": "ah",
+  "!howa": "howa",
 };
+
+const gamesList = [
+  "Turbo",
+  "CHC",
+  "Overwatch",
+  "Overthrow",
+  "Knight Squad 2",
+  "Left 4 Dead 2",
+]
 
 let resource, player, connection;
 var currentWindow = "habal";
@@ -148,54 +158,28 @@ client.on("messageCreate", (msg) => {
       "**COMMANDS:**",
       // '**!round**: Prints the current CHC round number',
       '**!playlist**: Prints YouTube "Our Games" playlist link.',
+      '**!games**: List possible games to play.',
+      '**!randomgame**: choose a random game to play.',
       '**!random <names (comma separated)>**: shuffle provided players.\nExample: "**!random player1,player2,player3**"',
       "**!randomall**: create random teams of all players in your current voice channel",
       '**!randomall <voice channel members row numbers to exclude (comma separated)>**.\nExample: to exclude 3rd and 5th "**!randomall 3,5**"',
+      '**!<anything>**: Text-to-speech',
     ];
-    const memesKeys = Object.keys(memes)
-      .map((e) => e.toUpperCase())
-      .join(", ");
-    msg.channel.send(commands.join("\n\n") + "\n\n**" + memesKeys + "**");
-  } else if (message === "!round") {
-    //   let currentWindow= awai;
-    //   getCurrentWindow();
-    //   console.log("currentWindow: ", currentWindow)
-    //   if (currentWindow != 'Dota 2') return
-    //   const ext = 'png'
-    //   const imgPath = './stuff/dota.'
-    //   const imgPathCropped = './stuff/dota-cropped.'
-    //   const x1 = 0
-    //   const y1 = 80
-    //   const x2 = 58
-    //   const y2 = 208
-    //   const w = x2 - x1
-    //   const h = y2 - y1
-    //   fs.unlink(imgPath, () => { })
-    //   fs.unlink(imgPathCropped, () => { })
-    //   screenshot({ filename: imgPath, format: ext }).then((img) => {
-    //   }).catch((err) => {
-    //   })
-    //   sleep(2000)
-    //   sharp(imgPath)
-    //     .extract({ left: x1, top: y1, width: w, height: h })
-    //     .toFile(imgPathCropped)
-    //     .then(info => { })
-    //     .catch(err => { });
-    //   const config = {
-    //     lang: "eng",
-    //     oem: 1,
-    //     psm: 3,
-    //   }
-    //   let result;
-    //   tesseract.recognize(imgPathCropped, config).then((text) => {
-    //     console.log("Result:", text);
-    //     result = text;
-    //   })
-    //     .catch((error) => {
-    //       console.log(error.message);
-    //     })
-    //   const chatMsg = 'Round: ' + result;
-    //   msg.channel.send({ files: [imgPathCropped] });
+
+    // const games= gamesList.join(", "); 
+    const memesKeys = "**MEMES:**\n" + Object.keys(memes).map((e) => e.toUpperCase()).sort().join(", ");
+
+    msg.channel.send(commands.join("\n\n") + "\n\n" + memesKeys + "");
+  } else if (message === "!games") {
+    const games = gamesList.join(", ");
+    // msg.channel.send(games);
+    msg.reply(games);
+
+  } else if (message === "!randomgame") {
+    const randomGame = gamesList[Math.floor(Math.random() * gamesList.length)];
+    // msg.channel.send(games);
+    msg.reply(randomGame);
+
   } else if (message === "!playlist") {
     // msg.delete();
     msg.channel.send(
