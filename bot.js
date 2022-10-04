@@ -96,6 +96,13 @@ const memes = {
   "!cheer": "cheer",
   "!hru": "hru",
   "!t3ebt": "t3ebt",
+  "!elwad": "elwad",
+  "!aheh": "aheh",
+  "!kim": "kim",
+  "!tayyeb": "tayyeb",
+  "!5od": "5od",
+  "!bash": "bash",
+  "!ah": "ah",
 };
 
 let resource, player, connection;
