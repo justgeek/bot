@@ -108,11 +108,14 @@ const memes = {
 
 const gamesList = [
   "Turbo",
-  "CHC",
+  "Custom Hero Clash (CHC)",
   "Overwatch",
-  "Overthrow",
+  "Overthrow 3",
   "Knight Squad 2",
   "Left 4 Dead 2",
+  "Legion TD",
+  "Ability Draft",
+  "Stumble Guys",
 ]
 
 let resource, player, connection;
@@ -141,8 +144,7 @@ client.on("ready", () => {
 
 client.on("messageCreate", (msg) => {
   let message = msg.content.toLowerCase();
-  if (msg.author.username + "#" + msg.author.discriminator == "Malevolent#0025")
-    return;
+  if (msg.author.username + "#" + msg.author.discriminator == "Malevolent#0025") return;
 
   // console.log(msg.guild.emojis.cache)//show all emojis
   if (msg.author.username + "#" + msg.author.discriminator == "exorcismus#7611" && !message.startsWith("!")) {
@@ -155,32 +157,28 @@ client.on("messageCreate", (msg) => {
   if (message === "!commands") {
     // msg.delete();
     const commands = [
-      "**COMMANDS:**",
       // '**!round**: Prints the current CHC round number',
-      '**!playlist**: Prints YouTube "Our Games" playlist link.',
-      '**!games**: List possible games to play.',
+      '**!youtube** or **!playlist**: print YouTube "Our Games" playlist link.',
+      '**!games**: list possible games to play.',
       '**!randomgame**: choose a random game to play.',
-      '**!random <names (comma separated)>**: shuffle provided players.\nExample: "**!random player1,player2,player3**"',
-      "**!randomall**: create random teams of all players in your current voice channel",
-      '**!randomall <voice channel members row numbers to exclude (comma separated)>**.\nExample: to exclude 3rd and 5th "**!randomall 3,5**"',
-      '**!<anything>**: Text-to-speech',
+      '**!random <names (comma separated)>**: shuffle provided players("**!random player1,player2,player3**").',
+      "**!randomall**: create random teams of all players in your current voice channel.",
+      '**!randomall <voice channel members row numbers to exclude (comma separated)>** (to exclude 3rd and 5th "**!randomall 3,5**").',
+      '**!<anything>**: Text-To-Speech.',
+      '**!memes**: list memes.',
     ];
 
-    // const games= gamesList.join(", "); 
-    const memesKeys = "**MEMES:**\n" + Object.keys(memes).map((e) => e.toUpperCase()).sort().join(", ");
-
-    msg.channel.send(commands.join("\n\n") + "\n\n" + memesKeys + "");
+    msg.channel.send("**COMMANDS:**\n" + commands.join("\n"));
   } else if (message === "!games") {
-    const games = gamesList.join(", ");
-    // msg.channel.send(games);
+    const games = '**' + gamesList.sort().join("**\n**") + '**';
     msg.reply(games);
-
   } else if (message === "!randomgame") {
-    const randomGame = gamesList[Math.floor(Math.random() * gamesList.length)];
-    // msg.channel.send(games);
+    const randomGame = '**' + gamesList[Math.floor(Math.random() * gamesList.length)] + '**';
     msg.reply(randomGame);
-
-  } else if (message === "!playlist") {
+  } else if (message === "!memes") {
+    const memesKeys = "**MEMES:**\n" + Object.keys(memes).map((e) => e.toUpperCase()).sort().join(", ");
+    msg.reply(memesKeys);
+  } else if (message == "!playlist" || message == "!youtube") {
     // msg.delete();
     msg.channel.send(
       "https://www.youtube.com/playlist?list=PLhKVK0lPQ73sDSSxq09yx9QVgyr3MBR6d"
@@ -336,6 +334,7 @@ client.on("messageCreate", (msg) => {
   }
 });
 
+
 client.on("messageDelete", (msg) => {
   const message = msg.content.toLowerCase();
   if (message.startsWith("!")) return;
@@ -348,6 +347,7 @@ client.on("messageDelete", (msg) => {
   sendToChannel(IDs.channelDel, deleted);
 });
 
+
 client.on("messageUpdate", (oldMessage, newMessage) => {
   if (oldMessage == oldMessage) return;
   const edited = `${now()}\t **${newMessage.author.username}:**\n${oldMessage.content
@@ -358,6 +358,7 @@ client.on("messageUpdate", (oldMessage, newMessage) => {
     "-----------------------------------------------------------------------"
   );
 });
+
 
 client.on("presenceUpdate", (before, after) => {
   // console.log("before: %s", before)
@@ -402,6 +403,7 @@ client.on("presenceUpdate", (before, after) => {
   }
   // console.log("-----------------------------------------------------------------------");
 });
+
 
 client.on('voiceStateUpdate', (before, after) => {
   // console.log("-----------------------------------------------------------------------");
@@ -454,11 +456,13 @@ client.on('voiceStateUpdate', (before, after) => {
   }
 })
 
+
 client.on('guildMemberAdd', member => {
   const chatMsg = member.user.username + "#" + member.user.discriminator + ' (' + member.displayName + ') has joined the server.'
   console.log(chatMsg)
   sendToChannel(IDs.channelMain, chatMsg)
 })
+
 
 client.on('guildMemberRemove', member => {
   const chatMsg = member.user.username + "#" + member.user.discriminator + ' (' + member.displayName + ') has left the server.'
@@ -473,7 +477,6 @@ function sendToChannel(id, msg) {
     channel.send(msg);
   });
 }
-
 function now() {
   let today = new Date();
   let now =
@@ -495,12 +498,10 @@ function now() {
     today.getSeconds();
   return now;
 }
-
 function sleep(ms) {
   const waitTill = new Date(new Date().getTime() + ms);
   while (waitTill > new Date()) { }
 }
-
 function getCurrentWindow() {
   const myPromise = new Promise();
   monitor.getActiveWindow((window) => {
