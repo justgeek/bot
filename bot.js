@@ -104,6 +104,8 @@ const memes = {
   "!bash": "bash",
   "!ah": "ah",
   "!howa": "howa",
+  "!seya7": "seya7",
+  "!relax": "relax",
 };
 
 const gamesList = [
@@ -116,6 +118,7 @@ const gamesList = [
   "Legion TD",
   "Ability Draft",
   "Stumble Guys",
+  "Cyberpunk 2077",
 ]
 
 let resource, player, connection;
@@ -176,7 +179,7 @@ client.on("messageCreate", (msg) => {
     const randomGame = '**' + gamesList[Math.floor(Math.random() * gamesList.length)] + '**';
     msg.reply(randomGame);
   } else if (message === "!memes") {
-    const memesKeys = "**MEMES:**\n" + Object.keys(memes).map((e) => e.toUpperCase()).sort().join(", ");
+    const memesKeys = '**'+Object.keys(memes).map((e) => e.toUpperCase()).sort().join(", ")+'**';
     msg.reply(memesKeys);
   } else if (message == "!playlist" || message == "!youtube") {
     // msg.delete();
