@@ -106,6 +106,9 @@ const memes = {
   "!howa": "howa",
   "!seya7": "seya7",
   "!relax": "relax",
+  "!ezay": "ezay",
+  "!ezay2": "ezay2",
+  "!salamtak": "salamtak",
 };
 
 const gamesList = [
@@ -119,6 +122,7 @@ const gamesList = [
   "Ability Draft",
   "Stumble Guys",
   "Cyberpunk 2077",
+  "Ability Arena",
 ]
 
 let resource, player, connection;
