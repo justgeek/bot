@@ -109,6 +109,7 @@ const memes = {
   "!ezay": "ezay",
   "!ezay2": "ezay2",
   "!salamtak": "salamtak",
+  "!kazeefa": "kazeefa",
 };
 
 const gamesList = [
@@ -183,7 +184,8 @@ client.on("messageCreate", (msg) => {
     const randomGame = '**' + gamesList[Math.floor(Math.random() * gamesList.length)] + '**';
     msg.reply(randomGame);
   } else if (message === "!memes") {
-    const memesKeys = '**'+Object.keys(memes).map((e) => e.toUpperCase()).sort().join(", ")+'**';
+    const memesKeys = '**'+Object.keys(memes).map((e) => e.toUpperCase()).join(", ")+'**';
+    // const memesKeys = '**'+Object.keys(memes).map((e) => e.toUpperCase()).sort().join(", ")+'**';
     msg.reply(memesKeys);
   } else if (message == "!playlist" || message == "!youtube") {
     // msg.delete();
