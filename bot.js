@@ -110,6 +110,7 @@ const memes = {
   "!ezay2": "ezay2",
   "!salamtak": "salamtak",
   "!kazeefa": "kazeefa",
+  "!yes": "yes",
 };
 
 const gamesList = [
