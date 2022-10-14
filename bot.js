@@ -125,6 +125,7 @@ const gamesList = [
   "Stumble Guys",
   "Cyberpunk 2077",
   "Ability Arena",
+  "World of Warcraft",
 ]
 
 let resource, player, connection;
