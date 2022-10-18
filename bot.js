@@ -111,6 +111,9 @@ const memes = {
   "!salamtak": "salamtak",
   "!kazeefa": "kazeefa",
   "!yes": "yes",
+  "!maaa2": "maaa2",
+  "!3ar": "3ar",
+  "!kambyotar": "kambyotar",
 };
 
 const gamesList = [
@@ -178,15 +181,15 @@ client.on("messageCreate", (msg) => {
       '**!memes**: list memes.',
     ];
 
-    msg.channel.send("**COMMANDS:**\n" + commands.join("\n"));
+    msg.channel.send("> **COMMANDS:**\n> " + commands.join("\n> "));
   } else if (message === "!games") {
-    const games = '**' + gamesList.sort().join("**\n**") + '**';
+    const games = '> **' + gamesList.sort().join("**\n> **") + '**';
     msg.reply(games);
   } else if (message === "!randomgame") {
-    const randomGame = '**' + gamesList[Math.floor(Math.random() * gamesList.length)] + '**';
+    const randomGame = '> **' + gamesList[Math.floor(Math.random() * gamesList.length)] + '**';
     msg.reply(randomGame);
   } else if (message === "!memes") {
-    const memesKeys = '**'+Object.keys(memes).map((e) => e.toUpperCase()).join(", ")+'**';
+    const memesKeys = '> **'+Object.keys(memes).map((e) => e.toUpperCase()).join(", ")+'**';
     // const memesKeys = '**'+Object.keys(memes).map((e) => e.toUpperCase()).sort().join(", ")+'**';
     msg.reply(memesKeys);
   } else if (message == "!playlist" || message == "!youtube") {
@@ -218,15 +221,15 @@ client.on("messageCreate", (msg) => {
       players = _lodash.shuffle(players);
       console.log("shuffled players: %s", players);
 
-      let teams = `**${players.length} players:**`,
+      let teams = `> **${players.length} players:**`,
         teamNumber = 1;
 
       [1, 2, 3, 4];
       for (let i = 0; i < players.length / 2; i + 2) {
         if (players.length > 1) {
-          teams += `\n**Team ${teamNumber}:** ${players.shift()} - ${players.shift()}`;
+          teams += `\n> **Team ${teamNumber}:** ${players.shift()} - ${players.shift()}`;
         } else {
-          teams += `\n**Team ${teamNumber}:** ${players.shift()}`;
+          teams += `\n> **Team ${teamNumber}:** ${players.shift()}`;
         }
         teamNumber++;
       }
@@ -311,15 +314,15 @@ client.on("messageCreate", (msg) => {
             players = _lodash.shuffle(players);
             console.log("shuffled players:", players);
 
-            let teams = `**${players.length} players:**`,
+            let teams = `> **${players.length} players:**`,
               teamNumber = 1;
 
             for (let i = 0; i < players.length / 2; i + 2) {
               if (players.length > 1) {
-                teams += `\n**Team ${teamNumber}:** ${players.shift()[1]} - ${players.shift()[1]
+                teams += `\n> **Team ${teamNumber}:** ${players.shift()[1]} - ${players.shift()[1]
                   }`;
               } else {
-                teams += `\n**Team ${teamNumber}:** ${players.shift()[1]}`;
+                teams += `\n> **Team ${teamNumber}:** ${players.shift()[1]}`;
               }
               teamNumber++;
             }
@@ -328,7 +331,7 @@ client.on("messageCreate", (msg) => {
           }
         });
     } else {
-      msg.reply("You're not in a voice channel!");
+      msg.reply("> You're not in a voice channel!");
     }
     console.log(
       "-----------------------------------------------------------------------"
