@@ -49,72 +49,85 @@ const IDs = {
   Mido: "329004546900885515",
 };
 
+
 const memesFolder = "./memes/";
 const ext = ".m4a";
-const memes = {
-  "!bruh": "Bruh",
-  "!nooo": "nooo",
-  "!sees": "sees",
-  "!maaa": "Sheep1",
-  "!cry": "Baby Crying",
-  "!letmein": "LET ME IN",
-  "!hamood": "hamood",
-  "!wait": "no no no no wait wait wait",
-  "!lazaza": "lazaza2",
-  "!omgwow": "omgwow",
-  "!ok": "ok",
-  "!nice": "nice",
-  "!kekw": "kekw",
-  "!mad": "mad",
-  "!ablaa": "ablaa",
-  "!antesh": "anteshwagry",
-  "!bom": "bom",
-  "!acatch": "acatch",
-  "!a3asal": "a3asal",
-  "!pyre": "pyre",
-  "!hello": "hello",
-  "!mido": "mido",
-  "!nasarny": "nasarny",
-  "!qowa": "qowa",
-  "!brb": "brb",
-  "!adab": "adab",
-  "!ashaf": "ashaf",
-  "!shan2ollak": "SHAN2OLLAK",
-  "!borra7a": "borra7a",
-  "!cringe": "cringe",
-  "!sheraton": "sheraton",
-  "!5odlak": "5odlak",
-  "!mayenfa3sh": "mayenfa3sh",
-  "!ma3lesh": "ma3lesh",
-  "!unacceptable": "unacceptable",
-  "!o2mor": "o2mor",
-  "!sennakkam": "sennakkam",
-  "!7omar": "7omar",
-  "!welcome": "welcome",
-  "!malaksh3aza": "malaksh3aza",
-  "!bravo": "bravo",
-  "!cheer": "cheer",
-  "!hru": "hru",
-  "!t3ebt": "t3ebt",
-  "!elwad": "elwad",
-  "!aheh": "aheh",
-  "!kim": "kim",
-  "!tayyeb": "tayyeb",
-  "!5od": "5od",
-  "!bash": "bash",
-  "!ah": "ah",
-  "!howa": "howa",
-  "!seya7": "seya7",
-  "!relax": "relax",
-  "!ezay": "ezay",
-  "!ezay2": "ezay2",
-  "!salamtak": "salamtak",
-  "!kazeefa": "kazeefa",
-  "!yes": "yes",
-  "!maaa2": "maaa2",
-  "!3ar": "3ar",
-  "!kambyotar": "kambyotar",
-};
+const memeFiles = fs.readdirSync(memesFolder)
+console.log("memeFiles: %s", memeFiles)
+
+let memes={};
+memeFiles.forEach(m => {
+  memes['!' + m.toLowerCase().replace(/.[^.]*$/g, '')] = m;
+})
+console.log("memes: %s", memes)
+
+// memes = {
+//   "!bruh": "Bruh",
+//   "!nooo": "nooo",
+//   "!sees": "sees",
+//   "!maaa": "Sheep1",
+//   "!cry": "Baby Crying",
+//   "!letmein": "LET ME IN",
+//   "!hamood": "hamood",
+//   "!wait": "no no no no wait wait wait",
+//   "!lazaza": "lazaza2",
+//   "!omgwow": "omgwow",
+//   "!ok": "ok",
+//   "!nice": "nice",
+//   "!kekw": "kekw",
+//   "!mad": "mad",
+//   "!ablaa": "ablaa",
+//   "!antesh": "anteshwagry",
+//   "!bom": "bom",
+//   "!acatch": "acatch",
+//   "!a3asal": "a3asal",
+//   "!pyre": "pyre",
+//   "!hello": "hello",
+//   "!mido": "mido",
+//   "!nasarny": "nasarny",
+//   "!qowa": "qowa",
+//   "!brb": "brb",
+//   "!adab": "adab",
+//   "!ashaf": "ashaf",
+//   "!shan2ollak": "SHAN2OLLAK",
+//   "!borra7a": "borra7a",
+//   "!cringe": "cringe",
+//   "!sheraton": "sheraton",
+//   "!5odlak": "5odlak",
+//   "!mayenfa3sh": "mayenfa3sh",
+//   "!ma3lesh": "ma3lesh",
+//   "!unacceptable": "unacceptable",
+//   "!o2mor": "o2mor",
+//   "!sennakkam": "sennakkam",
+//   "!7omar": "7omar",
+//   "!welcome": "welcome",
+//   "!malaksh3aza": "malaksh3aza",
+//   "!bravo": "bravo",
+//   "!cheer": "cheer",
+//   "!hru": "hru",
+//   "!t3ebt": "t3ebt",
+//   "!elwad": "elwad",
+//   "!aheh": "aheh",
+//   "!kim": "kim",
+//   "!tayyeb": "tayyeb",
+//   "!5od": "5od",
+//   "!bash": "bash",
+//   "!ah": "ah",
+//   "!howa": "howa",
+//   "!seya7": "seya7",
+//   "!relax": "relax",
+//   "!ezay": "ezay",
+//   "!ezay2": "ezay2",
+//   "!salamtak": "salamtak",
+//   "!kazeefa": "kazeefa",
+//   "!yes": "yes",
+//   "!maaa2": "maaa2",
+//   "!3ar": "3ar",
+//   "!kambyotar": "kambyotar",
+//   "!uhuh": "uhuh",
+//   "!dang": "dang",
+//   "!za2loot": "za2loot",
+// };
 
 const gamesList = [
   "Turbo",
@@ -189,7 +202,7 @@ client.on("messageCreate", (msg) => {
     const randomGame = '> **' + gamesList[Math.floor(Math.random() * gamesList.length)] + '**';
     msg.reply(randomGame);
   } else if (message === "!memes") {
-    const memesKeys = '> **'+Object.keys(memes).map((e) => e.toUpperCase()).join(", ")+'**';
+    const memesKeys = '> **' + Object.keys(memes).map((e) => e.toUpperCase()).join(", ") + '**';
     // const memesKeys = '**'+Object.keys(memes).map((e) => e.toUpperCase()).sort().join(", ")+'**';
     msg.reply(memesKeys);
   } else if (message == "!playlist" || message == "!youtube") {
@@ -200,7 +213,7 @@ client.on("messageCreate", (msg) => {
   } else if (memes[message]) {
     //MEMES > if key is found in memes object play its value (file)
     const memeFile = memesFolder + memes[message];
-    resource = createAudioResource(memeFile + ext);
+    resource = createAudioResource(memeFile);
 
     player.play(resource);
     const logMessage = msg.member.displayName + " " + message; //"Playing " + message + ' by ' + msg.member.displayName
