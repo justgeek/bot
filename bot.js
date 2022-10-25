@@ -51,7 +51,6 @@ const IDs = {
 
 
 const memesFolder = "./memes/";
-const ext = ".m4a";
 const memeFiles = fs.readdirSync(memesFolder)
 console.log("memeFiles: %s", memeFiles)
 
@@ -453,6 +452,8 @@ client.on('voiceStateUpdate', (before, after) => {
   let personTTS;
   if (after.member.displayName == 'AG') {
     personTTS = 'A G';
+  } if (after.member.displayName == 'underageuser') {
+    personTTS = 'underage user';
   } else {
     personTTS = after.member.displayName
   }
