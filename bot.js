@@ -452,9 +452,23 @@ client.on('voiceStateUpdate', (before, after) => {
   let personTTS;
   if (after.member.displayName == 'AG') {
     personTTS = 'A G';
-  } if (after.member.displayName == 'underageuser') {
+  } else if (after.member.displayName == 'underageuser') {
     personTTS = 'underage user';
-  } else {
+  }
+  else if (after.member.displayName == 'Hesham') {
+    personTTS = 'Hishaam';
+  } 
+  else if (after.member.displayName == 'Exorcismus') {
+    personTTS = 'faadey';
+  }   
+  else if (after.member.displayName == 'Mido') {
+    personTTS = 'Meedo';
+  } 
+  else if (after.member.displayName == 'Bassel Desoky') {
+    personTTS = 'Supersonic';
+  } 
+
+  else {
     personTTS = after.member.displayName
   }
 
@@ -511,7 +525,7 @@ function now() {
     (today.getDate() < 10 ? "0" : "") +
     today.getDate() +
     "/" +
-    (today.getMonth() < 10 ? "0" : "") +
+    (today.getMonth() < 9 ? "0" : "") +
     (today.getMonth() + 1) +
     "/" +
     today.getFullYear() +
