@@ -52,13 +52,23 @@ const IDs = {
 
 const memesFolder = "./memes/";
 const memeFiles = fs.readdirSync(memesFolder)
-console.log("memeFiles: %s", memeFiles)
+
+const memeFilesSorted = []
+memeFiles.forEach(m => {
+    let modDate = fs.statSync(memesFolder + m).mtimeMs
+    memeFilesSorted.push(modDate + "|" + m)
+})
+memeFilesSorted.sort()
 
 let memes={};
-memeFiles.forEach(m => {
-  memes['!' + m.toLowerCase().replace(/.[^.]*$/g, '')] = m;
+// let memesList = []
+memeFilesSorted.forEach(m => {
+    memes['!' + m.toLowerCase().replace(/.[^.]*$/g, '').replace(/\d.+[|]/g, '')] = m.replace(/\d.+[|]/g, ''); 
+    // memesList.push(m.toLowerCase().replace(/.[^.]*$/g, '').replace(/\d.+[|]/g, ''));
 })
-console.log("memes: %s", memes)
+
+// console.log("memesList: %s", memesList)
+
 
 // memes = {
 //   "!bruh": "Bruh",
@@ -202,7 +212,7 @@ client.on("messageCreate", (msg) => {
     msg.reply(randomGame);
   } else if (message === "!memes") {
     const memesKeys = '> **' + Object.keys(memes).map((e) => e.toUpperCase()).join(", ") + '**';
-    // const memesKeys = '**'+Object.keys(memes).map((e) => e.toUpperCase()).sort().join(", ")+'**';
+    
     msg.reply(memesKeys);
   } else if (message == "!playlist" || message == "!youtube") {
     // msg.delete();
