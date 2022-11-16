@@ -480,6 +480,9 @@ client.on('voiceStateUpdate', (before, after) => {
   else if (after.member.displayName == 'prollygeek') {
     personTTS = 'TDK';
   } 
+  else if (after.member.displayName == 'Ibrahim Taher') {
+    personTTS = 'Heema';
+  } 
 
   else {
     personTTS = after.member.displayName
