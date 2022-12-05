@@ -433,8 +433,8 @@ client.on("presenceUpdate", (before, after) => {
     statusAfter == "online"
   ) {
     // sendToChannel(IDs.channelMain, 'E2FESH <@' + IDs.LORD + '> CHC ¿¿¿? xdDDD¡!¡!¡');
-    const chatMsg =
-      "<@" + IDs.LORD + "> \n1-7etta fel tricks?\nOR\n2-7etta fel trade?";
+    // const chatMsg ="<@" + IDs.LORD + "> \n1-7etta fel tricks?\nOR\n2-7etta fel trade?";
+    const chatMsg ="<@" + IDs.LORD + "> طبقات من ال layers¡¡!!¡?¿¿¿¿";
     sendToChannel(IDs.channelMain, chatMsg);
   }
   // console.log("-----------------------------------------------------------------------");
