@@ -55,16 +55,16 @@ const memeFiles = fs.readdirSync(memesFolder)
 
 const memeFilesSorted = []
 memeFiles.forEach(m => {
-    let modDate = fs.statSync(memesFolder + m).mtimeMs
-    memeFilesSorted.push(modDate + "|" + m)
+  let modDate = fs.statSync(memesFolder + m).mtimeMs
+  memeFilesSorted.push(modDate + "|" + m)
 })
 memeFilesSorted.sort()
 
-let memes={};
+let memes = {};
 // let memesList = []
 memeFilesSorted.forEach(m => {
-    memes['!' + m.toLowerCase().replace(/.[^.]*$/g, '').replace(/\d.+[|]/g, '')] = m.replace(/\d.+[|]/g, ''); 
-    // memesList.push(m.toLowerCase().replace(/.[^.]*$/g, '').replace(/\d.+[|]/g, ''));
+  memes['!' + m.toLowerCase().replace(/.[^.]*$/g, '').replace(/\d.+[|]/g, '')] = m.replace(/\d.+[|]/g, '');
+  // memesList.push(m.toLowerCase().replace(/.[^.]*$/g, '').replace(/\d.+[|]/g, ''));
 })
 
 // console.log("memesList: %s", memesList)
@@ -212,7 +212,7 @@ client.on("messageCreate", (msg) => {
     msg.reply(randomGame);
   } else if (message === "!memes") {
     const memesKeys = '> **' + Object.keys(memes).map((e) => e.toUpperCase()).join(", ") + '**';
-    
+
     msg.reply(memesKeys);
   } else if (message == "!playlist" || message == "!youtube") {
     // msg.delete();
@@ -434,7 +434,7 @@ client.on("presenceUpdate", (before, after) => {
   ) {
     // sendToChannel(IDs.channelMain, 'E2FESH <@' + IDs.LORD + '> CHC ¿¿¿? xdDDD¡!¡!¡');
     // const chatMsg ="<@" + IDs.LORD + "> \n1-7etta fel tricks?\nOR\n2-7etta fel trade?";
-    const chatMsg ="<@" + IDs.LORD + "> طبقات من ال layers¡¡!!¡?¿¿¿¿";
+    const chatMsg = "<@" + IDs.LORD + "> طبقات من ال layers¡¡!!¡?¿¿¿¿";
     sendToChannel(IDs.channelMain, chatMsg);
   }
   // console.log("-----------------------------------------------------------------------");
@@ -467,22 +467,22 @@ client.on('voiceStateUpdate', (before, after) => {
   }
   else if (after.member.displayName == 'Hesham') {
     personTTS = 'Hishaam';
-  } 
+  }
   else if (after.member.displayName == 'Exorcismus') {
     personTTS = 'faadey';
-  }   
+  }
   else if (after.member.displayName == 'Mido') {
     personTTS = 'Meedo';
-  } 
+  }
   else if (after.member.displayName == 'Bassel Desoky') {
     personTTS = 'Supersonic';
-  } 
+  }
   else if (after.member.displayName == 'prollygeek') {
     personTTS = 'TDK';
-  } 
+  }
   else if (after.member.displayName == 'Ibrahim Taher') {
     personTTS = 'Heema';
-  } 
+  }
 
   else {
     personTTS = after.member.displayName
@@ -505,8 +505,17 @@ client.on('voiceStateUpdate', (before, after) => {
       const stream = discordTTS.getVoiceStream(personTTS + ' joined');
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       player.play(resource);
+
+      if (person == "Mido#3565") { //Mido#3565 Moonscarlet#4105
+        const memeFile = memesFolder + "maaa.m4a";
+        let resource2 = createAudioResource(memeFile);
+  
+        player.play(resource2);
+      }      
     }
   }
+
+
 
   if (chatMsg != ' ') {
     console.log(chatMsg);
