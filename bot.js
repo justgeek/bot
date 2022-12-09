@@ -1,5 +1,7 @@
 const Discord = require("discord.js");
 const _lodash = require("lodash");
+const ffmpeg = require('ffmpeg');
+
 const {
   joinVoiceChannel,
   createAudioPlayer,
@@ -358,7 +360,9 @@ client.on("messageCreate", (msg) => {
     console.log(
       "-----------------------------------------------------------------------"
     );
-  } else if (message.startsWith("!")) {
+  } 
+
+  else if (message.startsWith("!")) {
     message = message.replace("!", "")//.replaceAll(" ", "");
     const stream = discordTTS.getVoiceStream(message);
     const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
@@ -509,9 +513,9 @@ client.on('voiceStateUpdate', (before, after) => {
       if (person == "Mido#3565") { //Mido#3565 Moonscarlet#4105
         const memeFile = memesFolder + "maaa.m4a";
         let resource2 = createAudioResource(memeFile);
-  
+
         player.play(resource2);
-      }      
+      }
     }
   }
 
@@ -536,8 +540,6 @@ client.on('guildMemberRemove', member => {
   console.log(chatMsg)
   sendToChannel(IDs.channelMain, chatMsg)
 })
-
-client.login(bottoken);
 
 function sendToChannel(id, msg) {
   client.channels.fetch(id).then((channel) => {
@@ -583,3 +585,10 @@ function getCurrentWindow() {
   });
   return myPromise;
 }
+
+
+
+
+
+
+client.login(bottoken);
