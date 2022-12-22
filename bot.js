@@ -367,6 +367,7 @@ client.on("messageCreate", (msg) => {
     const stream = discordTTS.getVoiceStream(message);
     const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
     player.play(resource);
+    
     const logMessage = msg.member.displayName + " " + message; //"Playing " + message + ' by ' + msg.member.displayName
     console.log(logMessage);
     sendToChannel(IDs.channelCommands, logMessage);
@@ -438,7 +439,7 @@ client.on("presenceUpdate", (before, after) => {
   ) {
     // sendToChannel(IDs.channelMain, 'E2FESH <@' + IDs.LORD + '> CHC ¿¿¿? xdDDD¡!¡!¡');
     // const chatMsg ="<@" + IDs.LORD + "> \n1-7etta fel tricks?\nOR\n2-7etta fel trade?";
-    const chatMsg = "<@" + IDs.LORD + "> طبقات من ال layers¡¡!!¡?¿¿¿¿";
+    const chatMsg = "<@" + IDs.LORD + "> ¡¡!!FoRgE sOmE mIrRoRs?¡?¿¿¿¿";
     sendToChannel(IDs.channelMain, chatMsg);
   }
   // console.log("-----------------------------------------------------------------------");
@@ -510,12 +511,12 @@ client.on('voiceStateUpdate', (before, after) => {
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       player.play(resource);
 
-      if (person == "Mido#3565") { //Mido#3565 Moonscarlet#4105
-        const memeFile = memesFolder + "maaa.m4a";
-        let resource2 = createAudioResource(memeFile);
+      // if (person == "Mido#3565") { //Mido#3565 Moonscarlet#4105
+      //   const memeFile = memesFolder + "maaa.m4a";
+      //   let resource2 = createAudioResource(memeFile);
 
-        player.play(resource2);
-      }
+      //   player.play(resource2);
+      // }
     }
   }
 
