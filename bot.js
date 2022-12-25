@@ -439,7 +439,7 @@ client.on("presenceUpdate", (before, after) => {
   ) {
     // sendToChannel(IDs.channelMain, 'E2FESH <@' + IDs.LORD + '> CHC ¿¿¿? xdDDD¡!¡!¡');
     // const chatMsg ="<@" + IDs.LORD + "> \n1-7etta fel tricks?\nOR\n2-7etta fel trade?";
-    const chatMsg = "<@" + IDs.LORD + "> ¡¡!!FoRgE sOmE mIrRoRs?¡?¿¿¿¿";
+    const chatMsg = "<@" + IDs.LORD + "> ╖▌ßƒ pRinCESS white غراب valley جدع time?¡?¿¿";
     sendToChannel(IDs.channelMain, chatMsg);
   }
   // console.log("-----------------------------------------------------------------------");
