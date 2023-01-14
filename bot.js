@@ -465,37 +465,36 @@ client.on('voiceStateUpdate', (before, after) => {
 
   const person = after.member.user.username + "#" + after.member.user.discriminator
   let personTTS;
-  if (after.member.displayName == 'AG') {
-    personTTS = 'A G';
-  } else if (after.member.displayName == 'underageuser') {
-    personTTS = 'underage user';
-  }
-  else if (after.member.displayName == 'Hesham') {
-    personTTS = 'Hishaam';
-  }
-  else if (after.member.displayName == 'Exorcismus') {
-    personTTS = 'faadey';
-  }
-  else if (after.member.displayName == 'Mido') {
-    personTTS = 'Meedo';
-  }
-  else if (after.member.displayName == 'Bassel Desoky') {
-    personTTS = 'Supersonic';
-  }
-  else if (after.member.displayName == 'prollygeek') {
-    personTTS = 'TDK';
-  }
-  // else if (after.member.displayName == 'Ibrahim Taher') {
-  else if (person == 'Ibrahim Taher#7708') {
-    personTTS = 'Heema';
-  }
-  else if (person == 'OMDA#5863') {
-    personTTS = 'om daa';
-  }
+  // if (after.member.displayName == 'AG') {
+  //   personTTS = 'A G';
+  // } else if (after.member.displayName == 'underageuser') {
+  //   personTTS = 'underage user';
+  // }
+  // else if (after.member.displayName == 'Hesham') {
+  //   personTTS = 'Hishaam';
+  // }
+  // else if (after.member.displayName == 'Exorcismus') {
+  //   personTTS = 'faadey';
+  // }
+  // else if (after.member.displayName == 'Mido') {
+  //   personTTS = 'Meedo';
+  // }
+  // else if (after.member.displayName == 'Bassel Desoky') {
+  //   personTTS = 'Supersonic';
+  // }
+  // else if (after.member.displayName == 'prollygeek') {
+  //   personTTS = 'TDK';
+  // }
+  // else if (person == 'Ibrahim Taher#7708') {
+  //   personTTS = 'Heema';
+  // }
+  // else if (person == 'OMDA#5863') {
+  //   personTTS = 'om daa';
+  // }
 
-  else {
+  // else {
     personTTS = after.member.displayName
-  }
+  // }
 
   if (before.channelId && !after.channelId || ((before.channelId && after.channelId) && before.channelId != after.channelId)) { //no after = left
     chatMsg = now() + ' **' + person + '** left **' + client.channels.cache.get(before.channelId).name + '**';
