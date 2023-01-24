@@ -49,6 +49,7 @@ const IDs = {
   Moonscarlet: "234236035846897664",
   LORD: "946751602415521873",
   Mido: "329004546900885515",
+  TDK: "223957971976192001",
 };
 
 
@@ -465,36 +466,36 @@ client.on('voiceStateUpdate', (before, after) => {
 
   const person = after.member.user.username + "#" + after.member.user.discriminator
   let personTTS;
-  // if (after.member.displayName == 'AG') {
-  //   personTTS = 'A G';
-  // } else if (after.member.displayName == 'underageuser') {
-  //   personTTS = 'underage user';
-  // }
-  // else if (after.member.displayName == 'Hesham') {
-  //   personTTS = 'Hishaam';
-  // }
-  // else if (after.member.displayName == 'Exorcismus') {
-  //   personTTS = 'faadey';
-  // }
-  // else if (after.member.displayName == 'Mido') {
-  //   personTTS = 'Meedo';
-  // }
-  // else if (after.member.displayName == 'Bassel Desoky') {
-  //   personTTS = 'Supersonic';
-  // }
-  // else if (after.member.displayName == 'prollygeek') {
-  //   personTTS = 'TDK';
-  // }
-  // else if (person == 'Ibrahim Taher#7708') {
-  //   personTTS = 'Heema';
-  // }
-  // else if (person == 'OMDA#5863') {
-  //   personTTS = 'om daa';
-  // }
+  if (after.member.displayName == 'AG') {
+    personTTS = 'A G';
+  } else if (after.member.displayName == 'underageuser') {
+    personTTS = 'underage user';
+  }
+  else if (after.member.displayName == 'Hesham') {
+    personTTS = 'Hishaam';
+  }
+  else if (after.member.displayName == 'Exorcismus') {
+    personTTS = 'faadey';
+  }
+  else if (after.member.displayName == 'Mido') {
+    personTTS = 'Meedo';
+  }
+  else if (after.member.displayName == 'Bassel Desoky') {
+    personTTS = 'Supersonic';
+  }
+  else if (after.member.displayName == 'prollygeek') {
+    personTTS = 'TDK';
+  }
+  else if (person == 'Ibrahim Taher#7708') {
+    personTTS = 'Heema';
+  }
+  else if (person == 'OMDA#5863') {
+    personTTS = 'om daa';
+  }
 
-  // else {
+  else {
     personTTS = after.member.displayName
-  // }
+  }
 
   if (before.channelId && !after.channelId || ((before.channelId && after.channelId) && before.channelId != after.channelId)) { //no after = left
     chatMsg = now() + ' **' + person + '** left **' + client.channels.cache.get(before.channelId).name + '**';
@@ -520,6 +521,12 @@ client.on('voiceStateUpdate', (before, after) => {
 
       //   player.play(resource2);
       // }
+    if (person == "prollygeek#3915") { //Mido#3565 Moonscarlet#4105
+        const memeFile = memesFolder + "tdk.mp3";
+        let resource2 = createAudioResource(memeFile);
+
+        player.play(resource2);
+      }      
     }
   }
 
