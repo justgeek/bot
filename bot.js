@@ -524,9 +524,12 @@ client.on('voiceStateUpdate', (before, after) => {
     if (person == "prollygeek#3915") { //Mido#3565 Moonscarlet#4105
         const memeFile = memesFolder + "tdk.mp3";
         let resource2 = createAudioResource(memeFile);
-
         player.play(resource2);
-      }      
+      } else if (person == "Ibrahim Taher#7708") { //Mido#3565 Moonscarlet#4105
+        const memeFile = memesFolder + "cough.mp3";
+        let resource2 = createAudioResource(memeFile);
+        player.play(resource2);
+      }
     }
   }
 
