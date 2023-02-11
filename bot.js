@@ -53,6 +53,7 @@ const IDs = {
 };
 
 
+const otherFolder = "./other/";
 const memesFolder = "./memes/";
 const memeFiles = fs.readdirSync(memesFolder)
 
@@ -440,7 +441,7 @@ client.on("presenceUpdate", (before, after) => {
   ) {
     // sendToChannel(IDs.channelMain, 'E2FESH <@' + IDs.LORD + '> CHC ¿¿¿? xdDDD¡!¡!¡');
     // const chatMsg ="<@" + IDs.LORD + "> \n1-7etta fel tricks?\nOR\n2-7etta fel trade?";
-    const chatMsg = "<@" + IDs.LORD + "> ╖▌ßƒ pRinCESS white غراب valley جدع time?¡?¿¿";
+    const chatMsg = "<@" + IDs.LORD + "> Lady Dimitrescu in the village is waiting for you (approximately 290 centimeters tall in her heels and fabulous hat)";
     sendToChannel(IDs.channelMain, chatMsg);
   }
   // console.log("-----------------------------------------------------------------------");
@@ -522,11 +523,12 @@ client.on('voiceStateUpdate', (before, after) => {
       //   player.play(resource2);
       // }
     if (person == "prollygeek#3915") { //Mido#3565 Moonscarlet#4105
-        const memeFile = memesFolder + "tdk.mp3";
+        // const memeFile = memesFolder + "tdk.mp3";
+        const memeFile = otherFolder + "TDKJoin.mp3";
         let resource2 = createAudioResource(memeFile);
         player.play(resource2);
       } else if (person == "Ibrahim Taher#7708") { //Mido#3565 Moonscarlet#4105
-        const memeFile = memesFolder + "cough.mp3";
+        const memeFile = memesFolder + "cough.m4a";
         let resource2 = createAudioResource(memeFile);
         player.play(resource2);
       }
