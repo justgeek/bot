@@ -161,8 +161,20 @@ const gamesList = [
   "World of Warcraft",
 ];
 
-let resource, player, connection;
+let resource, player, connection, connectionSubscription;
 var currentWindow = "habal";
+
+const joinBanhaVoiceChannel = () => {
+  return (connection = joinVoiceChannel({
+    channelId: IDs.voice3,
+    guildId: IDs.guild,
+    adapterCreator: client.guilds.cache.get(IDs.guild).voiceAdapterCreator,
+  }));
+};
+
+client.on("error", (e) => {
+  console.error("ERR NOT HANDLED:", e);
+});
 
 client.on("ready", () => {
   console.log(`Logged in as ${client.user.tag}!`);
@@ -172,13 +184,9 @@ client.on("ready", () => {
 
   sendToChannel(IDs.channelV, 'Sup!\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t("**!commands**" for stuff)');
 
-  connection = joinVoiceChannel({
-    channelId: IDs.voice3,
-    guildId: IDs.guild,
-    adapterCreator: client.guilds.cache.get(IDs.guild).voiceAdapterCreator,
-  });
+  joinBanhaVoiceChannel();
   player = createAudioPlayer();
-  connection.subscribe(player);
+  connectionSubscription = connection.subscribe(player);
 });
 
 client.on("messageCreate", (msg) => {
@@ -360,11 +368,8 @@ client.on("messageCreate", (msg) => {
     // lets create a queue here
     message = message.replace("!", ""); //.replaceAll(" ", "");
     const stream = discordTTS.getVoiceStream(message);
-    console.log("DEBUGGIN BOT STREAM", stream);
     const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
     playVoice(resource);
-    console.log("DEBUGGIN BOT PLAYER", connection);
-
     const logMessage = msg.member.displayName + " " + message; //"Playing " + message + ' by ' + msg.member.displayName
     console.log(logMessage);
     sendToChannel(IDs.channelCommands, logMessage);
@@ -577,12 +582,18 @@ function getCurrentWindow() {
   });
   return myPromise;
 }
-
 client.login(process.env.BOT_TOKEN);
 
 const playVoice = (resource) => {
-  player.play(resource);
-  console.log("DEBUGGING PLAYER", connection.get("state"));
+  if (connection.state.status === "ready") {
+    player.play(resource);
+  } else if (connection.state.status === "signalling") {
+    connection.disconnect();
+    joinBanhaVoiceChannel();
+    connection.subscribe(player);
+    player.play(resource);
+  }
+  console.log("DEBUGGING PLAYER", connection.state);
 };
 
 const express = require("express");
