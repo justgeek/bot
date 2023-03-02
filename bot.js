@@ -585,14 +585,7 @@ function getCurrentWindow() {
 client.login(process.env.BOT_TOKEN);
 
 const playVoice = (resource) => {
-  if (connection.state.status === "ready") {
-    player.play(resource);
-  } else if (connection.state.status === "signalling") {
-    connection.disconnect();
-    joinBanhaVoiceChannel();
-    connection.subscribe(player);
-    player.play(resource);
-  }
+  player.play(resource);
 };
 
 const express = require("express");

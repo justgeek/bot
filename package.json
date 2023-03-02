@@ -21,9 +21,13 @@
   "main": "bot.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node bot.js"
+    "start": "node bot.js",
+    "postinstall": "patch-package"
   },
   "author": "Moonscarlet",
   "license": "ISC",
-  "description": "Just another discord bot with random stuff!"
+  "description": "Just another discord bot with random stuff!",
+  "devDependencies": {
+    "patch-package": "^6.5.1"
+  }
 }

@@ -1,0 +1,13 @@
+diff --git a/node_modules/@discordjs/voice/dist/index.js b/node_modules/@discordjs/voice/dist/index.js
+index 2f2e420..c705096 100644
+--- a/node_modules/@discordjs/voice/dist/index.js
++++ b/node_modules/@discordjs/voice/dist/index.js
+@@ -1427,6 +1427,8 @@ var VoiceConnection2 = class extends import_node_events7.EventEmitter {
+     }
+   }
+   addStatePacket(packet) {
++    this.configureNetworking();
++    console.log("Running PATCHED Discord Version !! BANHA FOREVER")
+     this.packets.state = packet;
+     if (typeof packet.self_deaf !== "undefined")
+       this.joinConfig.selfDeaf = packet.self_deaf;
