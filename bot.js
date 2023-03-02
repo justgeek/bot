@@ -30,8 +30,6 @@ const client = new Discord.Client({
   ],
 });
 
-console.log("TTTTTT", process.env.BOT_TOKEN);
-
 const IDs = {
   guild: "247069115204763648", //GUILD
 
