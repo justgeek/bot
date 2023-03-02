@@ -231,7 +231,7 @@ client.on("messageCreate", (msg) => {
     const memeFile = memesFolder + memes[message];
     resource = createAudioResource(memeFile);
 
-    player.play(resource);
+    playVoice(resource);
     const logMessage = msg.member.displayName + " " + message; //"Playing " + message + ' by ' + msg.member.displayName
     console.log(logMessage);
     sendToChannel(IDs.channelCommands, logMessage);
@@ -362,7 +362,7 @@ client.on("messageCreate", (msg) => {
     const stream = discordTTS.getVoiceStream(message);
     console.log("DEBUGGIN BOT STREAM", stream);
     const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
-    player.play(resource);
+    playVoice(resource);
     console.log("DEBUGGIN BOT PLAYER", connection);
 
     const logMessage = msg.member.displayName + " " + message; //"Playing " + message + ' by ' + msg.member.displayName
@@ -481,7 +481,7 @@ client.on("voiceStateUpdate", (before, after) => {
     if (before.channelId == IDs.voice3) {
       const stream = discordTTS.getVoiceStream(personTTS + " left");
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
-      player.play(resource);
+      playVoice(resource);
     }
   }
 
@@ -492,25 +492,25 @@ client.on("voiceStateUpdate", (before, after) => {
     if (after.channelId == IDs.voice3) {
       const stream = discordTTS.getVoiceStream(personTTS + " joined");
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
-      player.play(resource);
+      playVoice(resource);
 
       // if (person == "Mido#3565") { //Mido#3565 Moonscarlet#4105
       //   const memeFile = memesFolder + "maaa.m4a";
       //   let resource2 = createAudioResource(memeFile);
 
-      //   player.play(resource2);
+      //   playVoice(resource2);
       // }
       if (person == "prollygeek#3915") {
         //Mido#3565 Moonscarlet#4105
         // const memeFile = memesFolder + "tdk.mp3";
         const memeFile = otherFolder + "TDKJoin.mp3";
         let resource2 = createAudioResource(memeFile);
-        player.play(resource2);
+        playVoice(resource2);
       } else if (person == "Ibrahim Taher#7708") {
         //Mido#3565 Moonscarlet#4105
         const memeFile = memesFolder + "cough.m4a";
         let resource2 = createAudioResource(memeFile);
-        player.play(resource2);
+        playVoice(resource2);
       }
     }
   }
@@ -579,6 +579,11 @@ function getCurrentWindow() {
 }
 
 client.login(process.env.BOT_TOKEN);
+
+const playVoice = (resource) => {
+  player.play(resource);
+  console.log("DEBUGGING PLAYER", connection.get("state"));
+};
 
 const express = require("express");
 const app = express();
