@@ -593,7 +593,6 @@ const playVoice = (resource) => {
     connection.subscribe(player);
     player.play(resource);
   }
-  console.log("DEBUGGING PLAYER", connection.state);
 };
 
 const express = require("express");
