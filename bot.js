@@ -359,9 +359,9 @@ client.on("messageCreate", (msg) => {
   } else if (message.startsWith("!")) {
     message = message.replace("!", ""); //.replaceAll(" ", "");
     const stream = discordTTS.getVoiceStream(message);
-    console.log("DEBUGGIN BOT", stream);
+    console.log("DEBUGGIN BOT STREAM", stream);
     const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
-    console.log("DEBUGGIN BOT", player.play(resource));
+    console.log("DEBUGGIN BOT RESOURCE", player.play(resource));
 
     const logMessage = msg.member.displayName + " " + message; //"Playing " + message + ' by ' + msg.member.displayName
     console.log(logMessage);
