@@ -231,7 +231,11 @@ client.on("messageCreate", (msg) => {
     const memeFile = memesFolder + memes[message];
     resource = createAudioResource(memeFile);
 
-    player.play(resource);
+    if (player.checkPlayable()) {
+      player.play(resource);
+    } else {
+      console.log("MESSAGE IS NOT PLAYABLE", player);
+    }
     const logMessage = msg.member.displayName + " " + message; //"Playing " + message + ' by ' + msg.member.displayName
     console.log(logMessage);
     sendToChannel(IDs.channelCommands, logMessage);
@@ -357,11 +361,15 @@ client.on("messageCreate", (msg) => {
     }
     console.log("-----------------------------------------------------------------------");
   } else if (message.startsWith("!")) {
+    // lets create a queue here
     message = message.replace("!", ""); //.replaceAll(" ", "");
     const stream = discordTTS.getVoiceStream(message);
-    console.log("DEBUGGIN BOT STREAM", stream);
     const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
-    console.log("DEBUGGIN BOT RESOURCE", player.play(resource));
+    if (player.checkPlayable()) {
+      player.play(resource);
+    } else {
+      console.log("MESSAGE IS NOT PLAYABLE", player);
+    }
 
     const logMessage = msg.member.displayName + " " + message; //"Playing " + message + ' by ' + msg.member.displayName
     console.log(logMessage);
