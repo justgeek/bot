@@ -1,12 +1,15 @@
 const Discord = require("discord.js");
 const _lodash = require("lodash");
-const ffmpeg = require('ffmpeg');
+const ffmpeg = require("ffmpeg");
 
 const {
   joinVoiceChannel,
   createAudioPlayer,
   createAudioResource,
-  AudioPlayer, StreamType, entersState, VoiceConnectionStatus,
+  AudioPlayer,
+  StreamType,
+  entersState,
+  VoiceConnectionStatus,
 } = require("@discordjs/voice");
 const fs = require("fs");
 const discordTTS = require("discord-tts");
@@ -26,9 +29,6 @@ const client = new Discord.Client({
     Discord.GatewayIntentBits.GuildInvites,
   ],
 });
-
-const bottokenPath = "./bottoken.txt";
-const bottoken = fs.readFileSync(bottokenPath, "utf8");
 
 const IDs = {
   guild: "247069115204763648", //GUILD
@@ -52,27 +52,31 @@ const IDs = {
   TDK: "223957971976192001",
 };
 
-
 const otherFolder = "./other/";
 const memesFolder = "./memes/";
-const memeFiles = fs.readdirSync(memesFolder)
+const memeFiles = fs.readdirSync(memesFolder);
 
-const memeFilesSorted = []
-memeFiles.forEach(m => {
-  let modDate = fs.statSync(memesFolder + m).mtimeMs
-  memeFilesSorted.push(modDate + "|" + m)
-})
-memeFilesSorted.sort()
+const memeFilesSorted = [];
+memeFiles.forEach((m) => {
+  let modDate = fs.statSync(memesFolder + m).mtimeMs;
+  memeFilesSorted.push(modDate + "|" + m);
+});
+memeFilesSorted.sort();
 
 let memes = {};
 // let memesList = []
-memeFilesSorted.forEach(m => {
-  memes['!' + m.toLowerCase().replace(/.[^.]*$/g, '').replace(/\d.+[|]/g, '')] = m.replace(/\d.+[|]/g, '');
+memeFilesSorted.forEach((m) => {
+  memes[
+    "!" +
+      m
+        .toLowerCase()
+        .replace(/.[^.]*$/g, "")
+        .replace(/\d.+[|]/g, "")
+  ] = m.replace(/\d.+[|]/g, "");
   // memesList.push(m.toLowerCase().replace(/.[^.]*$/g, '').replace(/\d.+[|]/g, ''));
-})
+});
 
 // console.log("memesList: %s", memesList)
-
 
 // memes = {
 //   "!bruh": "Bruh",
@@ -155,7 +159,7 @@ const gamesList = [
   "Cyberpunk 2077",
   "Ability Arena",
   "World of Warcraft",
-]
+];
 
 let resource, player, connection;
 var currentWindow = "habal";
@@ -164,13 +168,9 @@ client.on("ready", () => {
   console.log(`Logged in as ${client.user.tag}!`);
   // console.log("client.user:", client.user)
 
-
   // client.user.setPresence('invisible');
 
-  sendToChannel(
-    IDs.channelV,
-    'Sup!\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t("**!commands**" for stuff)'
-  );
+  sendToChannel(IDs.channelV, 'Sup!\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t("**!commands**" for stuff)');
 
   connection = joinVoiceChannel({
     channelId: IDs.voice3,
@@ -198,31 +198,34 @@ client.on("messageCreate", (msg) => {
     const commands = [
       // '**!round**: Prints the current CHC round number',
       '**!youtube** or **!playlist**: print YouTube "Our Games" playlist link.',
-      '**!games**: list possible games to play.',
-      '**!randomgame**: choose a random game to play.',
+      "**!games**: list possible games to play.",
+      "**!randomgame**: choose a random game to play.",
       '**!random <names (comma separated)>**: shuffle provided players("**!random player1,player2,player3**").',
       "**!randomall**: create random teams of all players in your current voice channel.",
       '**!randomall <voice channel members row numbers to exclude (comma separated)>** (to exclude 3rd and 5th "**!randomall 3,5**").',
-      '**!<anything>**: Text-To-Speech.',
-      '**!memes**: list memes.',
+      "**!<anything>**: Text-To-Speech.",
+      "**!memes**: list memes.",
     ];
 
     msg.channel.send("> **COMMANDS:**\n> " + commands.join("\n> "));
   } else if (message === "!games") {
-    const games = '> **' + gamesList.sort().join("**\n> **") + '**';
+    const games = "> **" + gamesList.sort().join("**\n> **") + "**";
     msg.reply(games);
   } else if (message === "!randomgame") {
-    const randomGame = '> **' + gamesList[Math.floor(Math.random() * gamesList.length)] + '**';
+    const randomGame = "> **" + gamesList[Math.floor(Math.random() * gamesList.length)] + "**";
     msg.reply(randomGame);
   } else if (message === "!memes") {
-    const memesKeys = '> **' + Object.keys(memes).map((e) => e.toUpperCase()).join(", ") + '**';
+    const memesKeys =
+      "> **" +
+      Object.keys(memes)
+        .map((e) => e.toUpperCase())
+        .join(", ") +
+      "**";
 
     msg.reply(memesKeys);
   } else if (message == "!playlist" || message == "!youtube") {
     // msg.delete();
-    msg.channel.send(
-      "https://www.youtube.com/playlist?list=PLhKVK0lPQ73sDSSxq09yx9QVgyr3MBR6d"
-    );
+    msg.channel.send("https://www.youtube.com/playlist?list=PLhKVK0lPQ73sDSSxq09yx9QVgyr3MBR6d");
   } else if (memes[message]) {
     //MEMES > if key is found in memes object play its value (file)
     const memeFile = memesFolder + memes[message];
@@ -233,7 +236,6 @@ client.on("messageCreate", (msg) => {
     console.log(logMessage);
     sendToChannel(IDs.channelCommands, logMessage);
     msg.delete();
-
   } else if (message.startsWith("!random ")) {
     message = message.replace("!random ", "").replaceAll(" ", "");
     console.log("message: %s", message);
@@ -263,9 +265,7 @@ client.on("messageCreate", (msg) => {
       msg.reply(teams);
     }
 
-    console.log(
-      "-----------------------------------------------------------------------"
-    );
+    console.log("-----------------------------------------------------------------------");
   } else if (message.startsWith("!randomall")) {
     let players = [],
       currentVoiceChannelName,
@@ -295,9 +295,7 @@ client.on("messageCreate", (msg) => {
               memberVoiceChannelName = mem.voice.channel.name;
               memberVoiceChannelId = mem.voice.channel.id;
 
-              console.log(
-                memberNickname + " " + memberId + " " + memberVoiceChannelName
-              );
+              console.log(memberNickname + " " + memberId + " " + memberVoiceChannelName);
               if (
                 memberVoiceChannelId == currentVoiceChannelId &&
                 // mem.displayName != "!Malevolent"
@@ -323,8 +321,7 @@ client.on("messageCreate", (msg) => {
             console.log("excludedIdx:", excludedIdx);
             players.forEach((e, idx) => {
               //if player idx is in the excluded idx array don't push to finalplayers
-              if (excludedIdx.find((e) => e == idx) == undefined)
-                playersTemp.push(e);
+              if (excludedIdx.find((e) => e == idx) == undefined) playersTemp.push(e);
             });
             console.log("playersTemp", playersTemp);
             players = playersTemp;
@@ -345,8 +342,7 @@ client.on("messageCreate", (msg) => {
 
             for (let i = 0; i < players.length / 2; i + 2) {
               if (players.length > 1) {
-                teams += `\n> **Team ${teamNumber}:** ${players.shift()[1]} - ${players.shift()[1]
-                  }`;
+                teams += `\n> **Team ${teamNumber}:** ${players.shift()[1]} - ${players.shift()[1]}`;
               } else {
                 teams += `\n> **Team ${teamNumber}:** ${players.shift()[1]}`;
               }
@@ -359,24 +355,19 @@ client.on("messageCreate", (msg) => {
     } else {
       msg.reply("> You're not in a voice channel!");
     }
-    console.log(
-      "-----------------------------------------------------------------------"
-    );
-  } 
-
-  else if (message.startsWith("!")) {
-    message = message.replace("!", "")//.replaceAll(" ", "");
+    console.log("-----------------------------------------------------------------------");
+  } else if (message.startsWith("!")) {
+    message = message.replace("!", ""); //.replaceAll(" ", "");
     const stream = discordTTS.getVoiceStream(message);
     const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
     player.play(resource);
-    
+
     const logMessage = msg.member.displayName + " " + message; //"Playing " + message + ' by ' + msg.member.displayName
     console.log(logMessage);
     sendToChannel(IDs.channelCommands, logMessage);
     msg.delete();
   }
 });
-
 
 client.on("messageDelete", (msg) => {
   const message = msg.content.toLowerCase();
@@ -390,18 +381,13 @@ client.on("messageDelete", (msg) => {
   sendToChannel(IDs.channelDel, deleted);
 });
 
-
 client.on("messageUpdate", (oldMessage, newMessage) => {
   if (oldMessage == oldMessage) return;
-  const edited = `${now()}\t **${newMessage.author.username}:**\n${oldMessage.content
-    }\n>\n${newMessage.content}`;
+  const edited = `${now()}\t **${newMessage.author.username}:**\n${oldMessage.content}\n>\n${newMessage.content}`;
   console.log("edited:", edited);
   sendToChannel(IDs.channelEdit, edited);
-  console.log(
-    "-----------------------------------------------------------------------"
-  );
+  console.log("-----------------------------------------------------------------------");
 });
-
 
 client.on("presenceUpdate", (before, after) => {
   // console.log("before: %s", before)
@@ -416,8 +402,7 @@ client.on("presenceUpdate", (before, after) => {
   const statusBefore = !before ? " " : before.status;
   const statusAfter = !after ? " " : after.status;
 
-  const msg =
-    now() + "\t**" + userTag + ":\t**" + statusBefore + "\t>\t" + statusAfter;
+  const msg = now() + "\t**" + userTag + ":\t**" + statusBefore + "\t>\t" + statusAfter;
 
   const currentHour = new Date().getHours();
 
@@ -426,30 +411,26 @@ client.on("presenceUpdate", (before, after) => {
     sendToChannel(IDs.channelStatus, msg);
   }
 
-  if (
-    userID == IDs.Moonscarlet &&
-    (statusBefore == "offline" || statusBefore == "") &&
-    statusAfter == "online"
-  ) {
+  if (userID == IDs.Moonscarlet && (statusBefore == "offline" || statusBefore == "") && statusAfter == "online") {
     // sendToChannel(IDs.channelStatus, 'E2FESH <@' + IDs.Moonscarlet + '> CHC ¿¿¿? xdDDD¡¡¡');
     // sendToChannel(IDs.channelStatus, 'Welcome back <@' + IDs.Moonscarlet + '>');
     // sendToChannel(IDs.channelStatus, '<@' + IDs.Moonscarlet + '> RIP in pieces Lady Demashkash 🦇');
   } else if (
-    userID == IDs.LORD &&(currentHour >= 17 || currentHour <= 2) &&
-    (statusBefore == "offline" || statusBefore == " ") && (statusAfter == "online" || statusAfter == "idle")
+    userID == IDs.LORD &&
+    (currentHour >= 17 || currentHour <= 2) &&
+    (statusBefore == "offline" || statusBefore == " ") &&
+    (statusAfter == "online" || statusAfter == "idle")
   ) {
     // sendToChannel(IDs.channelMain, 'E2FESH <@' + IDs.LORD + '> CHC ¿¿¿? xdDDD¡!¡!¡');
     // const chatMsg ="<@" + IDs.LORD + "> \n1-7etta fel tricks?\nOR\n2-7etta fel trade?";
-    const chatMsg ="<@" + IDs.LORD + "> 🦇🧛‍♀️🦇 RIP IN PIECES LADY DEMETGHASHKAR 🦇🧛‍♀️🦇";
+    const chatMsg = "<@" + IDs.LORD + "> 🦇🧛‍♀️🦇 RIP IN PIECES LADY DEMETGHASHKAR 🦇🧛‍♀️🦇";
     // const chatMsg = "<@" + IDs.LORD + "> Lady Dimitrescu in the village is waiting for you (approximately 290 centimeters tall in her heels and fabulous hat)";
     sendToChannel(IDs.channelMain, chatMsg);
   }
   // console.log("-----------------------------------------------------------------------");
-}
-);
+});
 
-
-client.on('voiceStateUpdate', (before, after) => {
+client.on("voiceStateUpdate", (before, after) => {
   // console.log("-----------------------------------------------------------------------");
   // console.log("before: %s", before)
   // console.log("after: %s", after)
@@ -457,63 +438,56 @@ client.on('voiceStateUpdate', (before, after) => {
   // after.guild.channels.cache.some(channel => {
   //   if (channel.type === 'voice' && channel.members.has(client.user.id)) {
   //     const botVoiceChannel = after.channel.name
-  //     console.log("botVoiceChannel: %s", botVoiceChannel) 
+  //     console.log("botVoiceChannel: %s", botVoiceChannel)
   //   }
   // });
 
   // console.log("botVoiceChannel: %s", botVoiceChannel)
 
-  if (after.id == client.user.id) return//if bot return
-  let chatMsg = ' ';
+  if (after.id == client.user.id) return; //if bot return
+  let chatMsg = " ";
 
-  const person = after.member.user.username + "#" + after.member.user.discriminator
+  const person = after.member.user.username + "#" + after.member.user.discriminator;
   let personTTS;
-  if (after.member.displayName == 'AG') {
-    personTTS = 'A G';
-  } else if (after.member.displayName == 'underageuser') {
-    personTTS = 'underage user';
-  }
-  else if (after.member.displayName == 'Hesham') {
-    personTTS = 'Hishaam';
-  }
-  else if (after.member.displayName == 'Exorcismus') {
-    personTTS = 'faadey';
-  }
-  else if (after.member.displayName == 'Mido') {
-    personTTS = 'Meedo';
-  }
-  else if (after.member.displayName == 'Bassel Desoky') {
-    personTTS = 'Supersonic';
-  }
-  else if (after.member.displayName == 'prollygeek') {
-    personTTS = 'TDK';
-  }
-  else if (person == 'Ibrahim Taher#7708') {
-    personTTS = 'Heema';
-  }
-  else if (person == 'OMDA#5863') {
-    personTTS = 'om daa';
+  if (after.member.displayName == "AG") {
+    personTTS = "A G";
+  } else if (after.member.displayName == "underageuser") {
+    personTTS = "underage user";
+  } else if (after.member.displayName == "Hesham") {
+    personTTS = "Hishaam";
+  } else if (after.member.displayName == "Exorcismus") {
+    personTTS = "faadey";
+  } else if (after.member.displayName == "Mido") {
+    personTTS = "Meedo";
+  } else if (after.member.displayName == "Bassel Desoky") {
+    personTTS = "Supersonic";
+  } else if (after.member.displayName == "prollygeek") {
+    personTTS = "TDK";
+  } else if (person == "Ibrahim Taher#7708") {
+    personTTS = "Heema";
+  } else if (person == "OMDA#5863") {
+    personTTS = "om daa";
+  } else {
+    personTTS = after.member.displayName;
   }
 
-  else {
-    personTTS = after.member.displayName
-  }
-
-  if (before.channelId && !after.channelId || ((before.channelId && after.channelId) && before.channelId != after.channelId)) { //no after = left
-    chatMsg = now() + ' **' + person + '** left **' + client.channels.cache.get(before.channelId).name + '**';
+  if ((before.channelId && !after.channelId) || (before.channelId && after.channelId && before.channelId != after.channelId)) {
+    //no after = left
+    chatMsg = now() + " **" + person + "** left **" + client.channels.cache.get(before.channelId).name + "**";
 
     if (before.channelId == IDs.voice3) {
-      const stream = discordTTS.getVoiceStream(personTTS + ' left');
+      const stream = discordTTS.getVoiceStream(personTTS + " left");
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       player.play(resource);
     }
   }
 
-  if ((!before.channelId && after.channelId) || ((before.channelId && after.channelId) && before.channelId != after.channelId)) {//no before or there is before and after that are not the same
-    chatMsg = now() + ' **' + person + '** joined **' + client.channels.cache.get(after.channelId).name + '**'; //= joined
+  if ((!before.channelId && after.channelId) || (before.channelId && after.channelId && before.channelId != after.channelId)) {
+    //no before or there is before and after that are not the same
+    chatMsg = now() + " **" + person + "** joined **" + client.channels.cache.get(after.channelId).name + "**"; //= joined
 
     if (after.channelId == IDs.voice3) {
-      const stream = discordTTS.getVoiceStream(personTTS + ' joined');
+      const stream = discordTTS.getVoiceStream(personTTS + " joined");
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       player.play(resource);
 
@@ -523,12 +497,14 @@ client.on('voiceStateUpdate', (before, after) => {
 
       //   player.play(resource2);
       // }
-    if (person == "prollygeek#3915") { //Mido#3565 Moonscarlet#4105
+      if (person == "prollygeek#3915") {
+        //Mido#3565 Moonscarlet#4105
         // const memeFile = memesFolder + "tdk.mp3";
         const memeFile = otherFolder + "TDKJoin.mp3";
         let resource2 = createAudioResource(memeFile);
         player.play(resource2);
-      } else if (person == "Ibrahim Taher#7708") { //Mido#3565 Moonscarlet#4105
+      } else if (person == "Ibrahim Taher#7708") {
+        //Mido#3565 Moonscarlet#4105
         const memeFile = memesFolder + "cough.m4a";
         let resource2 = createAudioResource(memeFile);
         player.play(resource2);
@@ -536,27 +512,23 @@ client.on('voiceStateUpdate', (before, after) => {
     }
   }
 
-
-
-  if (chatMsg != ' ') {
+  if (chatMsg != " ") {
     console.log(chatMsg);
-    sendToChannel(IDs.channelVoice, chatMsg)
+    sendToChannel(IDs.channelVoice, chatMsg);
   }
-})
+});
 
+client.on("guildMemberAdd", (member) => {
+  const chatMsg = member.user.username + "#" + member.user.discriminator + " (" + member.displayName + ") has joined the server.";
+  console.log(chatMsg);
+  sendToChannel(IDs.channelMain, chatMsg);
+});
 
-client.on('guildMemberAdd', member => {
-  const chatMsg = member.user.username + "#" + member.user.discriminator + ' (' + member.displayName + ') has joined the server.'
-  console.log(chatMsg)
-  sendToChannel(IDs.channelMain, chatMsg)
-})
-
-
-client.on('guildMemberRemove', member => {
-  const chatMsg = member.user.username + "#" + member.user.discriminator + ' (' + member.displayName + ') has left the server.'
-  console.log(chatMsg)
-  sendToChannel(IDs.channelMain, chatMsg)
-})
+client.on("guildMemberRemove", (member) => {
+  const chatMsg = member.user.username + "#" + member.user.discriminator + " (" + member.displayName + ") has left the server.";
+  console.log(chatMsg);
+  sendToChannel(IDs.channelMain, chatMsg);
+});
 
 function sendToChannel(id, msg) {
   client.channels.fetch(id).then((channel) => {
@@ -586,7 +558,7 @@ function now() {
 }
 function sleep(ms) {
   const waitTill = new Date(new Date().getTime() + ms);
-  while (waitTill > new Date()) { }
+  while (waitTill > new Date()) {}
 }
 function getCurrentWindow() {
   const myPromise = new Promise();
@@ -603,9 +575,4 @@ function getCurrentWindow() {
   return myPromise;
 }
 
-
-
-
-
-
-client.login(bottoken);
+client.login(process.env.BOT_TOKEN);
