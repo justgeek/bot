@@ -425,7 +425,7 @@ client.on("presenceUpdate", (before, after) => {
     // sendToChannel(IDs.channelStatus, '<@' + IDs.Moonscarlet + '> RIP in pieces Lady Demashkash 🦇');
   } else if (
     userID == IDs.LORD &&
-    (currentHour >= 17 || currentHour <= 2) &&
+    (currentHour >= 15 || currentHour <= 2) &&
     (statusBefore == "offline" || statusBefore == " ") &&
     (statusAfter == "online" || statusAfter == "idle")
   ) {
