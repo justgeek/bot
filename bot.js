@@ -201,6 +201,15 @@ client.on("messageCreate", (msg) => {
     msg.react(msg.guild.emojis.cache.get("1018204796689322014")); //BRUH
   }
 
+    if (msg.author.username + "#" + msg.author.discriminator == "Moonscarlet#4105" && !message.startsWith("!")) {
+    // if (msg.author.username + '#' + msg.author.discriminator == 'Moonscarlet#4105') {
+    // msg.react(msg.guild.emojis.cache.get('515873f6898e0b26daf51921c65a43f7'))//BRUH
+    // msg.react(':regional_indicator_a:')
+    msg.react(msg.guild.emojis.cache.find(emoji => emoji.name === "man_shrugging"));
+    msg.react(msg.guild.emojis.cache.find(emoji => emoji.name === "woman_shrugging"));
+    msg.react(msg.guild.emojis.cache.find(emoji => emoji.name === "person_shrugging"));
+  }
+  
   if (message === "!commands") {
     // msg.delete();
     const commands = [
