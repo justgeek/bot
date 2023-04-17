@@ -375,7 +375,7 @@ client.on("messageCreate", (msg) => {
   } else if (message.startsWith("!")) {
     // lets create a queue here
     message = message.replace("!", ""); //.replaceAll(" ", "");
-    const stream = discordTTS.getVoiceStream(message);
+    const stream = discordTTS.getVoiceStream(message,"ar-eg");
     const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
     playVoice(resource);
     const logMessage = msg.member.displayName + " " + message; //"Playing " + message + ' by ' + msg.member.displayName
