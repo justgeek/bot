@@ -503,7 +503,7 @@ client.on("voiceStateUpdate", (before, after) => {
     chatMsg = now() + " **" + person + "** joined **" + client.channels.cache.get(after.channelId).name + "**"; //= joined
 
     if (after.channelId == IDs.voice3) {
-      const stream = discordTTS.getVoiceStream(personTTS + " joined");
+      const stream = discordTTS.getVoiceStream(personTTS + " joined",{ lang: 'ja' });
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       playVoice(resource);
 
