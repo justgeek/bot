@@ -492,7 +492,7 @@ client.on("voiceStateUpdate", (before, after) => {
     chatMsg = now() + " **" + person + "** left **" + client.channels.cache.get(before.channelId).name + "**";
 
     if (before.channelId == IDs.voice3) {
-      const stream = discordTTS.getVoiceStream(personTTS + " left");
+      const stream = discordTTS.getVoiceStream(personTTS + " left",{lang: "ja"});
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       playVoice(resource);
     }
