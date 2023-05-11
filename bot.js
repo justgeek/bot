@@ -375,7 +375,7 @@ client.on("messageCreate", (msg) => {
   } else if (message.startsWith("!")) {
     // lets create a queue here
     message = message.replace("!", ""); //.replaceAll(" ", "");
-    const stream = discordTTS.getVoiceStream(message,{ lang: 'ar' });
+    const stream = discordTTS.getVoiceStream(message,{ lang: 'ja' });
     const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
     playVoice(resource);
     const logMessage = msg.member.displayName + " " + message; //"Playing " + message + ' by ' + msg.member.displayName
@@ -503,7 +503,7 @@ client.on("voiceStateUpdate", (before, after) => {
     chatMsg = now() + " **" + person + "** joined **" + client.channels.cache.get(after.channelId).name + "**"; //= joined
 
     if (after.channelId == IDs.voice3) {
-      const stream = discordTTS.getVoiceStream(personTTS + " joined",{ lang: 'ar' });
+      const stream = discordTTS.getVoiceStream(personTTS + " joined",{ lang: 'ja' });
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       playVoice(resource);
 
