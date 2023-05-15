@@ -1,5 +1,5 @@
 const Discord = require("discord.js");
-require('discord-reply');
+//require('discord-reply');
 
 const _lodash = require("lodash");
 const ffmpeg = require("ffmpeg");
@@ -241,7 +241,7 @@ client.on("messageCreate", (msg) => {
       "**";
 
     msg.reply(memesKeys);
-    msg.lineReply(memesKeys);
+    //msg.lineReply(memesKeys);
   } else if (message == "!playlist" || message == "!youtube") {
     // msg.delete();
     msg.channel.send("https://www.youtube.com/playlist?list=PLhKVK0lPQ73sDSSxq09yx9QVgyr3MBR6d");
