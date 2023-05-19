@@ -378,7 +378,7 @@ client.on("messageCreate", (msg) => {
   } else if (message.startsWith("!")) {
     // lets create a queue here
     message = message.replace("!", ""); //.replaceAll(" ", "");
-    const stream = discordTTS.getVoiceStream(message,{ lang: "de" });
+    const stream = discordTTS.getVoiceStream(message,{ lang: "ru" });
     const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
     playVoice(resource);
     const logMessage = msg.member.displayName + " " + message; //"Playing " + message + ' by ' + msg.member.displayName
@@ -495,7 +495,7 @@ client.on("voiceStateUpdate", (before, after) => {
     chatMsg = now() + " **" + person + "** left **" + client.channels.cache.get(before.channelId).name + "**";
 
     if (before.channelId == IDs.voice3) {
-      const stream = discordTTS.getVoiceStream(personTTS + " left",{lang: "de"});
+      const stream = discordTTS.getVoiceStream(personTTS + " left",{lang: "ru"});
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       playVoice(resource);
     }
@@ -506,7 +506,7 @@ client.on("voiceStateUpdate", (before, after) => {
     chatMsg = now() + " **" + person + "** joined **" + client.channels.cache.get(after.channelId).name + "**"; //= joined
 
     if (after.channelId == IDs.voice3) {
-      const stream = discordTTS.getVoiceStream(personTTS + " joined",{ lang: "de" });
+      const stream = discordTTS.getVoiceStream(personTTS + " joined",{ lang: "ru" });
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       playVoice(resource);
 
