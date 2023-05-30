@@ -1,3 +1,4 @@
+require('dotenv').config();
 const Discord = require("discord.js");
 //require('discord-reply');
 
@@ -53,6 +54,7 @@ const IDs = {
   Mido: "329004546900885515",
   TDK: "223957971976192001",
 };
+let voiceCurrent= IDs.voice3;
 
 const otherFolder = "./other/";
 const memesFolder = "./memes/";
@@ -66,7 +68,6 @@ memeFiles.forEach((m) => {
 memeFilesSorted.sort();
 
 let memes = {};
-// let memesList = []
 memeFilesSorted.forEach((m) => {
   memes[
     "!" +
@@ -75,78 +76,7 @@ memeFilesSorted.forEach((m) => {
         .replace(/.[^.]*$/g, "")
         .replace(/\d.+[|]/g, "")
   ] = m.replace(/\d.+[|]/g, "");
-  // memesList.push(m.toLowerCase().replace(/.[^.]*$/g, '').replace(/\d.+[|]/g, ''));
 });
-
-// console.log("memesList: %s", memesList)
-
-// memes = {
-//   "!bruh": "Bruh",
-//   "!nooo": "nooo",
-//   "!sees": "sees",
-//   "!maaa": "Sheep1",
-//   "!cry": "Baby Crying",
-//   "!letmein": "LET ME IN",
-//   "!hamood": "hamood",
-//   "!wait": "no no no no wait wait wait",
-//   "!lazaza": "lazaza2",
-//   "!omgwow": "omgwow",
-//   "!ok": "ok",
-//   "!nice": "nice",
-//   "!kekw": "kekw",
-//   "!mad": "mad",
-//   "!ablaa": "ablaa",
-//   "!antesh": "anteshwagry",
-//   "!bom": "bom",
-//   "!acatch": "acatch",
-//   "!a3asal": "a3asal",
-//   "!pyre": "pyre",
-//   "!hello": "hello",
-//   "!mido": "mido",
-//   "!nasarny": "nasarny",
-//   "!qowa": "qowa",
-//   "!brb": "brb",
-//   "!adab": "adab",
-//   "!ashaf": "ashaf",
-//   "!shan2ollak": "SHAN2OLLAK",
-//   "!borra7a": "borra7a",
-//   "!cringe": "cringe",
-//   "!sheraton": "sheraton",
-//   "!5odlak": "5odlak",
-//   "!mayenfa3sh": "mayenfa3sh",
-//   "!ma3lesh": "ma3lesh",
-//   "!unacceptable": "unacceptable",
-//   "!o2mor": "o2mor",
-//   "!sennakkam": "sennakkam",
-//   "!7omar": "7omar",
-//   "!welcome": "welcome",
-//   "!malaksh3aza": "malaksh3aza",
-//   "!bravo": "bravo",
-//   "!cheer": "cheer",
-//   "!hru": "hru",
-//   "!t3ebt": "t3ebt",
-//   "!elwad": "elwad",
-//   "!aheh": "aheh",
-//   "!kim": "kim",
-//   "!tayyeb": "tayyeb",
-//   "!5od": "5od",
-//   "!bash": "bash",
-//   "!ah": "ah",
-//   "!howa": "howa",
-//   "!seya7": "seya7",
-//   "!relax": "relax",
-//   "!ezay": "ezay",
-//   "!ezay2": "ezay2",
-//   "!salamtak": "salamtak",
-//   "!kazeefa": "kazeefa",
-//   "!yes": "yes",
-//   "!maaa2": "maaa2",
-//   "!3ar": "3ar",
-//   "!kambyotar": "kambyotar",
-//   "!uhuh": "uhuh",
-//   "!dang": "dang",
-//   "!za2loot": "za2loot",
-// };
 
 const gamesList = [
   "Turbo",
@@ -164,11 +94,10 @@ const gamesList = [
 ];
 
 let resource, player, connection, connectionSubscription;
-var currentWindow = "habal";
 
-const joinBanhaVoiceChannel = () => {
+const joinBanhaVoiceChannel = (channelToJoin) => {
   return (connection = joinVoiceChannel({
-    channelId: IDs.voice3,
+    channelId: channelToJoin,
     guildId: IDs.guild,
     adapterCreator: client.guilds.cache.get(IDs.guild).voiceAdapterCreator,
   }));
@@ -180,13 +109,9 @@ client.on("error", (e) => {
 
 client.on("ready", () => {
   console.log(`Logged in as ${client.user.tag}!`);
-  // console.log("client.user:", client.user)
-
-  // client.user.setPresence('invisible');
-
   sendToChannel(IDs.channelV, 'Sup!\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t("**!commands**" for stuff)');
 
-  joinBanhaVoiceChannel();
+  joinBanhaVoiceChannel(IDs.voice3);
   player = createAudioPlayer();
   connectionSubscription = connection.subscribe(player);
 });
@@ -375,7 +300,20 @@ client.on("messageCreate", (msg) => {
       msg.reply("> You're not in a voice channel!");
     }
     console.log("-----------------------------------------------------------------------");
-  } else if (message.startsWith("!")) {
+  } else if (message.startsWith("!joinme")) {
+    try{voiceCurrent = msg.member.voice.channel.id; // Get the voice channel of the user
+    if (voiceCurrent){
+      console.log("voiceCurrent: %s", voiceCurrent)
+      
+      joinBanhaVoiceChannel(voiceCurrent);
+      player = createAudioPlayer();
+      connectionSubscription = connection.subscribe(player);
+      msg.delete();
+      }
+  } catch{
+  }
+
+  }else if (message.startsWith("!")) {
     // lets create a queue here
     message = message.replace("!", ""); //.replaceAll(" ", "");
     const stream = discordTTS.getVoiceStream(message,{ lang: "ja" });
@@ -494,7 +432,7 @@ client.on("voiceStateUpdate", (before, after) => {
     //no after = left
     chatMsg = now() + " **" + person + "** left **" + client.channels.cache.get(before.channelId).name + "**";
 
-    if (before.channelId == IDs.voice3) {
+    if (before.channelId == voiceCurrent) {
       const stream = discordTTS.getVoiceStream(personTTS + " left",{lang: "ja"});
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       playVoice(resource);
@@ -505,7 +443,7 @@ client.on("voiceStateUpdate", (before, after) => {
     //no before or there is before and after that are not the same
     chatMsg = now() + " **" + person + "** joined **" + client.channels.cache.get(after.channelId).name + "**"; //= joined
 
-    if (after.channelId == IDs.voice3) {
+    if (after.channelId == voiceCurrent) {
       const stream = discordTTS.getVoiceStream(personTTS + " joined",{ lang: "ja" });
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       playVoice(resource);
@@ -579,20 +517,7 @@ function sleep(ms) {
   const waitTill = new Date(new Date().getTime() + ms);
   while (waitTill > new Date()) {}
 }
-function getCurrentWindow() {
-  const myPromise = new Promise();
-  monitor.getActiveWindow((window) => {
-    try {
-      // console.log("App: " + window.app);
-      console.log("Title: " + window.title);
-      currentWindow = window.title;
-      myPromise.resolve(window.title);
-    } catch (err) {
-      console.log(err);
-    }
-  });
-  return myPromise;
-}
+
 client.login(process.env.BOT_TOKEN);
 
 const playVoice = (resource) => {
