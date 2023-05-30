@@ -148,6 +148,7 @@ client.on("messageCreate", (msg) => {
       '**!randomall <voice channel members row numbers to exclude (comma separated)>** (to exclude 3rd and 5th "**!randomall 3,5**").',
       "**!<anything>**: Text-To-Speech.",
       "**!memes**: list memes.",
+      "**!joinme**: Join your current voice channel for TTS and stuff.",
     ];
 
     msg.channel.send("> **COMMANDS:**\n> " + commands.join("\n> "));
@@ -388,19 +389,6 @@ client.on("presenceUpdate", (before, after) => {
 });
 
 client.on("voiceStateUpdate", (before, after) => {
-  // console.log("-----------------------------------------------------------------------");
-  // console.log("before: %s", before)
-  // console.log("after: %s", after)
-
-  // after.guild.channels.cache.some(channel => {
-  //   if (channel.type === 'voice' && channel.members.has(client.user.id)) {
-  //     const botVoiceChannel = after.channel.name
-  //     console.log("botVoiceChannel: %s", botVoiceChannel)
-  //   }
-  // });
-
-  // console.log("botVoiceChannel: %s", botVoiceChannel)
-
   if (after.id == client.user.id) return; //if bot return
   let chatMsg = " ";
 
