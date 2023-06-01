@@ -125,16 +125,16 @@ client.on("messageCreate", (msg) => {
     // if (msg.author.username + '#' + msg.author.discriminator == 'Moonscarlet#4105') {
     // msg.react(msg.guild.emojis.cache.get('515873f6898e0b26daf51921c65a43f7'))//BRUH
     // msg.react(':regional_indicator_a:')
-    // msg.react(msg.guild.emojis.cache.get("1018204796689322014")); //BRUH
+    msg.react(msg.guild.emojis.cache.get("1018204796689322014")); //BRUH
   }
 
-    // if (msg.author.username + "#" + msg.author.discriminator == "Ibrahim Taher#7708" && !message.startsWith("!")) {
+    if (msg.author.username + "#" + msg.author.discriminator == "Ibrahim Taher#7708" && !message.startsWith("!")) {
     // if (msg.author.username + '#' + msg.author.discriminator == 'Moonscarlet#4105') {
     // msg.react(msg.guild.emojis.cache.get('515873f6898e0b26daf51921c65a43f7'))//BRUH
     // msg.react(':regional_indicator_a:')
     // msg.react('🤷‍♂️');
     // msg.react('🤷‍♀️');
-  // }
+  }
   
   if (message === "!commands") {
     // msg.delete();
@@ -369,18 +369,24 @@ client.on("presenceUpdate", (before, after) => {
     sendToChannel(IDs.channelStatus, msg);
   }
 
-//   if (userID == IDs.Moonscarlet && (statusBefore == "offline" || statusBefore == "") && statusAfter == "online") {
-//   } else if (
-//     userID == IDs.LORD &&
-//     (currentHour >= 15 || currentHour <= 2) &&
-//     (statusBefore == "offline" || statusBefore == " ") &&
-//     (statusAfter == "online" || statusAfter == "idle")
-//   ) {
-//     const chatMsg = "<@" + IDs.LORD + "> 🦇🧛‍♀️🦇 RIP IN PIECES LADY DEMETGHASHKAR 🦇🧛‍♀️🦇";
-//     sendToChannel(IDs.channelMain, chatMsg);
-//   }
-//   console.log("-----------------------------------------------------------------------");
-// });
+  if (userID == IDs.Moonscarlet && (statusBefore == "offline" || statusBefore == "") && statusAfter == "online") {
+    // sendToChannel(IDs.channelStatus, 'E2FESH <@' + IDs.Moonscarlet + '> CHC ¿¿¿? xdDDD¡¡¡');
+    // sendToChannel(IDs.channelStatus, 'Welcome back <@' + IDs.Moonscarlet + '>');
+    // sendToChannel(IDs.channelStatus, '<@' + IDs.Moonscarlet + '> RIP in pieces Lady Demashkash 🦇');
+  } else if (
+    userID == IDs.LORD &&
+    (currentHour >= 15 || currentHour <= 2) &&
+    (statusBefore == "offline" || statusBefore == " ") &&
+    (statusAfter == "online" || statusAfter == "idle")
+  ) {
+    // sendToChannel(IDs.channelMain, 'E2FESH <@' + IDs.LORD + '> CHC ¿¿¿? xdDDD¡!¡!¡');
+    // const chatMsg ="<@" + IDs.LORD + "> \n1-7etta fel tricks?\nOR\n2-7etta fel trade?";
+    // const chatMsg = "<@" + IDs.LORD + "> 🦇🧛‍♀️🦇 RIP IN PIECES LADY DEMETGHASHKAR 🦇🧛‍♀️🦇";
+    // const chatMsg = "<@" + IDs.LORD + "> Lady Dimitrescu in the village is waiting for you (approximately 290 centimeters tall in her heels and fabulous hat)";
+    sendToChannel(IDs.channelMain, chatMsg);
+  }
+  // console.log("-----------------------------------------------------------------------");
+});
 
 client.on("voiceStateUpdate", (before, after) => {
   if (after.id == client.user.id) return; //if bot return
