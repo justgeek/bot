@@ -125,7 +125,7 @@ client.on("messageCreate", (msg) => {
     // if (msg.author.username + '#' + msg.author.discriminator == 'Moonscarlet#4105') {
     // msg.react(msg.guild.emojis.cache.get('515873f6898e0b26daf51921c65a43f7'))//BRUH
     // msg.react(':regional_indicator_a:')
-    msg.react(msg.guild.emojis.cache.get("1018204796689322014")); //BRUH
+    // msg.react(msg.guild.emojis.cache.get("1018204796689322014")); //BRUH
   }
 
     if (msg.author.username + "#" + msg.author.discriminator == "Ibrahim Taher#7708" && !message.startsWith("!")) {
