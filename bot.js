@@ -54,7 +54,7 @@ const IDs = {
   Mido: "329004546900885515",
   TDK: "223957971976192001",
 };
-let voiceCurrent= IDs.voice3;
+let voiceCurrent = IDs.voice3;
 
 const otherFolder = "./other/";
 const memesFolder = "./memes/";
@@ -71,26 +71,29 @@ let memes = {};
 memeFilesSorted.forEach((m) => {
   memes[
     "!" +
-      m
-        .toLowerCase()
-        .replace(/.[^.]*$/g, "")
-        .replace(/\d.+[|]/g, "")
+    m
+      .toLowerCase()
+      .replace(/.[^.]*$/g, "")
+      .replace(/\d.+[|]/g, "")
   ] = m.replace(/\d.+[|]/g, "");
 });
 
 const gamesList = [
   "Turbo",
   "Custom Hero Clash (CHC)",
-  "Overwatch",
-  "Overthrow 3",
+  // "Overwatch",
+  // "Overthrow 3",
   "Knight Squad 2",
   "Left 4 Dead 2",
   "Legion TD",
   "Ability Draft",
-  "Stumble Guys",
+  // "Stumble Guys",
   "Cyberpunk 2077",
   "Ability Arena",
   "World of Warcraft",
+  "Dead By Daylight",
+  "Midnight Ghost Hunt",
+  "Dota Arcade",
 ];
 
 let resource, player, connection, connectionSubscription;
@@ -120,7 +123,15 @@ client.on("messageCreate", (msg) => {
   let message = msg.content.toLowerCase();
   if (msg.author.username + "#" + msg.author.discriminator == "Malevolent#0025") return;
 
+  const displayName = getAuthorDisplayName(msg);
+  const idtest = '329004546900885515'
+  console.log(msg.author.username);
+
+
+
   // console.log(msg.guild.emojis.cache)//show all emojis
+
+
   if (msg.author.username + "#" + msg.author.discriminator == "exorcismus#7611" && !message.startsWith("!")) {
     // if (msg.author.username + '#' + msg.author.discriminator == 'Moonscarlet#4105') {
     // msg.react(msg.guild.emojis.cache.get('515873f6898e0b26daf51921c65a43f7'))//BRUH
@@ -128,14 +139,14 @@ client.on("messageCreate", (msg) => {
     // msg.react(msg.guild.emojis.cache.get("1018204796689322014")); //BRUH
   }
 
-    if (msg.author.username + "#" + msg.author.discriminator == "Ibrahim Taher#7708" && !message.startsWith("!")) {
+  if (msg.author.username + "#" + msg.author.discriminator == "Ibrahim Taher#7708" && !message.startsWith("!")) {
     // if (msg.author.username + '#' + msg.author.discriminator == 'Moonscarlet#4105') {
     // msg.react(msg.guild.emojis.cache.get('515873f6898e0b26daf51921c65a43f7'))//BRUH
     // msg.react(':regional_indicator_a:')
     // msg.react('🤷‍♂️');
     // msg.react('🤷‍♀️');
   }
-  
+
   if (message === "!commands") {
     // msg.delete();
     const commands = [
@@ -302,22 +313,23 @@ client.on("messageCreate", (msg) => {
     }
     console.log("-----------------------------------------------------------------------");
   } else if (message.startsWith("!joinme")) {
-    try{voiceCurrent = msg.member.voice.channel.id; // Get the voice channel of the user
-    if (voiceCurrent){
-      console.log("voiceCurrent: %s", voiceCurrent)
-      
-      joinBanhaVoiceChannel(voiceCurrent);
-      player = createAudioPlayer();
-      connectionSubscription = connection.subscribe(player);
-      msg.delete();
-      }
-  } catch{
-  }
+    try {
+      voiceCurrent = msg.member.voice.channel.id; // Get the voice channel of the user
+      if (voiceCurrent) {
+        console.log("voiceCurrent: %s", voiceCurrent)
 
-  }else if (message.startsWith("!")) {
+        joinBanhaVoiceChannel(voiceCurrent);
+        player = createAudioPlayer();
+        connectionSubscription = connection.subscribe(player);
+        msg.delete();
+      }
+    } catch {
+    }
+
+  } else if (message.startsWith("!")) {
     // lets create a queue here
     message = message.replace("!", ""); //.replaceAll(" ", "");
-    const stream = discordTTS.getVoiceStream(message,{ lang: "ja" });
+    const stream = discordTTS.getVoiceStream(message, { lang: "ja" });
     const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
     playVoice(resource);
     const logMessage = msg.member.displayName + " " + message; //"Playing " + message + ' by ' + msg.member.displayName
@@ -339,13 +351,15 @@ client.on("messageDelete", (msg) => {
   sendToChannel(IDs.channelDel, deleted);
 });
 
+
 client.on("messageUpdate", (oldMessage, newMessage) => {
   if (oldMessage == oldMessage) return;
   const edited = `${now()}\t **${newMessage.author.username}:**\n${oldMessage.content}\n>\n${newMessage.content}`;
   console.log("edited:", edited);
-  sendToChannel(IDs.channelEdit, edited);
+  sendToChannel(IDs.channelDel, edited);
   console.log("-----------------------------------------------------------------------");
 });
+
 
 client.on("presenceUpdate", (before, after) => {
   // console.log("before: %s", before)
@@ -355,12 +369,11 @@ client.on("presenceUpdate", (before, after) => {
 
   const userID = after.userId;
   const user = client.users.cache.get(userID);
-  const userTag = user.username + "#" + user.discriminator;
 
   const statusBefore = !before ? " " : before.status;
   const statusAfter = !after ? " " : after.status;
 
-  const msg = now() + "\t**" + userTag + ":\t**" + statusBefore + "\t>\t" + statusAfter;
+  const msg = now() + "\t**" + user.username + ":\t**" + statusBefore + "\t>\t" + statusAfter;
 
   const currentHour = new Date().getHours();
 
@@ -388,40 +401,32 @@ client.on("presenceUpdate", (before, after) => {
   // console.log("-----------------------------------------------------------------------");
 });
 
+
 client.on("voiceStateUpdate", (before, after) => {
   if (after.id == client.user.id) return; //if bot return
   let chatMsg = " ";
 
-  const person = after.member.user.username + "#" + after.member.user.discriminator;
-  let personTTS;
-  if (after.member.displayName == "AG") {
-    personTTS = "A G";
-  } else if (after.member.displayName == "underageuser") {
-    personTTS = "underage user";
-  } else if (after.member.displayName == "Hesham") {
-    personTTS = "Hishaam";
-  } else if (after.member.displayName == "Exorcismus") {
-    personTTS = "faadey";
-  } else if (after.member.displayName == "Mido") {
-    personTTS = "Meedo";
-  } else if (after.member.displayName == "Bassel Desoky") {
-    personTTS = "Supersonic";
-  } else if (after.member.displayName == "prollygeek") {
-    personTTS = "TDK";
-  } else if (person == "Ibrahim Taher#7708") {
-    personTTS = "Heema";
-  } else if (person == "OMDA#5863") {
-    personTTS = "om daa";
-  } else {
-    personTTS = after.member.displayName;
+  const person = after.member.user.username;
+  const PeopleTTS = {
+    "ahmadgalal": "A G",
+    "underageuser": "underage user",
+    "hesham": "Hishaam",
+    "fady_": "faadey",
+    "mohamedhammad87": "Meedo",
+    "basseldesoky": "Supersonic",
+    "prollygeek": "TDK",
+    "ibrahimsp": "Heema",
+    "OMDA": "om daa",
+    "Tofa": "EL, K",
   }
+  let personTTS = PeopleTTS[person] ? PeopleTTS[person] : person;
 
   if ((before.channelId && !after.channelId) || (before.channelId && after.channelId && before.channelId != after.channelId)) {
     //no after = left
     chatMsg = now() + " **" + person + "** left **" + client.channels.cache.get(before.channelId).name + "**";
 
     if (before.channelId == voiceCurrent) {
-      const stream = discordTTS.getVoiceStream(personTTS + " left",{lang: "ja"});
+      const stream = discordTTS.getVoiceStream(personTTS + " left", { lang: "ja" });
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       playVoice(resource);
     }
@@ -432,28 +437,21 @@ client.on("voiceStateUpdate", (before, after) => {
     chatMsg = now() + " **" + person + "** joined **" + client.channels.cache.get(after.channelId).name + "**"; //= joined
 
     if (after.channelId == voiceCurrent) {
-      const stream = discordTTS.getVoiceStream(personTTS + " joined",{ lang: "ja" });
+      const stream = discordTTS.getVoiceStream(personTTS + " joined", { lang: "ja" });
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       playVoice(resource);
 
-      // if (person == "Mido#3565") { //Mido#3565 Moonscarlet#4105
-      //   const memeFile = memesFolder + "maaa.m4a";
-      //   let resource2 = createAudioResource(memeFile);
 
-      //   playVoice(resource2);
-      // }
-      if (person == "prollygeek#3915") {
-        //Mido#3565 Moonscarlet#4105
-        // const memeFile = memesFolder + "tdk.mp3";
+      if (person == "prollygeek") {
         const memeFile = otherFolder + "TDKJoin.mp3";
         let resource2 = createAudioResource(memeFile);
         playVoice(resource2);
-      } else if (person == "Ibrahim Taher#7708") {
-        //Mido#3565 Moonscarlet#4105
-        const memeFile = memesFolder + "cough.m4a";
-        let resource2 = createAudioResource(memeFile);
-        playVoice(resource2);
       }
+      //  else if (person == "ibrahimsp") {
+      //   const memeFile = memesFolder + "cough.m4a";
+      //   let resource2 = createAudioResource(memeFile);
+      //   playVoice(resource2);
+      // }
     }
   }
 
@@ -464,13 +462,15 @@ client.on("voiceStateUpdate", (before, after) => {
 });
 
 client.on("guildMemberAdd", (member) => {
-  const chatMsg = member.user.username + "#" + member.user.discriminator + " (" + member.displayName + ") has joined the server.";
+  // const chatMsg = member.user.username + "#" + member.user.discriminator + " (" + member.displayName + ") has joined the server.";
+  const chatMsg = member.user.username + " has joined the server.";
   console.log(chatMsg);
   sendToChannel(IDs.channelMain, chatMsg);
 });
 
 client.on("guildMemberRemove", (member) => {
-  const chatMsg = member.user.username + "#" + member.user.discriminator + " (" + member.displayName + ") has left the server.";
+  // const chatMsg = member.user.username + "#" + member.user.discriminator + " (" + member.displayName + ") has left the server.";
+  const chatMsg = member.user.username + " has left the server.";
   console.log(chatMsg);
   sendToChannel(IDs.channelMain, chatMsg);
 });
@@ -501,9 +501,19 @@ function now() {
     today.getSeconds();
   return now;
 }
+
+const getAuthorDisplayName = (msg) => {
+  if (msg.guild) {
+    const member = msg.guild.members.cache.get(msg.author.id);
+    return member ? (member.nickname || msg.author.username) : msg.author.username;
+  } else {
+    return msg.author.username;
+  }
+}
+
 function sleep(ms) {
   const waitTill = new Date(new Date().getTime() + ms);
-  while (waitTill > new Date()) {}
+  while (waitTill > new Date()) { }
 }
 
 client.login(process.env.BOT_TOKEN);
