@@ -417,7 +417,7 @@ client.on("voiceStateUpdate", (before, after) => {
     "prollygeek": "TDK",
     "ibrahimsp": "Heema",
     "OMDA": "om daa",
-    "Tofa": "EL, K",
+    // "Tofa": "EL, K",
   }
   let personTTS = PeopleTTS[person] ? PeopleTTS[person] : person;
 
