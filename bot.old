@@ -1,6 +1,6 @@
 require('dotenv').config();
 const Discord = require("discord.js");
-const tts = require('node-tts');
+//require('discord-reply');
 
 const _lodash = require("lodash");
 const ffmpeg = require("ffmpeg");
@@ -15,6 +15,7 @@ const {
   VoiceConnectionStatus,
 } = require("@discordjs/voice");
 const fs = require("fs");
+const discordTTS = require("discord-tts");
 const screenshot = require("screenshot-desktop");
 const sharp = require("sharp");
 const tesseract = require("node-tesseract-ocr");
@@ -326,22 +327,15 @@ client.on("messageCreate", (msg) => {
     }
 
   } else if (message.startsWith("!")) {
-    message = message.replace("!", "");
-    tts.getSpeakers((speakers) => {
-      console.log('Available speakers:', speakers);
-      const ttsStream = tts.speak({
-        text: message,
-        voice: 'en-us',
-        engine: 'espeak'
-      });
-
-      const resource = createAudioResource(ttsStream, { inputType: StreamType.Arbitrary, inlineVolume: true });
-      playVoice(resource);
-      const logMessage = msg.member.displayName + " " + message;
-      console.log(logMessage);
-      sendToChannel(IDs.channelCommands, logMessage);
-      msg.delete();
-    });
+    // lets create a queue here
+    message = message.replace("!", ""); //.replaceAll(" ", "");
+    const stream = discordTTS.getVoiceStream(message, { lang: "ja" });
+    const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
+    playVoice(resource);
+    const logMessage = msg.member.displayName + " " + message; //"Playing " + message + ' by ' + msg.member.displayName
+    console.log(logMessage);
+    sendToChannel(IDs.channelCommands, logMessage);
+    msg.delete();
   }
 });
 
