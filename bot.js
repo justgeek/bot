@@ -418,7 +418,8 @@ client.on("voiceStateUpdate", (before, after) => {
     "ibrahimsp": "Heema",
     "OMDA": "om daa",
     "terezee.248": "ZEEKUS",
-    // "Tofa": "EL, K",
+    "tofa7009": "TOFA",
+    "zqp1313": "BLACK PHANTOM",
   }
   let personTTS = PeopleTTS[person] ? PeopleTTS[person] : person;
 
