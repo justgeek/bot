@@ -420,6 +420,7 @@ client.on("voiceStateUpdate", (before, after) => {
     "terezee.248": "ZEEKUS",
     "tofa7009": "TOFA",
     "zqp1313": "BLACK PHANTOM",
+    "isso1988": "esso",
   }
   let personTTS = PeopleTTS[person] ? PeopleTTS[person] : person;
 
