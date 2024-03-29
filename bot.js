@@ -396,7 +396,7 @@ client.on("presenceUpdate", (before, after) => {
     // const chatMsg ="<@" + IDs.LORD + "> \n1-7etta fel tricks?\nOR\n2-7etta fel trade?";
     // const chatMsg = "<@" + IDs.LORD + "> 🦇🧛‍♀️🦇 RIP IN PIECES LADY DEMETGHASHKAR 🦇🧛‍♀️🦇";
     // const chatMsg = "<@" + IDs.LORD + "> Lady Dimitrescu in the village is waiting for you (approximately 290 centimeters tall in her heels and fabulous hat)";
-    sendToChannel(IDs.channelMain, chatMsg);
+    //sendToChannel(IDs.channelMain, chatMsg);
   }
   // console.log("-----------------------------------------------------------------------");
 });
