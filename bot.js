@@ -485,23 +485,29 @@ function sendToChannel(id, msg) {
 }
 function now() {
   let today = new Date();
+  let utcHours = today.getUTCHours() + 3;
+  let hours = utcHours % 12 === 0 ? 12 : utcHours % 12;
+  let ampm = utcHours >= 12 ? "PM" : "AM";
+
   let now =
-    (today.getDate() < 10 ? "0" : "") +
-    today.getDate() +
+    (today.getUTCDate() < 10 ? "0" : "") +
+    today.getUTCDate() +
     "/" +
-    (today.getMonth() < 9 ? "0" : "") +
-    (today.getMonth() + 1) +
+    (today.getUTCMonth() < 9 ? "0" : "") +
+    (today.getUTCMonth() + 1) +
     "/" +
-    today.getFullYear() +
+    today.getUTCFullYear() +
     " " +
-    (today.getHours() < 10 ? "0" : "") +
-    today.getHours() +
+    (hours < 10 ? "0" : "") +
+    hours +
     ":" +
-    (today.getMinutes() < 10 ? "0" : "") +
-    today.getMinutes() +
+    (today.getUTCMinutes() < 10 ? "0" : "") +
+    today.getUTCMinutes() +
     ":" +
-    (today.getSeconds() < 10 ? "0" : "") +
-    today.getSeconds();
+    (today.getUTCSeconds() < 10 ? "0" : "") +
+    today.getUTCSeconds() +
+    " " +
+    ampm;
   return now;
 }
 
