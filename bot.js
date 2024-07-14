@@ -562,10 +562,9 @@ function shouldJoinVoiceChannel(channelId) {
 
 function leaveEmptyVoiceChannel() {
   if (connection && connection.channel && connection.channel.id === IDs.voice3) {
-    const totalMembers = connection.channel.members.size;
-    const botUser = connection.channel.members.get(client.user.id);
+    const totalMembers = connection.channel.members.size;    
     
-    if (totalMembers === 1 && botUser) {
+    if (totalMembers === 1) {
       connection.destroy();
       connection = null;
       player = null;
