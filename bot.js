@@ -560,6 +560,8 @@ function shouldJoinVoiceChannel(channelId) {
 }
 
 function leaveEmptyVoiceChannel() {
+  if (!connection) return
+  
   const channel = client.channels.cache.get(IDs.voice3);
   const totalMembers = channel.members.size;
 
