@@ -553,7 +553,7 @@ const playVoice = (resource) => {
 
 function shouldJoinVoiceChannel(channelId) {
   const channel = client.channels.cache.get(channelId);
-  if (channel && channel.isVoice()) {
+  if (channel) {
     const membersWithoutBot = channel.members.filter(member => !member.user.bot);
     return membersWithoutBot.size > 0;
   }
