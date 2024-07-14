@@ -561,16 +561,15 @@ function shouldJoinVoiceChannel(channelId) {
 }
 
 function leaveEmptyVoiceChannel() {
-  if (connection && connection.channel && connection.channel.id === IDs.voice3) {
-    const totalMembers = connection.channel.members.size;    
-    
-    if (totalMembers === 1) {
-      connection.destroy();
-      connection = null;
-      player = null;
-      connectionSubscription = null;
-      console.log("Bot left the voice channel as it was the only user.");
-    }
+  const channel = client.channels.cache.get(channelId);
+  const totalMembers = channel.members.size;
+
+  if (totalMembers === 1) {
+    connection.destroy();
+    connection = null;
+    player = null;
+    connectionSubscription = null;
+    console.log("Bot left the voice channel as it was the only user.");
   }
 }
 
