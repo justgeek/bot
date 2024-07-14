@@ -436,11 +436,12 @@ client.on("voiceStateUpdate", (before, after) => {
 
   leaveEmptyVoiceChannel();
   // Join the channel if the bot isn't already in it
-  if (!connection || connection.channel.id !== IDs.voice3) {
+  if (!connection || shouldJoinVoiceChannel(IDs.voice3)) {
     joinBanhaVoiceChannel(IDs.voice3);
     player = createAudioPlayer();
     connectionSubscription = connection.subscribe(player);
   }
+
 
   if ((before.channelId && !after.channelId) || (before.channelId && after.channelId && before.channelId != after.channelId)) {
     //no after = left
@@ -561,7 +562,7 @@ function shouldJoinVoiceChannel(channelId) {
 
 function leaveEmptyVoiceChannel() {
   if (!connection) return
-  
+
   const channel = client.channels.cache.get(IDs.voice3);
   const totalMembers = channel.members.size;
 
