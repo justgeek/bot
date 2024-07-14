@@ -434,15 +434,6 @@ client.on("voiceStateUpdate", (before, after) => {
   }
   let personTTS = PeopleTTS[person] ? PeopleTTS[person] : person;
 
-  leaveEmptyVoiceChannel();
-  // Join the channel if the bot isn't already in it
-  if (!connection || shouldJoinVoiceChannel(IDs.voice3)) {
-    joinBanhaVoiceChannel(IDs.voice3);
-    player = createAudioPlayer();
-    connectionSubscription = connection.subscribe(player);
-  }
-
-
   if ((before.channelId && !after.channelId) || (before.channelId && after.channelId && before.channelId != after.channelId)) {
     //no after = left
     chatMsg = now() + " **" + person + "** left **" + client.channels.cache.get(before.channelId).name + "**";
@@ -452,6 +443,7 @@ client.on("voiceStateUpdate", (before, after) => {
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       playVoice(resource);
     }
+    leaveEmptyVoiceChannel();
   }
 
   if ((!before.channelId && after.channelId) || (before.channelId && after.channelId && before.channelId != after.channelId)) {
@@ -474,6 +466,14 @@ client.on("voiceStateUpdate", (before, after) => {
       //   let resource2 = createAudioResource(memeFile);
       //   playVoice(resource2);
       // }
+
+
+      // Join the channel if the bot isn't already in it
+      if (!connection || shouldJoinVoiceChannel(IDs.voice3)) {
+        joinBanhaVoiceChannel(IDs.voice3);
+        player = createAudioPlayer();
+        connectionSubscription = connection.subscribe(player);
+      }
     }
   }
 
@@ -554,8 +554,11 @@ const playVoice = (resource) => {
 function shouldJoinVoiceChannel(channelId) {
   const channel = client.channels.cache.get(channelId);
   if (channel) {
-    const membersWithoutBot = channel.members.filter(member => !member.user.bot);
-    return membersWithoutBot.size > 0;
+    const totalMembers = channel.members.size;
+    const botMember = channel.members.get(client.user.id);
+
+    // Return true if there are members and it's not just the bot
+    return totalMembers > 0 && !(totalMembers === 1 && botMember);
   }
   return false;
 }
