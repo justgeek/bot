@@ -451,6 +451,14 @@ client.on("voiceStateUpdate", (before, after) => {
     chatMsg = now() + " **" + person + "** joined **" + client.channels.cache.get(after.channelId).name + "**"; //= joined
 
     if (after.channelId == voiceCurrent) {
+
+      // Join the channel if the bot isn't already in it
+      if (!connection || shouldJoinVoiceChannel(IDs.voice3)) {
+        joinBanhaVoiceChannel(IDs.voice3);
+        player = createAudioPlayer();
+        connectionSubscription = connection.subscribe(player);
+      }
+            
       const stream = discordTTS.getVoiceStream(personTTS + " joined", { lang: "ja" });
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       playVoice(resource);
@@ -467,19 +475,12 @@ client.on("voiceStateUpdate", (before, after) => {
       //   playVoice(resource2);
       // }
 
-
-      // Join the channel if the bot isn't already in it
-      if (!connection || shouldJoinVoiceChannel(IDs.voice3)) {
-        joinBanhaVoiceChannel(IDs.voice3);
-        player = createAudioPlayer();
-        connectionSubscription = connection.subscribe(player);
-      }
     }
   }
 
   if (chatMsg != " ") {
     console.log(chatMsg);
-    sendToChannel(IDs.channelVoice, chatMsg);
+    // sendToChannel(IDs.channelVoice, chatMsg);
   }
 });
 
