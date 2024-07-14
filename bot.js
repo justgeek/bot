@@ -434,6 +434,14 @@ client.on("voiceStateUpdate", (before, after) => {
   }
   let personTTS = PeopleTTS[person] ? PeopleTTS[person] : person;
 
+  leaveEmptyVoiceChannel();
+  // Join the channel if the bot isn't already in it
+  if (!connection || connection.channel.id !== IDs.voice3) {
+    joinBanhaVoiceChannel(IDs.voice3);
+    player = createAudioPlayer();
+    connectionSubscription = connection.subscribe(player);
+  }
+
   if ((before.channelId && !after.channelId) || (before.channelId && after.channelId && before.channelId != after.channelId)) {
     //no after = left
     chatMsg = now() + " **" + person + "** left **" + client.channels.cache.get(before.channelId).name + "**";
@@ -443,8 +451,6 @@ client.on("voiceStateUpdate", (before, after) => {
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       playVoice(resource);
     }
-
-    leaveEmptyVoiceChannel();
   }
 
   if ((!before.channelId && after.channelId) || (before.channelId && after.channelId && before.channelId != after.channelId)) {
@@ -452,13 +458,6 @@ client.on("voiceStateUpdate", (before, after) => {
     chatMsg = now() + " **" + person + "** joined **" + client.channels.cache.get(after.channelId).name + "**"; //= joined
 
     if (after.channelId == voiceCurrent) {
-      // Join the channel if the bot isn't already in it
-      if (!connection || connection.channel.id !== IDs.voice3) {
-        joinBanhaVoiceChannel(IDs.voice3);
-        player = createAudioPlayer();
-        connectionSubscription = connection.subscribe(player);
-      }
-
       const stream = discordTTS.getVoiceStream(personTTS + " joined", { lang: "ja" });
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       playVoice(resource);
