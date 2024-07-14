@@ -458,7 +458,7 @@ client.on("voiceStateUpdate", (before, after) => {
         player = createAudioPlayer();
         connectionSubscription = connection.subscribe(player);
       }
-            
+
       const stream = discordTTS.getVoiceStream(personTTS + " joined", { lang: "ja" });
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       playVoice(resource);
@@ -480,7 +480,7 @@ client.on("voiceStateUpdate", (before, after) => {
 
   if (chatMsg != " ") {
     console.log(chatMsg);
-    // sendToChannel(IDs.channelVoice, chatMsg);
+    sendToChannel(IDs.channelVoice, chatMsg);
   }
 });
 
