@@ -99,11 +99,18 @@ const gamesList = [
 let resource, player, connection, connectionSubscription;
 
 const joinBanhaVoiceChannel = (channelToJoin) => {
-  return (connection = joinVoiceChannel({
-    channelId: channelToJoin,
-    guildId: IDs.guild,
-    adapterCreator: client.guilds.cache.get(IDs.guild).voiceAdapterCreator,
-  }));
+  if (shouldJoinVoiceChannel(channelToJoin)) {
+    connection = joinVoiceChannel({
+      channelId: channelToJoin,
+      guildId: IDs.guild,
+      adapterCreator: client.guilds.cache.get(IDs.guild).voiceAdapterCreator,
+    });
+    console.log(`Bot joined voice channel: ${channelToJoin}`);
+    return connection;
+  } else {
+    console.log(`Not joining voice channel ${channelToJoin} as it's empty or only contains bots.`);
+    return null;
+  }
 };
 
 client.on("error", (e) => {
@@ -115,9 +122,11 @@ client.on("ready", () => {
   client.user.setStatus('invisible');
   sendToChannel(IDs.channelV, 'Sup!\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t("**!commands**" for stuff)');
 
-  joinBanhaVoiceChannel(IDs.voice3);
-  player = createAudioPlayer();
-  connectionSubscription = connection.subscribe(player);
+  if (shouldJoinVoiceChannel(IDs.voice3)) {
+    joinBanhaVoiceChannel(IDs.voice3);
+    player = createAudioPlayer();
+    connectionSubscription = connection.subscribe(player);
+  }
 });
 
 client.on("messageCreate", (msg) => {
@@ -434,6 +443,8 @@ client.on("voiceStateUpdate", (before, after) => {
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       playVoice(resource);
     }
+
+    leaveEmptyVoiceChannel();
   }
 
   if ((!before.channelId && after.channelId) || (before.channelId && after.channelId && before.channelId != after.channelId)) {
@@ -441,6 +452,13 @@ client.on("voiceStateUpdate", (before, after) => {
     chatMsg = now() + " **" + person + "** joined **" + client.channels.cache.get(after.channelId).name + "**"; //= joined
 
     if (after.channelId == voiceCurrent) {
+      // Join the channel if the bot isn't already in it
+      if (!connection || connection.channel.id !== IDs.voice3) {
+        joinBanhaVoiceChannel(IDs.voice3);
+        player = createAudioPlayer();
+        connectionSubscription = connection.subscribe(player);
+      }
+
       const stream = discordTTS.getVoiceStream(personTTS + " joined", { lang: "ja" });
       const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
       playVoice(resource);
@@ -531,6 +549,29 @@ client.login(process.env.BOT_TOKEN);
 const playVoice = (resource) => {
   player.play(resource);
 };
+
+
+function shouldJoinVoiceChannel(channelId) {
+  const channel = client.channels.cache.get(channelId);
+  if (channel && channel.isVoice()) {
+    const membersWithoutBot = channel.members.filter(member => !member.user.bot);
+    return membersWithoutBot.size > 0;
+  }
+  return false;
+}
+
+function leaveEmptyVoiceChannel() {
+  if (connection && connection.channel && connection.channel.id === IDs.voice3) {
+    const membersWithoutBot = connection.channel.members.filter(member => !member.user.bot);
+    if (membersWithoutBot.size === 0) {
+      connection.destroy();
+      connection = null;
+      player = null;
+      connectionSubscription = null;
+      console.log("Bot left the voice channel as it was empty.");
+    }
+  }
+}
 
 const express = require("express");
 const app = express();
