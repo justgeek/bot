@@ -354,7 +354,7 @@ client.on("messageDelete", (msg) => {
 
 
 client.on("messageUpdate", (oldMessage, newMessage) => {
-  if (oldMessage == oldMessage) return;
+  if (oldMessage == newMessage) return;
   const edited = `${now()}\t **${newMessage.author.username}:**\n${oldMessage.content}\n>\n${newMessage.content}`;
   console.log("edited:", edited);
   sendToChannel(IDs.channelDel, edited);
