@@ -427,7 +427,7 @@ client.on("voiceStateUpdate", (before, after) => {
     "prollygeek": "TDK",
     "ibrahimsp": "Heema",
     "OMDA": "om daa",
-    "terezee.248": "ZEEKUS",
+    "terezee.248": "zeikus",
     "tofa7009": "TOFA",
     "zqp1313": "BLACK PHANTOM",
     "isso1988": "esso",
