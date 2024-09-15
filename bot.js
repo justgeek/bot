@@ -337,16 +337,42 @@ client.on("messageCreate", (msg) => {
     }
 
   } else if (message.startsWith("!")) {
-    // lets create a queue here
-    message = message.replace("!", ""); //.replaceAll(" ", "");
-    const stream = discordTTS.getVoiceStream(message, { lang: "ja" });
-    const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
+    // Let's create a queue here
+    message = message.replace("!", "").trim();
+
+    // Set default language to "ja"
+    let lang = "ja";
+
+    // Regular expression to match a language code enclosed in angle brackets
+    const langRegex = /<([a-zA-Z-]+)>/;
+
+    // Check if the message contains a language code
+    const langMatch = message.match(langRegex);
+
+    if (langMatch) {
+      // Extract the language code
+      lang = langMatch[1];
+
+      // Remove the language code from the message
+      message = message.replace(langMatch[0], "").trim();
+    }
+
+    // Get the voice stream with the specified language
+    const stream = discordTTS.getVoiceStream(message, { lang: lang });
+
+    const resource = createAudioResource(stream, {
+      inputType: StreamType.Arbitrary,
+      inlineVolume: true
+    });
+
     playVoice(resource);
-    const logMessage = msg.member.displayName + " " + message; //"Playing " + message + ' by ' + msg.member.displayName
+
+    const logMessage = `${msg.member.displayName} ${message}`;
     console.log(logMessage);
     sendToChannel(IDs.channelCommands, logMessage);
     msg.delete();
   }
+
 });
 
 client.on("messageDelete", (msg) => {
@@ -546,6 +572,7 @@ function sleep(ms) {
 }
 
 client.login(process.env.BOT_TOKEN);
+// client.login(process.env.BOT_TOKEN2);
 
 const playVoice = (resource) => {
   player.play(resource);
