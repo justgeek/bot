@@ -4,7 +4,6 @@ import asyncio
 from discord.ext import commands
 import discord
 from dotenv import load_dotenv
-from PIL import Image
 from gtts import gTTS
 
 load_dotenv()
