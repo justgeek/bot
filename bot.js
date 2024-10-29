@@ -169,7 +169,7 @@ client.on("messageCreate", (msg) => {
       '**!randomall <voice channel members row numbers to exclude (comma separated)>** (to exclude 3rd and 5th "**!randomall 3,5**").',
       // "**!<anything>**: Text-To-Speech.",
       "**!memes**: list memes.",
-      "**!joinme**: Join your current voice channel for TTS and stuff.",
+      "**!joinme**: Join your current voice channel.",
     ];
 
     msg.channel.send("> **COMMANDS:**\n> " + commands.join("\n> "));
