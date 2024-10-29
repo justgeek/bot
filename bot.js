@@ -162,23 +162,23 @@ client.on("messageCreate", (msg) => {
     const commands = [
       // '**!round**: Prints the current CHC round number',
       '**!youtube** or **!playlist**: print YouTube "Our Games" playlist link.',
-      "**!games**: list possible games to play.",
-      "**!randomgame**: choose a random game to play.",
+      // "**!games**: list possible games to play.",
+      // "**!randomgame**: choose a random game to play.",
       '**!random <names (comma separated)>**: shuffle provided players("**!random player1,player2,player3**").',
       "**!randomall**: create random teams of all players in your current voice channel.",
       '**!randomall <voice channel members row numbers to exclude (comma separated)>** (to exclude 3rd and 5th "**!randomall 3,5**").',
-      "**!<anything>**: Text-To-Speech.",
+      // "**!<anything>**: Text-To-Speech.",
       "**!memes**: list memes.",
       "**!joinme**: Join your current voice channel for TTS and stuff.",
     ];
 
     msg.channel.send("> **COMMANDS:**\n> " + commands.join("\n> "));
-  } else if (message === "!games") {
-    const games = "> **" + gamesList.sort().join("**\n> **") + "**";
-    msg.reply(games);
-  } else if (message === "!randomgame") {
-    const randomGame = "> **" + gamesList[Math.floor(Math.random() * gamesList.length)] + "**";
-    msg.reply(randomGame);
+    // } else if (message === "!games") {
+    //   const games = "> **" + gamesList.sort().join("**\n> **") + "**";
+    //   msg.reply(games);
+    // } else if (message === "!randomgame") {
+    //   const randomGame = "> **" + gamesList[Math.floor(Math.random() * gamesList.length)] + "**";
+    //   msg.reply(randomGame);
   } else if (message === "!memes") {
     const memesKeys =
       "> **" +
@@ -335,43 +335,43 @@ client.on("messageCreate", (msg) => {
       }
     } catch {
     }
-
-  } else if (message.startsWith("!")) {
-    // Let's create a queue here
-    message = message.replace("!", "").trim();
-
-    // Set default language to "ja"
-    let lang = "ja";
-
-    // Regular expression to match a language code enclosed in angle brackets
-    const langRegex = /<([a-zA-Z-]+)>/;
-
-    // Check if the message contains a language code
-    const langMatch = message.match(langRegex);
-
-    if (langMatch) {
-      // Extract the language code
-      lang = langMatch[1];
-
-      // Remove the language code from the message
-      message = message.replace(langMatch[0], "").trim();
-    }
-
-    // Get the voice stream with the specified language
-    const stream = discordTTS.getVoiceStream(message, { lang: lang });
-
-    const resource = createAudioResource(stream, {
-      inputType: StreamType.Arbitrary,
-      inlineVolume: true
-    });
-
-    playVoice(resource);
-
-    const logMessage = `${msg.member.displayName} ${message}`;
-    console.log(logMessage);
-    sendToChannel(IDs.channelCommands, logMessage);
-    msg.delete();
   }
+  //  else if (message.startsWith("!")) {
+  //   // Let's create a queue here
+  //   message = message.replace("!", "").trim();
+
+  //   // Set default language to "ja"
+  //   let lang = "ja";
+
+  //   // Regular expression to match a language code enclosed in angle brackets
+  //   const langRegex = /<([a-zA-Z-]+)>/;
+
+  //   // Check if the message contains a language code
+  //   const langMatch = message.match(langRegex);
+
+  //   if (langMatch) {
+  //     // Extract the language code
+  //     lang = langMatch[1];
+
+  //     // Remove the language code from the message
+  //     message = message.replace(langMatch[0], "").trim();
+  // }
+
+  //// Get the voice stream with the specified language
+  // const stream = discordTTS.getVoiceStream(message, { lang: lang });
+
+  // const resource = createAudioResource(stream, {
+  //   inputType: StreamType.Arbitrary,
+  //   inlineVolume: true
+  // });
+
+  // playVoice(resource);
+
+  // const logMessage = `${msg.member.displayName} ${message}`;
+  // console.log(logMessage);
+  // sendToChannel(IDs.channelCommands, logMessage);
+  // msg.delete();
+  // }
 
 });
 
