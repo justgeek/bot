@@ -532,7 +532,7 @@ function sendToChannel(id, msg) {
 }
 function now() {
   let today = new Date();
-  let utcHours = today.getUTCHours() + 3;
+  let utcHours = today.getUTCHours() + 2;
   let hours = utcHours % 12 === 0 ? 12 : utcHours % 12;
   let ampm = utcHours >= 12 ? "PM" : "AM";
 
