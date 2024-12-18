@@ -149,12 +149,12 @@ client.on("messageCreate", (msg) => {
     // msg.react(msg.guild.emojis.cache.get("1018204796689322014")); //BRUH
   }
 
-  if (msg.author.username + "#" + msg.author.discriminator == "Ibrahim Taher#7708" && !message.startsWith("!")) {
-    // if (msg.author.username + '#' + msg.author.discriminator == 'Moonscarlet#4105') {
+  // if (msg.author.username + "#" + msg.author.discriminator == "Ibrahim Taher#7708" && !message.startsWith("!")) {
+    if (msg.author.username + '#' + msg.author.discriminator == 'Moonscarlet#4105') {
     // msg.react(msg.guild.emojis.cache.get('515873f6898e0b26daf51921c65a43f7'))//BRUH
     // msg.react(':regional_indicator_a:')
-    // msg.react('🤷‍♂️');
-    // msg.react('🤷‍♀️');
+    msg.react('🤷‍♂️');
+    msg.react('🤷‍♀️');
   }
 
   if (message === "!commands") {
@@ -167,7 +167,7 @@ client.on("messageCreate", (msg) => {
       '**!random <names (comma separated)>**: shuffle provided players("**!random player1,player2,player3**").',
       "**!randomall**: create random teams of all players in your current voice channel.",
       '**!randomall <voice channel members row numbers to exclude (comma separated)>** (to exclude 3rd and 5th "**!randomall 3,5**").',
-      // "**!<anything>**: Text-To-Speech.",
+      "**!<anything>**: Text-To-Speech.",
       "**!memes**: list memes.",
       "**!joinme**: Join your current voice channel.",
     ];
@@ -336,42 +336,42 @@ client.on("messageCreate", (msg) => {
     } catch {
     }
   }
-  //  else if (message.startsWith("!")) {
-  //   // Let's create a queue here
-  //   message = message.replace("!", "").trim();
+   else if (message.startsWith("!")) {
+    // Let's create a queue here
+    message = message.replace("!", "").trim();
 
-  //   // Set default language to "ja"
-  //   let lang = "ja";
+    // Set default language to "ja"
+    let lang = "ja";
 
-  //   // Regular expression to match a language code enclosed in angle brackets
-  //   const langRegex = /<([a-zA-Z-]+)>/;
+    // Regular expression to match a language code enclosed in angle brackets
+    const langRegex = /<([a-zA-Z-]+)>/;
 
-  //   // Check if the message contains a language code
-  //   const langMatch = message.match(langRegex);
+    // Check if the message contains a language code
+    const langMatch = message.match(langRegex);
 
-  //   if (langMatch) {
-  //     // Extract the language code
-  //     lang = langMatch[1];
+    if (langMatch) {
+      // Extract the language code
+      lang = langMatch[1];
 
-  //     // Remove the language code from the message
-  //     message = message.replace(langMatch[0], "").trim();
-  // }
+      // Remove the language code from the message
+      message = message.replace(langMatch[0], "").trim();
+  }
 
-  //// Get the voice stream with the specified language
-  // const stream = discordTTS.getVoiceStream(message, { lang: lang });
+  // Get the voice stream with the specified language
+  const stream = discordTTS.getVoiceStream(message, { lang: lang });
 
-  // const resource = createAudioResource(stream, {
-  //   inputType: StreamType.Arbitrary,
-  //   inlineVolume: true
-  // });
+  const resource = createAudioResource(stream, {
+    inputType: StreamType.Arbitrary,
+    inlineVolume: true
+  });
 
-  // playVoice(resource);
+  playVoice(resource);
 
-  // const logMessage = `${msg.member.displayName} ${message}`;
-  // console.log(logMessage);
-  // sendToChannel(IDs.channelCommands, logMessage);
-  // msg.delete();
-  // }
+  const logMessage = `${msg.member.displayName} ${message}`;
+  console.log(logMessage);
+  sendToChannel(IDs.channelCommands, logMessage);
+  msg.delete();
+  }
 
 });
 
