@@ -20,6 +20,7 @@ const screenshot = require("screenshot-desktop");
 const sharp = require("sharp");
 const tesseract = require("node-tesseract-ocr");
 const monitor = require("active-window");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const client = new Discord.Client({
   intents: [
@@ -59,6 +60,7 @@ let voiceCurrent = IDs.voice3;
 const otherFolder = "./other/";
 const memesFolder = "./memes/";
 const memeFiles = fs.readdirSync(memesFolder);
+
 
 const memeFilesSorted = [];
 memeFiles.forEach((m) => {
@@ -129,13 +131,13 @@ client.on("ready", () => {
   }
 });
 
-client.on("messageCreate", (msg) => {
+client.on("messageCreate", async (msg) => {
   let message = msg.content.toLowerCase();
   if (msg.author.username + "#" + msg.author.discriminator == "Malevolent#0025") return;
 
   const displayName = getAuthorDisplayName(msg);
   const idtest = '329004546900885515'
-  console.log(msg.author.username);
+  // console.log(msg.author.username);
 
 
 
@@ -156,7 +158,7 @@ client.on("messageCreate", (msg) => {
     // msg.react(msg.guild.emojis.cache.get('515873f6898e0b26daf51921c65a43f7'))//BRUH
     // msg.react(':regional_indicator_a:')
     msg.react('🤷‍♂️');
-    msg.react('🤷‍♀️');
+    msg.react('🤷‍��️');
   }
 
   if (message === "!commands") {
@@ -170,6 +172,7 @@ client.on("messageCreate", (msg) => {
       "**!randomall**: create random teams of all players in your current voice channel.",
       '**!randomall <voice channel members row numbers to exclude (comma separated)>** (to exclude 3rd and 5th "**!randomall 3,5**").',
       "**!<anything>**: Text-To-Speech.",
+      "**!!<anything>**: AI response.",
       "**!memes**: list memes.",
       "**!joinme**: Join your current voice channel.",
     ];
@@ -338,6 +341,28 @@ client.on("messageCreate", (msg) => {
     } catch {
     }
   }
+
+  else if (message.startsWith("!!")) {
+    try {
+      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });      
+      // Remove the !! prefix and get the prompt
+      const prompt = message.slice(2).trim();
+      
+      // Generate response from Gemini
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+      
+      // Send response back to Discord
+      msg.reply(text);
+    } catch (error) {
+      console.error("Gemini AI Error:", error);
+      msg.reply("Sorry, I encountered an error processing your request.");
+    }
+    return;
+  }
+
    else if (message.startsWith("!")) {
     // Let's create a queue here
     message = message.replace("!", "").trim();
@@ -620,3 +645,5 @@ app.get("/", (req, res) => {
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`);
 });
+
+
