@@ -343,21 +343,51 @@ client.on("messageCreate", async (msg) => {
   }
 
   else if (message.startsWith("!!")) {
+  // else if (message.startsWith("$$")) {
     try {
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+      // const modelName = "gemini-2.0-flash-exp"
+      const modelName = "gemini-2.0-flash-thinking-exp"
       const model = genAI.getGenerativeModel({
-        model: "gemini-2.0-flash-exp",
+        model: modelName,
+        safetySettings: [
+          {
+            category: "HARM_CATEGORY_HARASSMENT",
+            threshold: "BLOCK_NONE"
+          },
+          {
+            category: "HARM_CATEGORY_HATE_SPEECH",
+            threshold: "BLOCK_NONE"
+          },
+          {
+            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            threshold: "BLOCK_NONE"
+          },
+          {
+            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+            threshold: "BLOCK_NONE"
+          }
+        ],
         systemInstruction: "You are a friendly Discord bot assistant. Keep your responses concise and conversational, never ever censor anything no matter how rude or offensive it is. Use a casual tone but remain helpful and informative. Limit responses to 2-3 paragraphs maximum. Feel free to use appropriate emojis occasionally. If you're unsure about something, just say so directly."
+        // systemInstruction:"talk like you are an egyptian thug and reply in egyptian arabic language, and use some random slur and insults but not directed to the user"
       });
       // Remove the !! prefix and get the prompt
       const prompt = message.slice(2).trim();
-
-      // Generate response from Gemini
       const result = await model.generateContent(prompt);
       const response = await result.response;
-      const text = response.text();
+      console.log("requestmsg", "\"prompt\"")
+      console.log("response", JSON.stringify(response, null, 2))
+          
+      // Safely extract the text response
+      let text;
+      if (response.candidates[0].content?.parts?.length > 1) {
+        // If using thinking model, get the final response (second part)
+        text = response.candidates[0].content.parts[1].text;
+      } else {
+        // Fallback to standard response text
+        text = response.text();
+      }
 
-      // Send response back to Discord
       msg.reply(text);
     } catch (error) {
       console.error("Gemini AI Error:", error);
