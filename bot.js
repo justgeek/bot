@@ -151,14 +151,14 @@ client.on("messageCreate", async (msg) => {
     // msg.react(msg.guild.emojis.cache.get("1018204796689322014")); //BRUH
   }
 
-  // if (msg.author.username + "#" + msg.author.discriminator == "Ibrahim Taher#7708" && !message.startsWith("!")) {
-  // if (msg.author.username + '#' + msg.author.discriminator == 'Moonscarlet#4105') {
   if (msg.author.username == 'ibrahimsp' && !message.startsWith("!")) {
-    // if (msg.author.username == 'moonscarlet') {
+  // if (msg.author.username == 'moonscarlet' && !message.startsWith("!")) {
+  // if (!message.startsWith("!")) {
     // msg.react(msg.guild.emojis.cache.get('515873f6898e0b26daf51921c65a43f7'))//BRUH
     // msg.react(':regional_indicator_a:')
     msg.react('🤷‍♂️');
-    msg.react('🤷‍');
+    msg.react('🤷');
+    msg.react(msg.guild.emojis.cache.get("1018204796689322014")); //BRUH
   }
 
   if (message === "!commands") {
@@ -632,8 +632,8 @@ function sleep(ms) {
   while (waitTill > new Date()) { }
 }
 
-client.login(process.env.BOT_TOKEN);
-// client.login(process.env.BOT_TOKEN2);
+// client.login(process.env.BOT_TOKEN);
+client.login(process.env.BOT_TOKEN2);
 
 const playVoice = (resource) => {
   player.play(resource);
