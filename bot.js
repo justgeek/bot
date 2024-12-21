@@ -158,7 +158,7 @@ client.on("messageCreate", async (msg) => {
     // msg.react(msg.guild.emojis.cache.get('515873f6898e0b26daf51921c65a43f7'))//BRUH
     // msg.react(':regional_indicator_a:')
     msg.react('🤷‍♂️');
-    msg.react('🤷‍��️');
+    msg.react('🤷‍');
   }
 
   if (message === "!commands") {
@@ -346,8 +346,8 @@ client.on("messageCreate", async (msg) => {
   // else if (message.startsWith("$$")) {
     try {
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      // const modelName = "gemini-2.0-flash-exp"
-      const modelName = "gemini-2.0-flash-thinking-exp"
+      const modelName = "gemini-2.0-flash-exp"
+      // const modelName = "gemini-2.0-flash-thinking-exp"
       const model = genAI.getGenerativeModel({
         model: modelName,
         safetySettings: [
