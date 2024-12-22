@@ -54,6 +54,8 @@ const IDs = {
   LORD: "946751602415521873",
   Mido: "329004546900885515",
   TDK: "223957971976192001",
+  ZEKUS: "644899011236724787",
+
 };
 let voiceCurrent = IDs.voice3;
 
@@ -471,17 +473,22 @@ client.on("presenceUpdate", (before, after) => {
 
   const msg = now() + "\t**" + user.username + ":\t**" + statusBefore + "\t>\t" + statusAfter;
 
-  const currentHour = new Date().getHours();
+  // CURRENTHOUR IN EGYPT TIME BY USING OTHER THAN GETHOURS AND HANDLE DAYLIGHT SAVINGS TIME
+  const nowdatetime = new Date();
+  const utc = nowdatetime.getTime() + nowdatetime.getTimezoneOffset() * 60000;
+  const egyptTime = new Date(utc + 3600000 * 2);
+  const currentHour = egyptTime.getHours();
+
 
   if (statusBefore != statusAfter) {
     console.log(msg);
     sendToChannel(IDs.channelStatus, msg);
   }
 
+  
   if (userID == IDs.Moonscarlet && (statusBefore == "offline" || statusBefore == "") && statusAfter == "online") {
-    // sendToChannel(IDs.channelStatus, 'E2FESH <@' + IDs.Moonscarlet + '> CHC ¿¿¿? xdDDD¡¡¡');
-    // sendToChannel(IDs.channelStatus, 'Welcome back <@' + IDs.Moonscarlet + '>');
-    // sendToChannel(IDs.channelStatus, '<@' + IDs.Moonscarlet + '> RIP in pieces Lady Demashkash 🦇');
+    // chatMsg = "<@" + IDs.Moonscarlet + "> is back online";
+    // sendToChannel(IDs.channelDel, chatMsg);
   } else if (
     userID == IDs.LORD &&
     (currentHour >= 15 || currentHour <= 2) &&
@@ -493,6 +500,37 @@ client.on("presenceUpdate", (before, after) => {
     // const chatMsg = "<@" + IDs.LORD + "> 🦇🧛‍♀️🦇 RIP IN PIECES LADY DEMETGHASHKAR 🦇🧛‍♀️🦇";
     // const chatMsg = "<@" + IDs.LORD + "> Lady Dimitrescu in the village is waiting for you (approximately 290 centimeters tall in her heels and fabulous hat)";
     //sendToChannel(IDs.channelMain, chatMsg);
+  }else if (
+    userID == IDs.ZEKUS &&
+    (currentHour == 11 || currentHour == 0) &&
+    (statusBefore == "offline" || statusBefore == " ") &&
+    (statusAfter == "online")
+  ) {
+    const messages = [
+      "Hey <@" + IDs.ZEKUS + "> 🚨, what's going on? 🤔 You're late again 🕰️, starting to think you're allergic to being on time 🤣. Seriously though, your unreliability is becoming a habit 📝, and it's getting old 🙄. Get your act together, dude! 😂",
+      "<@" + IDs.ZEKUS + ">, are you running on moon time or something? 🌕 Because you're definitely not on schedule 📅",
+      "<@" + IDs.ZEKUS + "> , tardy again 🚨! Starting to think you have a PhD in procrastination 📚",
+      "<@" + IDs.ZEKUS + ">, where's the fire? 🚒 Because you're moving slower than a snail on valium 🐌",
+      "<@" + IDs.ZEKUS + "> , where have you been? 📍 Lost in space or just lost in general? 🚀",
+      "<@" + IDs.ZEKUS + ">, fashionably late or just plain late? 🕰️ Either way, you're here now, so let's get this party started 🎉",
+      "<@" + IDs.ZEKUS + ">, are you trying to set a new record for most times late in a row? 🏆 Because you're definitely a contender 🤣",
+      "<@" + IDs.ZEKUS + "> , what's your secret? 🤫 How do you manage to be late every single time? 🕰️ It's like you have a sixth sense for it 🤯",
+      "<@" + IDs.ZEKUS + ">, don't you know that punctuality is a virtue? 🙏 Because you're definitely not practicing what you preach 🙅‍♂️",
+      "<@" + IDs.ZEKUS + "> , are you stuck in a time loop or something? 🕳️ Because it feels like we're having this same conversation every day 📆",
+      "<@" + IDs.ZEKUS + ">, late again 🕰️! I'm starting to think you're allergic to being on time 🤣",
+      "<@" + IDs.ZEKUS + ">, what's going on? 🤔 You're usually more reliable than this 📈",
+      "<@" + IDs.ZEKUS + "> , are you on island time or something? 🌴 Because you're definitely not on our schedule 📅",
+      "<@" + IDs.ZEKUS + ">, I'm starting to think you're not taking this seriously 🤔. Punctuality is key, my friend 🗝️",
+      "<@" + IDs.ZEKUS + ">, where did you go? 📍 Did you get lost in the Bermuda Triangle or something? 🌊",
+      "<@" + IDs.ZEKUS + "> , this is getting ridiculous 🤣. How many times can one person be late in a row? 🕰️",
+      "<@" + IDs.ZEKUS + ">, are you having trouble telling time? 🕰️ Because it seems like you're always running behind schedule 📆",
+      "<@" + IDs.ZEKUS + "> , this is not a joke 🤣. Being late is not funny, it's frustrating 😠",
+      "<@" + IDs.ZEKUS + ">, are you trying to drive me crazy? 🤯 Because it feels like you're intentionally showing up late every time 🕰️"
+    ];
+    
+    const chatMsg = messages[Math.floor(Math.random() * messages.length)];
+    console.log(chatMsg);    
+    sendToChannel(IDs.channelMain, chatMsg);
   }
   // console.log("-----------------------------------------------------------------------");
 });
@@ -632,8 +670,8 @@ function sleep(ms) {
   while (waitTill > new Date()) { }
 }
 
-// client.login(process.env.BOT_TOKEN);
-client.login(process.env.BOT_TOKEN2);
+client.login(process.env.BOT_TOKEN);
+// client.login(process.env.BOT_TOKEN2);
 
 const playVoice = (resource) => {
   player.play(resource);
