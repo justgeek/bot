@@ -1,6 +1,7 @@
 require('dotenv').config();
 const Discord = require("discord.js");
 //require('discord-reply');
+const axios = require('axios');
 
 const _lodash = require("lodash");
 const ffmpeg = require("ffmpeg");
@@ -21,6 +22,45 @@ const sharp = require("sharp");
 const tesseract = require("node-tesseract-ocr");
 const monitor = require("active-window");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+// const { textToSpeech } = require('./tts.js');
+
+async function textToSpeech(text) {
+  // const voiceId = '21m00Tcm4TlvDq8ikWAM';
+  // const voiceId = 'EXAVITQu4vr4xnSDxMaL';//sarah
+  // const voiceId = '21m00Tcm4TlvDq8ikWAM';//jessica
+  const voiceId = 'vFedMyIZJ59tTsx3LZjA';//Malevolent
+  // const voiceId = 'FZZ34QV5WgZK5N73m5cU';//testdisc
+
+  const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+
+  try {
+      const response = await axios({
+          method: 'post',
+          url: url,
+          headers: {
+              'Accept': 'audio/mpeg',
+              'xi-api-key': apiKey,
+              'Content-Type': 'application/json',
+          },
+          data: {
+              text: text,
+              model_id: 'eleven_flash_v2_5'
+          },
+          responseType: 'arraybuffer'
+      });
+
+      // Save the audio file
+      const outputPath = 'output.mp3';
+      fs.writeFileSync(outputPath, response.data);
+      console.log(`Audio saved to ${outputPath}`);
+      
+      return outputPath;
+  } catch (error) {
+      console.error('Error:', error.response?.data || error.message);
+      throw error;
+  }
+}
 
 const client = new Discord.Client({
   intents: [
@@ -399,35 +439,41 @@ client.on("messageCreate", async (msg) => {
   }
 
   else if (message.startsWith("!")) {
-    // Let's create a queue here
     message = message.replace("!", "").trim();
-
-    // Set default language to "ja"
+    
+    // Set default language to "ja" for fallback TTS
     let lang = "ja";
-
-    // Regular expression to match a language code enclosed in angle brackets
     const langRegex = /<([a-zA-Z-]+)>/;
-
-    // Check if the message contains a language code
     const langMatch = message.match(langRegex);
 
     if (langMatch) {
-      // Extract the language code
       lang = langMatch[1];
-
-      // Remove the language code from the message
       message = message.replace(langMatch[0], "").trim();
     }
 
-    // Get the voice stream with the specified language
-    const stream = discordTTS.getVoiceStream(message, { lang: lang });
+    try {
+      // Try ElevenLabs first
+      const audioPath = await textToSpeech(message);
+      const resource = createAudioResource(audioPath);
 
-    const resource = createAudioResource(stream, {
-      inputType: StreamType.Arbitrary,
-      inlineVolume: true
-    });
+      playVoice(resource);
 
-    playVoice(resource);
+      // Clean up the audio file after playing
+      setTimeout(() => {
+        fs.unlink(audioPath, (err) => {
+          if (err) console.error('Error deleting audio file:', err);
+        });
+      }, 5000); // Wait 5 seconds before deleting to ensure the file is done playing
+
+    } catch (error) {
+      console.error('ElevenLabs TTS failed, falling back to default TTS:', error);
+      
+      // Fallback to original TTS
+      const stream = discordTTS.getVoiceStream(message, { lang: lang });
+      const resource = createAudioResource(stream);
+
+      playVoice(resource);
+    }
 
     const logMessage = `${msg.member.displayName} ${message}`;
     console.log(logMessage);

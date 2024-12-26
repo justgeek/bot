@@ -40,6 +40,6 @@ async function textToSpeech(text) {
     }
 }
 
-const text = 'come bas yasta';
+const text = 'hey';
 textToSpeech(text)
     .catch(console.error);
