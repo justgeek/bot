@@ -33,7 +33,9 @@ async function textToSpeech(text) {
   // voiceid UR972wNGq3zluze0LoIp haytham
   // ghizlane u0TsaWvt0v8migutHM3M
   
-  const voiceId = process.env.ELEVENLABS_VOICE_ID;
+  //IF THE WHOLE TEXT IS ARABIC USE  ARABIC VOICE ID AND IF ANYTHING ELSE USE THE DEFAULT
+  const isArabic = /[\u0600-\u06FF]/.test(text);
+  const voiceId = isArabic ? process.env.ELEVENLABS_VOICE_ID_ARABIC : process.env.ELEVENLABS_VOICE_ID;
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
   const apiKey = process.env.ELEVENLABS_API_KEY;
 
