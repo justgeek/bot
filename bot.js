@@ -552,7 +552,7 @@ client.on("presenceUpdate", (before, after) => {
     //sendToChannel(IDs.channelMain, chatMsg);
   }else if (
     userID == IDs.ZEKUS &&
-    (currentHour == 11 || currentHour == 0) &&
+    (currentHour == 23 || currentHour == 0) &&
     (statusBefore == "offline" || statusBefore == " ") &&
     (statusAfter == "online")
   ) {
