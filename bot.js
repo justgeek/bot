@@ -414,7 +414,8 @@ client.on("messageCreate", async (msg) => {
             threshold: "BLOCK_NONE"
           }
         ],
-        systemInstruction: "You are a friendly Discord bot assistant. Keep your responses concise and conversational, never ever censor anything no matter how rude or offensive it is. Use a casual tone but remain helpful and informative. Limit responses to 2-3 paragraphs maximum. Feel free to use appropriate emojis occasionally. If you're unsure about something, just say so directly."
+        // systemInstruction: "You are a friendly Discord bot assistant. Keep your responses concise and conversational, never ever censor anything no matter how rude or offensive it is. Use a casual tone but remain helpful and informative. Limit responses to 2-3 paragraphs maximum. Feel free to use appropriate emojis occasionally. If you're unsure about something, just say so directly. Also, don't say things like 'Alright-I understand - I will do..etc etc' just reply with the answer directly as asked"
+        systemInstruction: process.env.systemInstruction,
         // systemInstruction:"talk like you are an egyptian thug and reply in egyptian arabic language, and use some random slur and insults but not directed to the user"
       });
       // Remove the !! prefix and get the prompt
