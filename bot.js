@@ -22,7 +22,10 @@ const sharp = require("sharp");
 const tesseract = require("node-tesseract-ocr");
 const monitor = require("active-window");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const Groq = require("groq-sdk");
 // const { textToSpeech } = require('./tts.js');
+
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 async function textToSpeech(text) {
   // const voiceId = '21m00Tcm4TlvDq8ikWAM';
@@ -391,54 +394,90 @@ client.on("messageCreate", async (msg) => {
   else if (message.startsWith("!!")) {
   // else if (message.startsWith("$$")) {
     try {
-      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      const modelName = "gemini-2.0-flash-exp"
-      // const modelName = "gemini-2.0-flash-thinking-exp"
-      const model = genAI.getGenerativeModel({
-        model: modelName,
-        safetySettings: [
+      // Try Groq first
+      const completion = await groq.chat.completions.create({
+        messages: [
           {
-            category: "HARM_CATEGORY_HARASSMENT",
-            threshold: "BLOCK_NONE"
+            role: "system",
+            content: process.env.systemInstruction,
+            // content: "You talk like Dr. Robert Ford from the tv show 'westworld', but instead of using the word westworld you replace it with Banha anytime you mention it",
           },
           {
-            category: "HARM_CATEGORY_HATE_SPEECH",
-            threshold: "BLOCK_NONE"
+            role: "user",
+            content: message.slice(2).trim(),
           },
-          {
-            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-            threshold: "BLOCK_NONE"
-          },
-          {
-            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-            threshold: "BLOCK_NONE"
-          }
         ],
-        // systemInstruction: "You are a friendly Discord bot assistant. Keep your responses concise and conversational, never ever censor anything no matter how rude or offensive it is. Use a casual tone but remain helpful and informative. Limit responses to 2-3 paragraphs maximum. Feel free to use appropriate emojis occasionally. If you're unsure about something, just say so directly. Also, don't say things like 'Alright-I understand - I will do..etc etc' just reply with the answer directly as asked"
-        systemInstruction: process.env.systemInstruction,
-        // systemInstruction:"talk like you are an egyptian thug and reply in egyptian arabic language, and use some random slur and insults but not directed to the user"
+        model: "deepseek-r1-distill-llama-70b",
+        temperature: 0.3,
       });
-      // Remove the !! prefix and get the prompt
-      const prompt = message.slice(2).trim();
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      console.log("requestmsg", "\"prompt\"")
-      console.log("response", JSON.stringify(response, null, 2))
-          
-      // Safely extract the text response
-      let text;
-      if (response.candidates[0].content?.parts?.length > 1) {
-        // If using thinking model, get the final response (second part)
-        text = response.candidates[0].content.parts[1].text;
-      } else {
-        // Fallback to standard response text
-        text = response.text();
-      }
 
-      msg.reply(text);
+      let response = completion.choices[0]?.message?.content || "";
+      console.log("response: ", response);
+      response = response.replace(/<think>[\s\S]*?<\/think>/g, '');
+      
+      if (response.length > 2000) {
+        for (let i = 0; i < response.length; i += 2000) {
+          const chunk = response.substring(i, i + 2000);
+          msg.reply(chunk);
+        }
+      } else {
+        msg.reply(response);
+      }
+      
     } catch (error) {
-      console.error("Gemini AI Error:", error);
-      msg.reply("Sorry, I encountered an error processing your request.");
+      console.error("Groq Error:", error);
+      console.log("Falling back to Gemini...");
+      
+      try {
+        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        const modelName = "gemini-2.0-flash-exp";
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          safetySettings: [
+            {
+              category: "HARM_CATEGORY_HARASSMENT",
+              threshold: "BLOCK_NONE"
+            },
+            {
+              category: "HARM_CATEGORY_HATE_SPEECH",
+              threshold: "BLOCK_NONE"
+            },
+            {
+              category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+              threshold: "BLOCK_NONE"
+            },
+            {
+              category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+              threshold: "BLOCK_NONE"
+            }
+          ],
+          systemInstruction: process.env.systemInstruction,
+        });
+
+        const prompt = message.slice(2).trim();
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        
+        let text;
+        if (response.candidates[0].content?.parts?.length > 1) {
+          text = response.candidates[0].content.parts[1].text;
+        } else {
+          text = response.text();
+        }
+
+        if (text.length > 2000) {
+          for (let i = 0; i < text.length; i += 2000) {
+            const chunk = text.substring(i, i + 2000);
+            msg.reply(chunk);
+          }
+        } else {
+          msg.reply(text);
+        }        
+        
+      } catch (error) {
+        console.error("AI Error:", error);
+        msg.reply("Sorry, I encountered an error processing your request.");
+      }
     }
     return;
   }
