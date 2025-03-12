@@ -23,6 +23,7 @@ const tesseract = require("node-tesseract-ocr");
 const monitor = require("active-window");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const Groq = require("groq-sdk");
+const { getRelevantEmojis, isValidDiscordEmoji } = require('./ai.js');
 // const { textToSpeech } = require('./tts.js');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -198,6 +199,36 @@ client.on("messageCreate", async (msg) => {
     // msg.react(msg.guild.emojis.cache.get('515873f6898e0b26daf51921c65a43f7'))//BRUH
     // msg.react(':regional_indicator_a:')
     // msg.react(msg.guild.emojis.cache.get("1018204796689322014")); //BRUH
+  }
+
+  // AI emoji reactions for specific users
+  if (msg.author.username === 'moonscarlet' && !message.startsWith("!")) {
+    try {
+      // Get AI-suggested emojis based on message content
+      const suggestedEmojis = await getRelevantEmojis(msg.content, 5, 'deepseek-r1-distill-qwen-32b');
+      
+      // React with each valid emoji
+      for (const emoji of suggestedEmojis) {
+        try {
+          if (isValidDiscordEmoji(emoji)) {
+            await msg.react(emoji);
+            // Small delay to prevent rate limiting
+            await new Promise(resolve => setTimeout(resolve, 300));
+          }
+        } catch (error) {
+          console.error(`Error reacting with emoji ${emoji}:`, error);
+          // Continue with next emoji if one fails
+        }
+      }
+    } catch (error) {
+      console.error('Error in AI emoji reaction:', error);
+      // Fallback to default reactions if AI fails
+      try {
+        await msg.react('👍');
+      } catch (emojiError) {
+        console.error('Error with fallback emoji reaction:', emojiError);
+      }
+    }
   }
 
   if (msg.author.username == 'ibrahimsp' && !message.startsWith("!")) {
@@ -760,8 +791,8 @@ function sleep(ms) {
   while (waitTill > new Date()) { }
 }
 
-client.login(process.env.BOT_TOKEN);
-// client.login(process.env.BOT_TOKEN2);
+// client.login(process.env.BOT_TOKEN);
+client.login(process.env.BOT_TOKEN2);
 
 const playVoice = (resource) => {
   player.play(resource);
