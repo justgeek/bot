@@ -202,32 +202,27 @@ client.on("messageCreate", async (msg) => {
   }
 
   // AI emoji reactions for specific users
-  if (msg.author.username === 'moonscarlet' && !message.startsWith("!")) {
+  const reactTo = ['ibrahimsp','fady_','underageuser']
+  if (reactTo.includes(msg.author.username) && !message.startsWith("!")) {
     try {
       // Get AI-suggested emojis based on message content
       const suggestedEmojis = await getRelevantEmojis(msg.content, 5, 'deepseek-r1-distill-qwen-32b');
       
-      // React with each valid emoji
+      // React with each emoji, handling errors for each one individually
       for (const emoji of suggestedEmojis) {
         try {
-          if (isValidDiscordEmoji(emoji)) {
-            await msg.react(emoji);
-            // Small delay to prevent rate limiting
-            await new Promise(resolve => setTimeout(resolve, 300));
-          }
+          await msg.react(emoji);
+          // Small delay to prevent rate limiting
+          await new Promise(resolve => setTimeout(resolve, 300));
         } catch (error) {
           console.error(`Error reacting with emoji ${emoji}:`, error);
           // Continue with next emoji if one fails
+          continue;
         }
       }
     } catch (error) {
       console.error('Error in AI emoji reaction:', error);
-      // Fallback to default reactions if AI fails
-      try {
-        await msg.react('👍');
-      } catch (emojiError) {
-        console.error('Error with fallback emoji reaction:', emojiError);
-      }
+      // Just log the error and continue with the bot's operation
     }
   }
 
@@ -791,8 +786,8 @@ function sleep(ms) {
   while (waitTill > new Date()) { }
 }
 
-// client.login(process.env.BOT_TOKEN);
-client.login(process.env.BOT_TOKEN2);
+client.login(process.env.BOT_TOKEN);
+// client.login(process.env.BOT_TOKEN2);
 
 const playVoice = (resource) => {
   player.play(resource);

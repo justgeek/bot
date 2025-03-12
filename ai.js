@@ -41,6 +41,7 @@ async function getRelevantEmojis(messageContent, maxEmojis = 5, model = 'deepsee
     console.log(`Analyzing message for emoji reactions using ${model}...`);
     
     // List of common, well-supported Discord emojis
+    // Keeping this list for potential future use but not using it for filtering now
     const safeEmojis = [
       '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃', '😉', '😊', 
       '😇', '😍', '🥰', '😘', '😗', '😚', '😙', '😋', '😛', '😜', '😝', '🤑',
@@ -82,7 +83,7 @@ async function getRelevantEmojis(messageContent, maxEmojis = 5, model = 'deepsee
       '📞', '☎️', '📟', '📠', '📺', '📻', '🎙️', '🎚️', '🎛️', '🧭', '⏱️', '⏲️',
       '⏰', '🕰️', '⌛', '⏳', '📡', '🔋', '🔌', '💡', '🔦', '🕯️', '🪔', '🧯',
       '🛢️', '💸', '💵', '💴', '💶', '💷', '🪙', '💰', '💳', '💎', '⚖️', '🪜',
-      '🧰', '🪛', '🔧', '🔨', '⚒️', '🛠️', '🧲', '🔩', '⚙️', '🧱', '⛓️', '🧪',
+      '🧰', '🪛', '🔧', '🔨', '⚒️', '🛠️', '🧲', '🔩', '⚙️', '🧱', '⚒️', '🧪',
       '🧫', '🧬', '🔬', '🔭', '📡', '💉', '🩸', '💊', '🩹', '🩺', '🚪', '🛗',
       '🪞', '🪟', '🛏️', '🛋️', '🪑', '🚽', '🪠', '🚿', '🛁', '🪤', '🪒', '🧴',
       '🧷', '🧹', '🧺', '🧻', '🪣', '🧼', '🪥', '🧽', '🧯', '🛒', '🚬', '⚰️',
@@ -134,20 +135,17 @@ Important: Only use standard Unicode emojis that are widely supported in all pla
     });
 
     const response = chatCompletion.choices[0]?.message?.content || '';
-    console.log('Raw emoji response:', response);
     
-    // Extract only emoji characters from the response
+    // Remove any <think>...</think> blocks from the response
+    const cleanedResponse = response.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    console.log('Raw emoji response:', cleanedResponse);
+    
+    // Extract only emoji characters from the cleaned response
     const emojiRegex = /[\p{Emoji}]/gu;
-    let emojis = [...response.matchAll(emojiRegex)].map(match => match[0]);
+    let emojis = [...cleanedResponse.matchAll(emojiRegex)].map(match => match[0]);
     
-    // Filter to only include emojis from our safe list
-    emojis = emojis.filter(emoji => safeEmojis.includes(emoji));
-    
-    // If we don't have enough emojis, add some safe defaults based on message sentiment
-    if (emojis.length < 1) {
-      // Add some default safe emojis
-      emojis = ['👍', '😊', '🙂', '👋', '🎮'];
-    }
+    // No longer filtering through safeEmojis
+    // emojis = emojis.filter(emoji => safeEmojis.includes(emoji));
     
     // Limit to maxEmojis
     const limitedEmojis = emojis.slice(0, maxEmojis);
@@ -156,8 +154,7 @@ Important: Only use standard Unicode emojis that are widely supported in all pla
     return limitedEmojis;
   } catch (error) {
     console.error('Error getting emoji suggestions:', error);
-    // Return some safe default emojis in case of error
-    return ['👍', '😊', '🙂', '👋', '🎮'];
+    return []; // Return empty array instead of default emojis
   }
 }
 
