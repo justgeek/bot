@@ -202,7 +202,7 @@ client.on("messageCreate", async (msg) => {
   }
 
   // AI emoji reactions for specific users
-  const reactTo = ['ibrahimsp','fady_','underageuser']
+  const reactTo = ['underageuser']
   if ((reactTo.includes(msg.author.username) && !message.startsWith("!")) || message.startsWith("_")) {
     try {
       // Get AI-suggested emojis based on message content
