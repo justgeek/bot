@@ -206,7 +206,7 @@ client.on("messageCreate", async (msg) => {
   if ((reactTo.includes(msg.author.username) && !message.startsWith("!")) || message.startsWith("_")) {
     try {
       // Get AI-suggested emojis based on message content
-      const suggestedEmojis = await getRelevantEmojis(msg.content, 5, 'deepseek-r1-distill-qwen-32b');
+      const suggestedEmojis = await getRelevantEmojis(msg.content, 5, 'qwen-qwq-32b');
       
       // React with each emoji, handling errors for each one individually
       for (const emoji of suggestedEmojis) {
