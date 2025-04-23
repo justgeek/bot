@@ -433,7 +433,8 @@ client.on("messageCreate", async (msg) => {
             content: message.slice(2).trim(),
           },
         ],
-        model: "deepseek-r1-distill-llama-70b",
+        // model: "deepseek-r1-distill-llama-70b",
+        model: "meta-llama/llama-4-maverick-17b-128e-instruct",
         temperature: 0.3,
       });
 
