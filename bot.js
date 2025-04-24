@@ -434,7 +434,7 @@ client.on("messageCreate", async (msg) => {
           },
         ],
         // model: "deepseek-r1-distill-llama-70b",
-        model: "meta-llama/llama-4-maverick-17b-128e-instruct",
+        model: process.env.AI_MODEL || "meta-llama/llama-4-maverick-17b-128e-instruct",
         temperature: 0.3,
       });
 
@@ -747,7 +747,7 @@ function sendToChannel(id, msg) {
 }
 function now() {
   let today = new Date();
-  let utcHours = today.getUTCHours() + 2;
+  let utcHours = today.getUTCHours() + 3;
   let hours = utcHours % 12 === 0 ? 12 : utcHours % 12;
   let ampm = utcHours >= 12 ? "PM" : "AM";
 
