@@ -434,7 +434,7 @@ client.on("messageCreate", async (msg) => {
           },
         ],
         // model: "deepseek-r1-distill-llama-70b",
-        model: process.env.AI_MODEL || "meta-llama/llama-4-maverick-17b-128e-instruct",
+        model: process.env.GROQ_AI_MODEL || "meta-llama/llama-4-maverick-17b-128e-instruct",
         temperature: 0.3,
       });
 
