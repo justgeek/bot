@@ -805,7 +805,7 @@ function now() {
     today.getUTCSeconds() +
     " " +
     ampm;
-  return now;
+  return "`" + now + "`";
 }
 
 const getAuthorDisplayName = (msg) => {
