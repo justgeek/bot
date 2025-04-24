@@ -461,6 +461,7 @@ client.on("messageCreate", async (msg) => {
           text = response.text();
         }
         sendResponse(text);
+        console.log("Gemini Response:", text);
 
       } catch (geminiError) {
         console.error("Gemini Error:", geminiError);
@@ -480,7 +481,7 @@ client.on("messageCreate", async (msg) => {
           let response = completion.choices[0]?.message?.content || "";
           response = response.replace(/<think>[\s\S]*?<\/think>/g, '');
           sendResponse(response);
-
+          console.log("Groq Response:", response);
         } catch (groqError) {
           console.error("Groq Fallback Error:", groqError);
           msg.reply("Sorry, both AI services failed to process your request.");
@@ -502,6 +503,7 @@ client.on("messageCreate", async (msg) => {
         let response = completion.choices[0]?.message?.content || "";
         response = response.replace(/<think>[\s\S]*?<\/think>/g, '');
         sendResponse(response);
+        console.log("Groq Response:", response);
 
       } catch (groqError) {
         console.error("Groq Error:", groqError);
@@ -532,7 +534,7 @@ client.on("messageCreate", async (msg) => {
             text = response.text();
           }
           sendResponse(text);
-
+          console.log("Gemini Response:", text);
         } catch (geminiError) {
           console.error("Gemini Fallback Error:", geminiError);
           msg.reply("Sorry, both AI services failed to process your request.");
