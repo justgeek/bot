@@ -417,93 +417,126 @@ client.on("messageCreate", async (msg) => {
     }
   }
 
-  else if (message.startsWith("!!")) {
-  // else if (message.startsWith("$$")) {
-    try {
-      // Try Groq first
-      const completion = await groq.chat.completions.create({
-        messages: [
-          {
-            role: "system",
-            content: process.env.systemInstruction,
-            // content: "You talk like Dr. Robert Ford from the tv show 'westworld', but instead of using the word westworld you replace it with Banha anytime you mention it",
-          },
-          {
-            role: "user",
-            content: message.slice(2).trim(),
-          },
-        ],
-        // model: "deepseek-r1-distill-llama-70b",
-        model: process.env.GROQ_AI_MODEL || "meta-llama/llama-4-maverick-17b-128e-instruct",
-        temperature: 0.3,
-      });
-
-      let response = completion.choices[0]?.message?.content || "";
-      console.log("response: ", response);
-      response = response.replace(/<think>[\s\S]*?<\/think>/g, '');
-      
-      if (response.length > 2000) {
-        for (let i = 0; i < response.length; i += 2000) {
-          const chunk = response.substring(i, i + 2000);
-          msg.reply(chunk);
-        }
-      } else {
-        msg.reply(response);
+  // Helper function to handle sending the response
+  const sendResponse = (responseText) => {
+    if (responseText.length > 2000) {
+      for (let i = 0; i < responseText.length; i += 2000) {
+        const chunk = responseText.substring(i, i + 2000);
+        msg.reply(chunk);
       }
-      
-    } catch (error) {
-      console.error("Groq Error:", error);
-      console.log("Falling back to Gemini...");
-      
+    } else {
+      msg.reply(responseText);
+    }
+  };
+
+  // AI logic based on environment variable
+  const preferredService = process.env.AI_SERVICE?.toLowerCase();
+  const userPrompt = message.slice(2).trim();
+
+  if (message.startsWith("!!")) {
+    if (preferredService === 'gemini') {
+      // Try Gemini first
       try {
+        console.log("Attempting Gemini first...");
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        const modelName = "gemini-2.0-flash-exp";
+        const modelName = process.env.GEMINI_AI_MODEL || "gemini-2.5-pro-preview-03-25"; // Consider making this configurable too
         const model = genAI.getGenerativeModel({
           model: modelName,
           safetySettings: [
-            {
-              category: "HARM_CATEGORY_HARASSMENT",
-              threshold: "BLOCK_NONE"
-            },
-            {
-              category: "HARM_CATEGORY_HATE_SPEECH",
-              threshold: "BLOCK_NONE"
-            },
-            {
-              category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-              threshold: "BLOCK_NONE"
-            },
-            {
-              category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-              threshold: "BLOCK_NONE"
-            }
+            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
           ],
           systemInstruction: process.env.systemInstruction,
         });
 
-        const prompt = message.slice(2).trim();
-        const result = await model.generateContent(prompt);
+        const result = await model.generateContent(userPrompt);
         const response = await result.response;
-        
+
         let text;
         if (response.candidates[0].content?.parts?.length > 1) {
           text = response.candidates[0].content.parts[1].text;
         } else {
           text = response.text();
         }
+        sendResponse(text);
 
-        if (text.length > 2000) {
-          for (let i = 0; i < text.length; i += 2000) {
-            const chunk = text.substring(i, i + 2000);
-            msg.reply(chunk);
+      } catch (geminiError) {
+        console.error("Gemini Error:", geminiError);
+        console.log("Falling back to Groq...");
+
+        // Fallback to Groq
+        try {
+          const completion = await groq.chat.completions.create({
+            messages: [
+              { role: "system", content: process.env.systemInstruction },
+              { role: "user", content: userPrompt },
+            ],
+            model: process.env.GROQ_AI_MODEL || "meta-llama/llama-4-maverick-17b-128e-instruct",
+            temperature: 0.3,
+          });
+
+          let response = completion.choices[0]?.message?.content || "";
+          response = response.replace(/<think>[\s\S]*?<\/think>/g, '');
+          sendResponse(response);
+
+        } catch (groqError) {
+          console.error("Groq Fallback Error:", groqError);
+          msg.reply("Sorry, both AI services failed to process your request.");
+        }
+      }
+    } else {
+      // Default to Groq first (or if AI_SERVICE is not 'gemini')
+      try {
+        console.log("Attempting Groq first...");
+        const completion = await groq.chat.completions.create({
+          messages: [
+            { role: "system", content: process.env.systemInstruction },
+            { role: "user", content: userPrompt },
+          ],
+          model: process.env.GROQ_AI_MODEL || "meta-llama/llama-4-maverick-17b-128e-instruct",
+          temperature: 0.3,
+        });
+
+        let response = completion.choices[0]?.message?.content || "";
+        response = response.replace(/<think>[\s\S]*?<\/think>/g, '');
+        sendResponse(response);
+
+      } catch (groqError) {
+        console.error("Groq Error:", groqError);
+        console.log("Falling back to Gemini...");
+
+        // Fallback to Gemini
+        try {
+          const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+          const modelName = process.env.GEMINI_AI_MODEL || "gemini-2.5-pro-preview-03-25"; // Consider making this configurable too
+          const model = genAI.getGenerativeModel({
+            model: modelName,
+            safetySettings: [
+              { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+              { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+              { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+              { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+            ],
+            systemInstruction: process.env.systemInstruction,
+          });
+
+          const result = await model.generateContent(userPrompt);
+          const response = await result.response;
+
+          let text;
+          if (response.candidates[0].content?.parts?.length > 1) {
+            text = response.candidates[0].content.parts[1].text;
+          } else {
+            text = response.text();
           }
-        } else {
-          msg.reply(text);
-        }        
-        
-      } catch (error) {
-        console.error("AI Error:", error);
-        msg.reply("Sorry, I encountered an error processing your request.");
+          sendResponse(text);
+
+        } catch (geminiError) {
+          console.error("Gemini Fallback Error:", geminiError);
+          msg.reply("Sorry, both AI services failed to process your request.");
+        }
       }
     }
     return;
