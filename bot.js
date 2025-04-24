@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ override: true });
 const Discord = require("discord.js");
 //require('discord-reply');
 const axios = require('axios');
@@ -36,37 +36,37 @@ async function textToSpeech(text) {
   // const voiceId = 'FZZ34QV5WgZK5N73m5cU';//testdisc
   // voiceid UR972wNGq3zluze0LoIp haytham
   // ghizlane u0TsaWvt0v8migutHM3M
-  
+
   const isArabic = /^[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u0660-\u0669\u066A-\u066F\u06D4\u060C\u061B\u061F\s]+$/.test(text);
   const voiceId = isArabic ? process.env.ELEVENLABS_VOICE_ID_ARABIC : process.env.ELEVENLABS_VOICE_ID;
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
   const apiKey = process.env.ELEVENLABS_API_KEY;
 
   try {
-      const response = await axios({
-          method: 'post',
-          url: url,
-          headers: {
-              'Accept': 'audio/mpeg',
-              'xi-api-key': apiKey,
-              'Content-Type': 'application/json',
-          },
-          data: {
-              text: text,
-              model_id: 'eleven_flash_v2_5'
-          },
-          responseType: 'arraybuffer'
-      });
+    const response = await axios({
+      method: 'post',
+      url: url,
+      headers: {
+        'Accept': 'audio/mpeg',
+        'xi-api-key': apiKey,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        text: text,
+        model_id: 'eleven_flash_v2_5'
+      },
+      responseType: 'arraybuffer'
+    });
 
-      // Save the audio file
-      const outputPath = 'output.mp3';
-      fs.writeFileSync(outputPath, response.data);
-      console.log(`Audio saved to ${outputPath}`);
-      
-      return outputPath;
+    // Save the audio file
+    const outputPath = 'output.mp3';
+    fs.writeFileSync(outputPath, response.data);
+    console.log(`Audio saved to ${outputPath}`);
+
+    return outputPath;
   } catch (error) {
-      console.error('Error:', error.response?.data || error.message);
-      throw error;
+    console.error('Error:', error.response?.data || error.message);
+    throw error;
   }
 }
 
@@ -207,7 +207,7 @@ client.on("messageCreate", async (msg) => {
     try {
       // Get AI-suggested emojis based on message content
       const suggestedEmojis = await getRelevantEmojis(msg.content, 5, 'qwen-qwq-32b');
-      
+
       // React with each emoji, handling errors for each one individually
       for (const emoji of suggestedEmojis) {
         try {
@@ -227,8 +227,8 @@ client.on("messageCreate", async (msg) => {
   }
 
   if (msg.author.username == 'ibrahimsp' && !message.startsWith("!")) {
-  // if (msg.author.username == 'moonscarlet' && !message.startsWith("!")) {
-  // if (!message.startsWith("!")) {
+    // if (msg.author.username == 'moonscarlet' && !message.startsWith("!")) {
+    // if (!message.startsWith("!")) {
     // msg.react(msg.guild.emojis.cache.get('515873f6898e0b26daf51921c65a43f7'))//BRUH
     // msg.react(':regional_indicator_a:')
     // msg.react('🤷‍♂️');
@@ -236,20 +236,20 @@ client.on("messageCreate", async (msg) => {
     // msg.react(msg.guild.emojis.cache.get("1018204796689322014")); //BRUH
   }
 
-  if (message === "!commands") {
+  if (message === "!commands" || message === "!help") {
     // msg.delete();
     const commands = [
       // '**!round**: Prints the current CHC round number',
-      '**!youtube** or **!playlist**: print YouTube "Our Games" playlist link.',
+      '`!youtube` or `!playlist`: print YouTube "Our Games" playlist link.',
       // "**!games**: list possible games to play.",
       // "**!randomgame**: choose a random game to play.",
-      '**!random <names (comma separated)>**: shuffle provided players("**!random player1,player2,player3**").',
-      "**!randomall**: create random teams of all players in your current voice channel.",
-      '**!randomall <voice channel members row numbers to exclude (comma separated)>** (to exclude 3rd and 5th "**!randomall 3,5**").',
-      "**!<anything>**: Text-To-Speech.",
-      "**!!<anything>**: AI response.",
-      "**!memes**: list memes.",
-      "**!joinme**: Join your current voice channel.",
+      '`!random <names (comma separated)>`: shuffle provided players(`!random player1,player2,player3`).',
+      "`!randomall`: create random teams of all players in your current voice channel.",
+      '`!randomall <voice channel members row numbers to exclude (comma separated)>` (to exclude 3rd and 5th `!randomall 3,5`).',
+      "`!<anything>`: Text-To-Speech.",
+      "`!!<anything>`: AI response.",
+      "`!memes`: list memes.",
+      "`!joinme`: Join your current voice channel.",
     ];
 
     msg.channel.send("> **COMMANDS:**\n> " + commands.join("\n> "));
@@ -261,11 +261,11 @@ client.on("messageCreate", async (msg) => {
     //   msg.reply(randomGame);
   } else if (message === "!memes") {
     const memesKeys =
-      "> **" +
+      "> ```" +
       Object.keys(memes)
         .map((e) => e.toUpperCase())
         .join(", ") +
-      "**";
+      "```";
 
     msg.reply(memesKeys);
     //msg.lineReply(memesKeys);
@@ -546,7 +546,7 @@ client.on("messageCreate", async (msg) => {
 
   else if (message.startsWith("!")) {
     message = message.replace("!", "").trim();
-    
+
     // Set default language to "ja" for fallback TTS
     let lang = "ja";
     const langRegex = /<([a-zA-Z-]+)>/;
@@ -573,7 +573,7 @@ client.on("messageCreate", async (msg) => {
 
     } catch (error) {
       console.error('ElevenLabs TTS failed, falling back to default TTS:', error);
-      
+
       // Fallback to original TTS
       const stream = discordTTS.getVoiceStream(message, { lang: lang });
       const resource = createAudioResource(stream);
@@ -637,7 +637,7 @@ client.on("presenceUpdate", (before, after) => {
     sendToChannel(IDs.channelStatus, msg);
   }
 
-  
+
   if (userID == IDs.Moonscarlet && (statusBefore == "offline" || statusBefore == "") && statusAfter == "online") {
     // chatMsg = "<@" + IDs.Moonscarlet + "> is back online";
     // sendToChannel(IDs.channelDel, chatMsg);
@@ -652,7 +652,7 @@ client.on("presenceUpdate", (before, after) => {
     // const chatMsg = "<@" + IDs.LORD + "> 🦇🧛‍♀️🦇 RIP IN PIECES LADY DEMETGHASHKAR 🦇🧛‍♀️🦇";
     // const chatMsg = "<@" + IDs.LORD + "> Lady Dimitrescu in the village is waiting for you (approximately 290 centimeters tall in her heels and fabulous hat)";
     //sendToChannel(IDs.channelMain, chatMsg);
-  }else if (
+  } else if (
     userID == IDs.ZEKUS &&
     (currentHour == 23 || currentHour == 0) &&
     (statusBefore == "offline" || statusBefore == " ") &&
@@ -679,7 +679,7 @@ client.on("presenceUpdate", (before, after) => {
     //   "<@" + IDs.ZEKUS + "> , this is not a joke 🤣. Being late is not funny, it's frustrating 😠",
     //   "<@" + IDs.ZEKUS + ">, are you trying to drive me crazy? 🤯 Because it feels like you're intentionally showing up late every time 🕰️"
     // ];
-    
+
     // const chatMsg = messages[Math.floor(Math.random() * messages.length)];
     // console.log(chatMsg);    
     // sendToChannel(IDs.channelMain, chatMsg);
