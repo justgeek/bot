@@ -417,23 +417,11 @@ client.on("messageCreate", async (msg) => {
     }
   }
 
-  // Helper function to handle sending the response
-  const sendResponse = (responseText) => {
-    if (responseText.length > 2000) {
-      for (let i = 0; i < responseText.length; i += 2000) {
-        const chunk = responseText.substring(i, i + 2000);
-        msg.reply(chunk);
-      }
-    } else {
-      msg.reply(responseText);
-    }
-  };
-
-  // AI logic based on environment variable
-  const preferredService = process.env.AI_SERVICE?.toLowerCase();
-  const userPrompt = message.slice(2).trim();
-
-  if (message.startsWith("!!")) {
+  else if (message.startsWith("!!")) {
+    // AI logic based on environment variable
+    const preferredService = process.env.AI_SERVICE?.toLowerCase();
+    const userPrompt = message.slice(2).trim();
+        
     if (preferredService === 'gemini') {
       // Try Gemini first
       try {
@@ -774,6 +762,18 @@ client.on("guildMemberRemove", (member) => {
   console.log(chatMsg);
   sendToChannel(IDs.channelMain, chatMsg);
 });
+
+// Helper function to handle sending the response
+const sendResponse = (responseText) => {
+  if (responseText.length > 2000) {
+    for (let i = 0; i < responseText.length; i += 2000) {
+      const chunk = responseText.substring(i, i + 2000);
+      msg.reply(chunk);
+    }
+  } else {
+    msg.reply(responseText);
+  }
+};
 
 function sendToChannel(id, msg) {
   client.channels.fetch(id).then((channel) => {
