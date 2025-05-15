@@ -534,6 +534,7 @@ client.on("messageCreate", async (msg) => {
   }
 
   else if (message.startsWith("!restartbot")) {
+    console.log("Restarting bot...");
     process.exit();
   }
 
