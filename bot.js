@@ -250,6 +250,7 @@ client.on("messageCreate", async (msg) => {
       "`!!<anything>`: AI response.",
       "`!memes`: list memes.",
       "`!joinme`: Join your current voice channel.",
+      "`!restartbot`: Restart the bot.",
     ];
 
     msg.channel.send("> **COMMANDS:**\n> " + commands.join("\n> "));
@@ -530,6 +531,10 @@ client.on("messageCreate", async (msg) => {
       }
     }
     return;
+  }
+
+  else if (message.startsWith("!restartbot")) {
+    process.exit();
   }
 
   else if (message.startsWith("!")) {
