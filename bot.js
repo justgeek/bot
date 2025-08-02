@@ -449,7 +449,7 @@ client.on("messageCreate", async (msg) => {
         } else {
           text = response.text();
         }
-        sendResponse(text);
+        sendResponse(msg, text);
         console.log("Gemini Response:", text);
 
       } catch (geminiError) {
@@ -469,7 +469,7 @@ client.on("messageCreate", async (msg) => {
 
           let response = completion.choices[0]?.message?.content || "";
           response = response.replace(/<think>[\s\S]*?<\/think>/g, '');
-          sendResponse(response);
+          sendResponse(msg, response);
           console.log("Groq Response:", response);
         } catch (groqError) {
           console.error("Groq Fallback Error:", groqError);
@@ -491,7 +491,7 @@ client.on("messageCreate", async (msg) => {
 
         let response = completion.choices[0]?.message?.content || "";
         response = response.replace(/<think>[\s\S]*?<\/think>/g, '');
-        sendResponse(response);
+        sendResponse(msg, response);
         console.log("Groq Response:", response);
 
       } catch (groqError) {
@@ -522,7 +522,7 @@ client.on("messageCreate", async (msg) => {
           } else {
             text = response.text();
           }
-          sendResponse(text);
+          sendResponse(msg, text);
           console.log("Gemini Response:", text);
         } catch (geminiError) {
           console.error("Gemini Fallback Error:", geminiError);
@@ -771,7 +771,7 @@ client.on("guildMemberRemove", (member) => {
 });
 
 // Helper function to handle sending the response
-const sendResponse = (responseText) => {
+const sendResponse = (msg, responseText) => {
   if (responseText.length > 2000) {
     for (let i = 0; i < responseText.length; i += 2000) {
       const chunk = responseText.substring(i, i + 2000);
