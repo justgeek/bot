@@ -703,6 +703,7 @@ client.on("voiceStateUpdate", (before, after) => {
     "zqp1313": "BLACK PHANTOM",
     "isso1988": "esso",
     "3la27229": "aalaaa",
+    "abo_hamza_elmasry": "eslam",
   }
   let personTTS = PeopleTTS[person] ? PeopleTTS[person] : person;
 
