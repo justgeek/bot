@@ -544,13 +544,13 @@ client.on("messageCreate", async (msg) => {
 
     // Set default language to "ja" for fallback TTS
     let lang = "ja";
-    const langRegex = /<([a-zA-Z-]+)>/;
-    const langMatch = message.match(langRegex);
+    // const langRegex = /<([a-zA-Z-]+)>/;
+    // const langMatch = message.match(langRegex);
 
-    if (langMatch) {
-      lang = langMatch[1];
-      message = message.replace(langMatch[0], "").trim();
-    }
+    // if (langMatch) {
+    //   lang = langMatch[1];
+    //   message = message.replace(langMatch[0], "").trim();
+    // }
 
     try {
       // Try ElevenLabs first
