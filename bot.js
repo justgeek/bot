@@ -53,7 +53,7 @@ async function textToSpeech(text) {
       },
       data: {
         text: text,
-        model_id: 'eleven_flash_v2_5'
+        model_id: process.env.ELEVENLABS_MODEL_ID
       },
       responseType: 'arraybuffer'
     });
