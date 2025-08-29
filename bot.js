@@ -41,6 +41,7 @@ async function textToSpeech(text) {
   const voiceId = isArabic ? process.env.ELEVENLABS_VOICE_ID_ARABIC : process.env.ELEVENLABS_VOICE_ID;
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
   const apiKey = process.env.ELEVENLABS_API_KEY;
+  const model = !message.includes("[") && !message.includes("]") ? process.env.ELEVENLABS_MODEL_BACKUP_ID : process.env.ELEVENLABS_MODEL_ID;
 
   try {
     const response = await axios({
@@ -53,7 +54,7 @@ async function textToSpeech(text) {
       },
       data: {
         text: text,
-        model_id: process.env.ELEVENLABS_MODEL_ID
+        model_id: model
       },
       responseType: 'arraybuffer'
     });
@@ -554,10 +555,12 @@ client.on("messageCreate", async (msg) => {
 
     try {
       // Try ElevenLabs first
+
       const audioPath = await textToSpeech(message);
       const resource = createAudioResource(audioPath);
 
       playVoice(resource);
+
 
       // Clean up the audio file after playing
       setTimeout(() => {
