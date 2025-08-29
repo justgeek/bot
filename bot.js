@@ -41,7 +41,7 @@ async function textToSpeech(text) {
   const voiceId = isArabic ? process.env.ELEVENLABS_VOICE_ID_ARABIC : process.env.ELEVENLABS_VOICE_ID;
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
   const apiKey = process.env.ELEVENLABS_API_KEY;
-  const model = !message.includes("[") && !message.includes("]") ? process.env.ELEVENLABS_MODEL_BACKUP_ID : process.env.ELEVENLABS_MODEL_ID;
+  const model = !text.includes("[") && !text.includes("]") ? process.env.ELEVENLABS_MODEL_ID : process.env.ELEVENLABS_MODEL_TEST_ID;
 
   try {
     const response = await axios({
