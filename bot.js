@@ -464,8 +464,9 @@ client.on("messageCreate", async (msg) => {
               { role: "system", content: process.env.systemInstruction },
               { role: "user", content: userPrompt },
             ],
-            model: process.env.GROQ_AI_MODEL || "meta-llama/llama-4-maverick-17b-128e-instruct",
+            model: process.env.GROQ_AI_MODEL,
             temperature: 0.3,
+            tools: [{"type":"browser_search"}]
           });
 
           let response = completion.choices[0]?.message?.content || "";
@@ -486,8 +487,9 @@ client.on("messageCreate", async (msg) => {
             { role: "system", content: process.env.systemInstruction },
             { role: "user", content: userPrompt },
           ],
-          model: process.env.GROQ_AI_MODEL || "meta-llama/llama-4-maverick-17b-128e-instruct",
+          model: process.env.GROQ_AI_MODEL,
           temperature: 0.3,
+          tools: [{"type":"browser_search"}]
         });
 
         let response = completion.choices[0]?.message?.content || "";
