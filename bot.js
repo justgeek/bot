@@ -700,7 +700,7 @@ client.on("voiceStateUpdate", (before, after) => {
     "basseldesoky": "Supersonic",
     "prollygeek": "TDK",
     "ibrahimsp": "Heema",
-    "OMDA": "om daa",
+    "omda5863": "om daa",
     "terezee.248": "zeikus",
     "tofa7009": "TOFA",
     "zqp1313": "BLACK PHANTOM",
