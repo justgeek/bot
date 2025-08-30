@@ -459,6 +459,7 @@ client.on("messageCreate", async (msg) => {
 
         // Fallback to Groq
         try {
+          const tools = process.env.GROQ_AI_MODEL.includes("openai/gpt-oss") ? [{"type":"browser_search"}] : [];
           const completion = await groq.chat.completions.create({
             messages: [
               { role: "system", content: process.env.systemInstruction },
@@ -466,7 +467,7 @@ client.on("messageCreate", async (msg) => {
             ],
             model: process.env.GROQ_AI_MODEL,
             temperature: parseFloat(process.env.AI_TEMPERATURE),
-            tools: [{"type":"browser_search"}]
+            tools: tools
           });
 
           let response = completion.choices[0]?.message?.content || "";
@@ -482,6 +483,7 @@ client.on("messageCreate", async (msg) => {
       // Default to Groq first (or if AI_SERVICE is not 'gemini')
       try {
         console.log("Attempting Groq first...");
+        const tools = process.env.GROQ_AI_MODEL.includes("openai/gpt-oss") ? [{"type":"browser_search"}] : [];
         const completion = await groq.chat.completions.create({
           messages: [
             { role: "system", content: process.env.systemInstruction },
@@ -489,8 +491,9 @@ client.on("messageCreate", async (msg) => {
           ],
           model: process.env.GROQ_AI_MODEL,
           temperature: parseFloat(process.env.AI_TEMPERATURE),
-          tools: [{"type":"browser_search"}]
+          tools: tools
         });
+
 
         let response = completion.choices[0]?.message?.content || "";
         response = response.replace(/<think>[\s\S]*?<\/think>/g, '');
