@@ -465,7 +465,7 @@ client.on("messageCreate", async (msg) => {
               { role: "user", content: userPrompt },
             ],
             model: process.env.GROQ_AI_MODEL,
-            temperature: 0.3,
+            temperature: parseFloat(process.env.AI_TEMPERATURE),
             tools: [{"type":"browser_search"}]
           });
 
@@ -488,7 +488,7 @@ client.on("messageCreate", async (msg) => {
             { role: "user", content: userPrompt },
           ],
           model: process.env.GROQ_AI_MODEL,
-          temperature: 0.3,
+          temperature: parseFloat(process.env.AI_TEMPERATURE),
           tools: [{"type":"browser_search"}]
         });
 
