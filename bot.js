@@ -14,6 +14,7 @@ const {
   StreamType,
   entersState,
   VoiceConnectionStatus,
+  generateDependencyReport,
 } = require("@discordjs/voice");
 const fs = require("fs");
 const discordTTS = require("discord-tts");
@@ -151,20 +152,61 @@ const gamesList = [
 
 let resource, player, connection, connectionSubscription;
 
-const joinBanhaVoiceChannel = (channelToJoin) => {
-  if (shouldJoinVoiceChannel(channelToJoin)) {
-    connection = joinVoiceChannel({
-      channelId: channelToJoin,
-      guildId: IDs.guild,
-      adapterCreator: client.guilds.cache.get(IDs.guild).voiceAdapterCreator,
-    });
-    console.log(`Bot joined voice channel: ${channelToJoin}`);
-    return connection;
-  } else {
+const joinBanhaVoiceChannel = async (channelToJoin) => {
+  if (!shouldJoinVoiceChannel(channelToJoin)) {
     console.log(`Not joining voice channel ${channelToJoin} as it's empty or only contains bots.`);
     return null;
   }
+
+  voiceCurrent = channelToJoin;
+  connection = joinVoiceChannel({
+    channelId: channelToJoin,
+    guildId: IDs.guild,
+    adapterCreator: client.guilds.cache.get(IDs.guild).voiceAdapterCreator,
+  });
+
+  try {
+    await entersState(connection, VoiceConnectionStatus.Ready, 20000);
+    console.log(`Bot joined voice channel: ${channelToJoin}`);
+  } catch (err) {
+    console.error("Voice connection failed to become ready:", err);
+    try { connection.destroy(); } catch {}
+    connection = null;
+    return null;
+  }
+
+  if (!player) {
+    player = createAudioPlayer();
+    player.on('error', (e) => console.error('AudioPlayer error:', e));
+    player.on('stateChange', (oldState, newState) => {
+      try {
+        console.log(`AudioPlayer state: ${oldState.status} -> ${newState.status}`);
+      } catch {}
+    });
+  }
+
+  try {
+    connectionSubscription = connection.subscribe(player);
+  } catch (e) {
+    console.error('Failed to subscribe player to connection:', e);
+  }
+
+  return connection;
 };
+
+// Ensure we are connected and subscribed before attempting to play
+async function ensureVoiceReady(msg) {
+  try {
+    const targetChannelId = msg?.member?.voice?.channel?.id || voiceCurrent || IDs.voice3;
+    if (!connection || connection.state?.status !== VoiceConnectionStatus.Ready || connection.joinConfig.channelId !== targetChannelId) {
+      await joinBanhaVoiceChannel(targetChannelId);
+    }
+    return connection && connection.state?.status === VoiceConnectionStatus.Ready;
+  } catch (e) {
+    console.error('ensureVoiceReady error:', e);
+    return false;
+  }
+}
 
 client.on("error", (e) => {
   console.error("ERR NOT HANDLED:", e);
@@ -175,10 +217,11 @@ client.on("ready", () => {
   client.user.setStatus('invisible');
   sendToChannel(IDs.channelV, 'Sup!\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t("**!commands**" for stuff)');
 
+  // Optional: print dependency report once for debugging audio env
+  try { console.log(generateDependencyReport()); } catch {}
+
   if (shouldJoinVoiceChannel(IDs.voice3)) {
     joinBanhaVoiceChannel(IDs.voice3);
-    player = createAudioPlayer();
-    connectionSubscription = connection.subscribe(player);
   }
 });
 
@@ -279,6 +322,7 @@ client.on("messageCreate", async (msg) => {
     const memeFile = memesFolder + memes[message];
     resource = createAudioResource(memeFile);
 
+    await ensureVoiceReady(msg);
     playVoice(resource);
     const logMessage = msg.member.displayName + " " + message; //"Playing " + message + ' by ' + msg.member.displayName
     console.log(logMessage);
@@ -410,9 +454,7 @@ client.on("messageCreate", async (msg) => {
       if (voiceCurrent) {
         console.log("voiceCurrent: %s", voiceCurrent)
 
-        joinBanhaVoiceChannel(voiceCurrent);
-        player = createAudioPlayer();
-        connectionSubscription = connection.subscribe(player);
+        await joinBanhaVoiceChannel(voiceCurrent);
         msg.delete();
       }
     } catch {
@@ -549,6 +591,8 @@ client.on("messageCreate", async (msg) => {
 
   else if (message.startsWith("!")) {
     message = message.replace("!", "").trim();
+  // else if (message.startsWith("$")) {
+  //   message = message.replace("$", "").trim();
 
     // Set default language to "ja" for fallback TTS
     let lang = "ja";
@@ -566,6 +610,7 @@ client.on("messageCreate", async (msg) => {
       const audioPath = await textToSpeech(message);
       const resource = createAudioResource(audioPath);
 
+      await ensureVoiceReady(msg);
       playVoice(resource);
 
 
@@ -583,6 +628,7 @@ client.on("messageCreate", async (msg) => {
       const stream = discordTTS.getVoiceStream(message, { lang: lang });
       const resource = createAudioResource(stream);
 
+      await ensureVoiceReady(msg);
       playVoice(resource);
     }
 
@@ -693,7 +739,7 @@ client.on("presenceUpdate", (before, after) => {
 });
 
 
-client.on("voiceStateUpdate", (before, after) => {
+client.on("voiceStateUpdate", async (before, after) => {
   if (after.id == client.user.id) return; //if bot return
   let chatMsg = " ";
 
@@ -737,9 +783,7 @@ client.on("voiceStateUpdate", (before, after) => {
 
       // Join the channel if the bot isn't already in it
       if (!connection || shouldJoinVoiceChannel(IDs.voice3)) {
-        joinBanhaVoiceChannel(IDs.voice3);
-        player = createAudioPlayer();
-        connectionSubscription = connection.subscribe(player);
+        await joinBanhaVoiceChannel(IDs.voice3);
       }
 
       const stream = discordTTS.getVoiceStream(personTTS + " joined", { lang: "ja" });

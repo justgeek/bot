@@ -1,13 +1,56 @@
 diff --git a/node_modules/@discordjs/voice/dist/index.js b/node_modules/@discordjs/voice/dist/index.js
-index 2f2e420..c705096 100644
+index 2f2e420..7e3a2b4 100644
 --- a/node_modules/@discordjs/voice/dist/index.js
 +++ b/node_modules/@discordjs/voice/dist/index.js
-@@ -1427,6 +1427,8 @@ var VoiceConnection2 = class extends import_node_events7.EventEmitter {
-     }
-   }
+@@ -531,10 +531,14 @@ function stringifyState(state) {
+   });
+ }
+ __name(stringifyState, "stringifyState");
+ function chooseEncryptionMode(options) {
+-  // Normalize Discord's new *_rtpsize modes to legacy names supported by this version
+-  const normalized = options.map((mode) => mode.replace(/_rtpsize$/, ""));
+-  const option = normalized.find((candidate) => SUPPORTED_ENCRYPTION_MODES.includes(candidate));
+-  if (!option) {
+-    throw new Error(`No compatible encryption modes. Available include: ${options.join(", ")}`);
+-  }
+-  return option;
++  // Return the ORIGINAL option from the server that corresponds to a supported legacy mode
++  for (const option of options) {
++    const normalized = option.replace(/_rtpsize$/, "");
++    if (SUPPORTED_ENCRYPTION_MODES.includes(normalized)) {
++      return option; // send back what the server advertised
++    }
++  }
++  throw new Error(`No compatible encryption modes. Available include: ${options.join(", ")}`);
+ }
+ __name(chooseEncryptionMode, "chooseEncryptionMode");
+ function randomNBit(n) {
+   return Math.floor(Math.random() * 2 ** n);
+@@ -696,7 +700,9 @@ var Networking = class extends import_node_events3.EventEmitter {
+         }
+       } else if (packet.op === import_v42.VoiceOpcodes.SessionDescription && this.state.code === 3 /* SelectingProtocol */) {
+-      const { mode: encryptionMode, secret_key: secretKey } = packet.d;
++      const { mode, secret_key: secretKey } = packet.d;
++      // Normalize *_rtpsize modes to legacy names expected by this version
++      const encryptionMode = typeof mode === "string" ? mode.replace(/_rtpsize$/, "") : mode;
+       this.state = {
+         ...this.state,
+         code: 4 /* Ready */,
+         connectionData: {
+           ...this.state.connectionData,
+           encryptionMode,
+           secretKey: new Uint8Array(secretKey),
+           sequence: randomNBit(16),
+@@ -1433,6 +1439,9 @@ var VoiceConnection2 = class extends import_node_events7.EventEmitter {
    addStatePacket(packet) {
-+    this.configureNetworking();
-+    console.log("Running PATCHED Discord Version !! BANHA FOREVER")
      this.packets.state = packet;
      if (typeof packet.self_deaf !== "undefined")
        this.joinConfig.selfDeaf = packet.self_deaf;
+     if (typeof packet.self_mute !== "undefined")
+       this.joinConfig.selfMute = packet.self_mute;
+     if (packet.channel_id)
+       this.joinConfig.channelId = packet.channel_id;
++    // Ensure networking is configured once both server and state are present,
++    // regardless of which packet arrived first.
++    this.configureNetworking();
+   }
