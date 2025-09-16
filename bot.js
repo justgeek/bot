@@ -214,6 +214,11 @@ client.on("error", (e) => {
 
 client.on("ready", () => {
   console.log(`Logged in as ${client.user.tag}!`);
+  try {
+    const voicePkg = require('@discordjs/voice/package.json');
+    console.log(`Runtime Node: ${process.version}`);
+    console.log(`@discordjs/voice version: ${voicePkg.version}`);
+  } catch {}
   client.user.setStatus('invisible');
   sendToChannel(IDs.channelV, 'Sup!\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t("**!commands**" for stuff)');
 
