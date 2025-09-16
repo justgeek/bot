@@ -1,7 +1,7 @@
 {
   "dependencies": {
-    "@discordjs/opus": "^0.8.0",
-    "@discordjs/voice": "^0.11.0",
+    "@discordjs/opus": "^0.10.0",
+    "@discordjs/voice": "^0.16.1",
     "@google/generative-ai": "^0.21.0",
     "active-window": "^0.1.0",
     "chatgpt": "^2.0.5",
@@ -28,12 +28,12 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node bot.js",
-    "postinstall": "patch-package"
+    "postinstall": ""
   },
   "author": "Moonscarlet",
   "license": "ISC",
   "description": "Just another discord bot with random stuff!",
-  "devDependencies": {
-    "patch-package": "^6.5.1"
+  "engines": {
+    "node": "20.x"
   }
 }
