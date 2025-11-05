@@ -684,7 +684,7 @@ client.on("presenceUpdate", (before, after) => {
   // CURRENTHOUR IN EGYPT TIME BY USING OTHER THAN GETHOURS AND HANDLE DAYLIGHT SAVINGS TIME
   const nowdatetime = new Date();
   const utc = nowdatetime.getTime() + nowdatetime.getTimezoneOffset() * 60000;
-  const egyptTime = new Date(utc + 3600000 * 1);
+  const egyptTime = new Date(utc + 3600000 * 2);
   const currentHour = egyptTime.getHours();
 
 
@@ -849,7 +849,7 @@ function sendToChannel(id, msg) {
 }
 function now() {
   let today = new Date();
-  let utcHours = today.getUTCHours() + 3;
+  let utcHours = today.getUTCHours() + 2; // Egypt uses EET (UTC+2) year-round
   let hours = utcHours % 12 === 0 ? 12 : utcHours % 12;
   let ampm = utcHours >= 12 ? "PM" : "AM";
 
