@@ -693,6 +693,39 @@ client.on("presenceUpdate", (before, after) => {
     sendToChannel(IDs.channelStatus, msg);
   }
 
+  // ==========================================
+  // ACTIVITY TRACKING (GAMES, MUSIC, ETC.)
+  // ==========================================
+  const beforeActivities = before ? before.activities : [];
+  const afterActivities = after ? after.activities : [];
+
+  afterActivities.forEach(activity => {
+    // Check if this activity is new (wasn't in the 'before' state)
+    const isNewActivity = !beforeActivities.some(a => a.name === activity.name);
+    
+    if (isNewActivity) {
+      let action = "Activity:";
+      
+      // Determine what they are doing based on Discord's ActivityType
+      switch (activity.type) {
+        case Discord.ActivityType.Playing: action = "🎮 Playing"; break;
+        case Discord.ActivityType.Listening: action = "🎵 Listening to"; break;
+        case Discord.ActivityType.Watching: action = "📺 Watching"; break;
+        case Discord.ActivityType.Streaming: action = "🔴 Streaming"; break;
+        case Discord.ActivityType.Competing: action = "🏆 Competing in"; break;
+        case Discord.ActivityType.Custom: action = "💬 Custom Status:"; break;
+      }
+
+      // 'details' often contains song names or match info
+      // 'state' often contains artists, group sizes, or custom status text
+      const details = activity.details ? ` | ${activity.details}` : "";
+      const state = activity.state ? ` | ${activity.state}` : "";
+      const msg2 = now() + "\t**" + user.username + ":\t**" + action + " " + activity.name + details + state;
+      console.log(msg2);
+      sendToChannel(IDs.channelStatus, msg2);
+    }
+  }); 
+
 
   if (userID == IDs.Moonscarlet && (statusBefore == "offline" || statusBefore == "") && statusAfter == "online") {
     // chatMsg = "<@" + IDs.Moonscarlet + "> is back online";
