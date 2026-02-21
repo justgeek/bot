@@ -701,6 +701,9 @@ client.on("presenceUpdate", (before, after) => {
   const afterActivities = after ? after.activities : [];
 
   afterActivities.forEach(activity => {
+    // Exclude "Hang Status" activities entirely
+    if (activity.name === "Hang Status") return;
+
     // Check if this activity is new (wasn't in the 'before' state)
     const isNewActivity = !beforeActivities.some(a => a.name === activity.name);
     
@@ -721,11 +724,12 @@ client.on("presenceUpdate", (before, after) => {
       // 'state' often contains artists, group sizes, or custom status text
       const details = activity.details ? ` | ${activity.details}` : "";
       const state = activity.state ? ` | ${activity.state}` : "";
+      
       const msg2 = now() + "\t**" + user.username + ":\t**" + action + " " + activity.name + details + state;
       console.log(msg2);
-      sendToChannel(IDs.channelActivity, msg2);
+      sendToChannel(IDs.channelActivity, msg2); // Make sure you define channelActivity in your IDs object!
     }
-  }); 
+});
 
 
   if (userID == IDs.Moonscarlet && (statusBefore == "offline" || statusBefore == "") && statusAfter == "online") {
