@@ -93,6 +93,7 @@ const IDs = {
   channelEdit: "1021447609983959050", //edit text channel
   channelVoice: "1021812152186720256", //voice text channel
   channelStatus: "1020398542365401128", //status text channel
+  channelActivity: "1474888679183876228", //activity text channel
   channelCommands: "1020315442042122330", //commands text channel
 
   voice1: "247069115204763649", //1st voice channel
@@ -722,7 +723,7 @@ client.on("presenceUpdate", (before, after) => {
       const state = activity.state ? ` | ${activity.state}` : "";
       const msg2 = now() + "\t**" + user.username + ":\t**" + action + " " + activity.name + details + state;
       console.log(msg2);
-      sendToChannel(IDs.channelStatus, msg2);
+      sendToChannel(IDs.channelActivity, msg2);
     }
   }); 
 
