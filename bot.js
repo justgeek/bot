@@ -697,12 +697,11 @@ client.on("presenceUpdate", (before, after) => {
   // ==========================================
   // ACTIVITY TRACKING (GAMES, MUSIC, ETC.)
   // ==========================================
-  // Using optional chaining (?.) so it doesn't crash if 'before' or 'after' is null
-  const beforeActivities = before?.activities || [];
-  const afterActivities = after?.activities || [];
+  const beforeActivities = before ? before.activities : [];
+  const afterActivities = after ? after.activities : [];
 
-  // 1. Check for newly STARTED activities
   afterActivities.forEach(activity => {
+    // Exclude "Hang Status" activities entirely
     if (activity.name === "Hang Status") return;
 
     // Check if this activity is new (wasn't in the 'before' state)
@@ -711,6 +710,7 @@ client.on("presenceUpdate", (before, after) => {
     if (isNewActivity) {
       let action = "Activity:";
       
+      // Determine what they are doing based on Discord's ActivityType
       switch (activity.type) {
         case Discord.ActivityType.Playing: action = "🎮 Playing"; break;
         case Discord.ActivityType.Listening: action = "🎵 Listening to"; break;
@@ -720,40 +720,16 @@ client.on("presenceUpdate", (before, after) => {
         case Discord.ActivityType.Custom: action = "💬 Custom Status:"; break;
       }
 
+      // 'details' often contains song names or match info
+      // 'state' often contains artists, group sizes, or custom status text
       const details = activity.details ? ` | ${activity.details}` : "";
       const state = activity.state ? ` | ${activity.state}` : "";
       
       const msg2 = now() + "\t**" + user.username + ":\t**" + action + " " + activity.name + details + state;
       console.log(msg2);
-      sendToChannel(IDs.channelStatus, msg2); // Fixed: changed to channelStatus
+      sendToChannel(IDs.channelActivity, msg2); // Make sure you define channelActivity in your IDs object!
     }
-  }); 
-
-  // 2. Check for newly STOPPED activities
-  beforeActivities.forEach(activity => {
-    if (activity.name === "Hang Status") return;
-
-    // Check if this activity stopped (is in 'before' but NOT in 'after')
-    const isStoppedActivity = !afterActivities.some(a => a.name === activity.name);
-    
-    if (isStoppedActivity) {
-      let action = "Stopped Activity:";
-      
-      switch (activity.type) {
-        case Discord.ActivityType.Playing: action = "⏹️ Stopped Playing"; break;
-        case Discord.ActivityType.Listening: action = "⏹️ Stopped Listening to"; break;
-        case Discord.ActivityType.Watching: action = "⏹️ Stopped Watching"; break;
-        case Discord.ActivityType.Streaming: action = "⏹️ Stopped Streaming"; break;
-        case Discord.ActivityType.Competing: action = "⏹️ Stopped Competing in"; break;
-        case Discord.ActivityType.Custom: action = "⏹️ Removed Custom Status:"; break;
-      }
-
-      const msg2 = now() + "\t**" + user.username + ":\t**" + action + " " + activity.name;
-      console.log(msg2);
-      sendToChannel(IDs.channelStatus, msg2); // Fixed: changed to channelStatus
-    }
-  });
-  // ==========================================
+});
 
 
   if (userID == IDs.Moonscarlet && (statusBefore == "offline" || statusBefore == "") && statusAfter == "online") {
