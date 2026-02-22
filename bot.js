@@ -700,6 +700,7 @@ client.on("presenceUpdate", (before, after) => {
   const beforeActivities = before ? before.activities : [];
   const afterActivities = after ? after.activities : [];
 
+  // 1. Check for newly STARTED activities
   afterActivities.forEach(activity => {
     // Exclude "Hang Status" activities entirely
     if (activity.name === "Hang Status") return;
@@ -727,9 +728,38 @@ client.on("presenceUpdate", (before, after) => {
       
       const msg2 = now() + "\t**" + user.username + ":\t**" + action + " " + activity.name + details + state;
       console.log(msg2);
-      sendToChannel(IDs.channelActivity, msg2); // Make sure you define channelActivity in your IDs object!
+      sendToChannel(IDs.channelActivity, msg2); 
     }
-});
+  }); 
+
+  // 2. Check for newly STOPPED activities
+  beforeActivities.forEach(activity => {
+    // Exclude "Hang Status" activities entirely
+    if (activity.name === "Hang Status") return;
+
+    // Check if this activity stopped (is in 'before' but NOT in 'after')
+    const isStoppedActivity = !afterActivities.some(a => a.name === activity.name);
+    
+    if (isStoppedActivity) {
+      let action = "Stopped Activity:";
+      
+      // Change the verb to past tense/stopped
+      switch (activity.type) {
+        case Discord.ActivityType.Playing: action = "⏹️ Stopped Playing"; break;
+        case Discord.ActivityType.Listening: action = "⏹️ Stopped Listening to"; break;
+        case Discord.ActivityType.Watching: action = "⏹️ Stopped Watching"; break;
+        case Discord.ActivityType.Streaming: action = "⏹️ Stopped Streaming"; break;
+        case Discord.ActivityType.Competing: action = "⏹️ Stopped Competing in"; break;
+        case Discord.ActivityType.Custom: action = "⏹️ Removed Custom Status:"; break;
+      }
+
+      // Usually, you don't need the extra details for when they stop, just the name is enough!
+      const msg2 = now() + "\t**" + user.username + ":\t**" + action + " " + activity.name;
+      console.log(msg2);
+      sendToChannel(IDs.channelActivity, msg2); 
+    }
+  });
+  // ==========================================
 
 
   if (userID == IDs.Moonscarlet && (statusBefore == "offline" || statusBefore == "") && statusAfter == "online") {
