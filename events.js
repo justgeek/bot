@@ -220,6 +220,9 @@ module.exports = (client) => {
       process.exit(1);
     } else if (message.startsWith("!")) {
       message = message.replace("!", "").trim();
+    // } else if (message.startsWith("$")) {
+      // message = message.replace("$", "").trim();
+
       let lang = "ja";
       // const langRegex = /<([a-zA-Z-]+)>/;
       // const langMatch = message.match(langRegex);
@@ -356,6 +359,10 @@ module.exports = (client) => {
 
     if ((!before.channelId && after.channelId) || (before.channelId && after.channelId && before.channelId != after.channelId)) {
       chatMsg = now() + " **" + person + "** joined **" + client.channels.cache.get(after.channelId).name + "**"; 
+      console.log(chatMsg);
+      if (before.channelId != IDs.voice2 && after.channelId != IDs.voice2){ //don't announce if secret voice channel
+        sendToChannel(client, IDs.channelVoice, chatMsg);
+      }
 
       if (after.channelId == audio.state.voiceCurrent) {
         if (!audio.state.connection || audio.shouldJoinVoiceChannel(client, IDs.voice3)) {
@@ -372,12 +379,6 @@ module.exports = (client) => {
           audio.playVoice(resource2);
         }
       }
-    }
-
-    if (chatMsg != " ") {
-      console.log(chatMsg);
-      if (before.channelId == "248868783534505984" || after.channelId == "248868783534505984") return; //don't announce if secret voice channel
-      sendToChannel(client, IDs.channelVoice, chatMsg);
     }
   });
 
