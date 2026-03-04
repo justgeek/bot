@@ -13,6 +13,7 @@ const { getRelevantEmojis, isValidDiscordEmoji } = require('./ai.js'); // Your e
 
 module.exports = (client) => {
   client.on("error", (e) => console.error("ERR NOT HANDLED:", e));
+  // ADD THIS:
 
   client.on("ready", () => {
     console.log(`Logged in as ${client.user.tag}!`);
@@ -252,12 +253,7 @@ module.exports = (client) => {
 
         await audio.ensureVoiceReady(client, msg);
         audio.playVoice(resource);
-      }
-
-      const logMessage = `${msg.member.displayName} ${message}`;
-      console.log(logMessage);
-      msg.delete();
-      if (msg.channel.id in [IDs.channelActivity, IDs.channelDel, IDs.channelStatus, IDs.channelV, IDs.channelVoice]) return; //don't announce if not main channels
+ not main channels
       sendToChannel(client, msg.channel.id, logMessage);
     }
   });
@@ -348,7 +344,11 @@ module.exports = (client) => {
 
     if ((before.channelId && !after.channelId) || (before.channelId && after.channelId && before.channelId != after.channelId)) {
       chatMsg = now() + " **" + person + "** left **" + client.channels.cache.get(before.channelId).name + "**";
-
+      console.log(chatMsg);
+      if (before.channelId != IDs.voice2 && after.channelId != IDs.voice2){ //don't announce if secret voice channel
+        sendToChannel(client, IDs.channelVoice, chatMsg);
+      }
+      
       if (before.channelId == audio.state.voiceCurrent) {
         const stream = discordTTS.getVoiceStream(personTTS + " left", { lang: "ja" });
         const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
