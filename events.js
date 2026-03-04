@@ -253,8 +253,9 @@ module.exports = (client) => {
 
       const logMessage = `${msg.member.displayName} ${message}`;
       console.log(logMessage);
-      sendToChannel(client, IDs.channelCommands, logMessage);
       msg.delete();
+      if (msg.channel.id in [IDs.channelActivity, IDs.channelDel, IDs.channelStatus, IDs.channelV, IDs.channelVoice]) return; //don't announce if not main channels
+      sendToChannel(client, msg.channel.id, logMessage);
     }
   });
 
@@ -335,9 +336,7 @@ module.exports = (client) => {
     }
   });
 
-  client.on("voiceStateUpdate", async (before, after) => {
-    if (before.channelId == "248868783534505984" || after.channelId == "248868783534505984") return;
-    
+  client.on("voiceStateUpdate", async (before, after) => {  
     if (after.id == client.user.id) return;
     let chatMsg = " ";
 
@@ -377,6 +376,7 @@ module.exports = (client) => {
 
     if (chatMsg != " ") {
       console.log(chatMsg);
+      if (before.channelId == "248868783534505984" || after.channelId == "248868783534505984") return; //don't announce if secret voice channel
       sendToChannel(client, IDs.channelVoice, chatMsg);
     }
   });
