@@ -6,6 +6,47 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 async function handleAICommand(msg, userPrompt) {
   const preferredService = process.env.AI_SERVICE?.toLowerCase();
+
+  const imageParts = [];
+  if (msg.attachments && msg.attachments.size > 0) {
+    for (const [id, attachment] of msg.attachments) {
+      if (attachment.contentType && attachment.contentType.startsWith("image/")) {
+        try {
+          const response = await fetch(attachment.url);
+          const buffer = await response.arrayBuffer();
+          imageParts.push({
+            inlineData: {
+              data: Buffer.from(buffer).toString("base64"),
+              mimeType: attachment.contentType
+            }
+          });
+        } catch (err) {
+          console.error("Error fetching attachment:", err);
+        }
+      }
+    }
+  }
+
+  const geminiRequest = [userPrompt];
+  if (imageParts.length > 0) {
+    geminiRequest.push(...imageParts);
+  }
+
+  let groqUserContent = userPrompt;
+  if (imageParts.length > 0) {
+    groqUserContent = [];
+    if (userPrompt) {
+      groqUserContent.push({ type: "text", text: userPrompt });
+    }
+    for (const part of imageParts) {
+      groqUserContent.push({
+        type: "image_url",
+        image_url: {
+          url: `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`
+        }
+      });
+    }
+  }
       
   if (preferredService === 'gemini') {
     // Try Gemini first
@@ -24,7 +65,7 @@ async function handleAICommand(msg, userPrompt) {
         systemInstruction: process.env.systemInstruction,
       });
 
-      const result = await model.generateContent(userPrompt);
+      const result = await model.generateContent(geminiRequest);
       const response = await result.response;
 
       let text;
@@ -42,11 +83,11 @@ async function handleAICommand(msg, userPrompt) {
 
       // Fallback to Groq
       try {
-        const tools =[];
+        const tools = [];
         const completion = await groq.chat.completions.create({
-          messages:[
+          messages: [
             { role: "system", content: process.env.systemInstruction },
-            { role: "user", content: userPrompt },
+            { role: "user", content: groqUserContent },
           ],
           model: process.env.GROQ_AI_MODEL,
           temperature: parseFloat(process.env.AI_TEMPERATURE),
@@ -66,11 +107,11 @@ async function handleAICommand(msg, userPrompt) {
     // Default to Groq first (or if AI_SERVICE is not 'gemini')
     try {
       console.log("Attempting Groq first...");
-      const tools =[];
+      const tools = [];
       const completion = await groq.chat.completions.create({
-        messages:[
+        messages: [
           { role: "system", content: process.env.systemInstruction },
-          { role: "user", content: userPrompt },
+          { role: "user", content: groqUserContent },
         ],
         model: process.env.GROQ_AI_MODEL,
         temperature: parseFloat(process.env.AI_TEMPERATURE),
@@ -101,7 +142,7 @@ async function handleAICommand(msg, userPrompt) {
           systemInstruction: process.env.systemInstruction,
         });
 
-        const result = await model.generateContent(userPrompt);
+        const result = await model.generateContent(geminiRequest);
         const response = await result.response;
 
         let text;

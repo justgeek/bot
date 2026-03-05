@@ -212,7 +212,9 @@ module.exports = (client) => {
         }
       } catch {}
     } else if (message.startsWith("!!")) {
-      const userPrompt = message.slice(2).trim();
+      const userPrompt = msg.content.substring(msg.content.toLowerCase().indexOf("!!") + 2).trim();
+    // } else if (message.startsWith("$$")) {
+    //   const userPrompt = msg.content.substring(msg.content.toLowerCase().indexOf("$$") + 2).trim();
       await handleAICommand(msg, userPrompt);
       return;
     } else if (message.startsWith("!restartbot")) {
