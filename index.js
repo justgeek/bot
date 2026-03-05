@@ -1,4 +1,5 @@
 require('dotenv').config({ override: true });
+require('node:dns').setDefaultResultOrder('ipv4first'); // Force IPv4 (fixes Heroku Node 20+ UDP drops)
 
 const Discord = require("discord.js");
 const express = require("express");
