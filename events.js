@@ -253,8 +253,12 @@ module.exports = (client) => {
 
         await audio.ensureVoiceReady(client, msg);
         audio.playVoice(resource);
- not main channels
-      sendToChannel(client, msg.channel.id, logMessage);
+
+        const logMessage = `${msg.member.displayName} ${message}`;
+        console.log(logMessage);
+        sendToChannel(client, IDs.channelCommands, logMessage);
+        msg.delete();
+      }
     }
   });
 
