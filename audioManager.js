@@ -76,6 +76,21 @@ const joinBanhaVoiceChannel = async (client, channelToJoin) => {
     channelId: channelToJoin,
     guildId: IDs.guild,
     adapterCreator: client.guilds.cache.get(IDs.guild).voiceAdapterCreator,
+    selfDeaf: false,
+    selfMute: false
+  });
+
+  state.connection.on('stateChange', (oldState, newState) => {
+    console.log(`Connection transitioned from ${oldState.status} to ${newState.status}`);
+  });
+
+  state.connection.on('error', (error) => {
+    console.error('Connection Error:', error);
+  });
+
+  // Advanced debugging for internal networking state
+  state.connection.on('debug', (message) => {
+    console.log(`[Voice Debug] ${message}`);
   });
 
   try {
