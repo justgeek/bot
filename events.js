@@ -255,12 +255,11 @@ module.exports = (client) => {
 
         await audio.ensureVoiceReady(client, msg);
         audio.playVoice(resource);
-
-        const logMessage = `${msg.member.displayName} ${message}`;
-        console.log(logMessage);
-        sendToChannel(client, IDs.channelCommands, logMessage);
-        msg.delete();
       }
+      const logMessage = `${msg.member.displayName} ${message}`;
+      console.log(logMessage);
+      sendToChannel(client, IDs.channelCommands, logMessage);
+      msg.delete();
     }
   });
 
