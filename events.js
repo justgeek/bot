@@ -51,7 +51,7 @@ module.exports = (client) => {
     const reactTo =['ASD']
     if ((reactTo.includes(msg.author.username) && !message.startsWith("!")) || message.startsWith("_")) {
       try {
-        const suggestedEmojis = await getRelevantEmojis(msg.content, 5, 'qwen-qwq-32b');
+        const suggestedEmojis = await getRelevantEmojis(msg.content, 5, 'openai/gpt-oss-120b');
         for (const emoji of suggestedEmojis) {
           try {
             await msg.react(emoji);
