@@ -8,7 +8,7 @@ function now() {
   let today = new Date();
   // Opted to keep original exact logic, but note: native options like
   // new Date().toLocaleString("en-GB", { timeZone: "Africa/Cairo" }) automatically handle DST seamlessly.
-  let utcHours = today.getUTCHours() + 2; // Egypt uses EET (UTC+2) year-round
+  let utcHours = today.getUTCHours() + 3; // Egypt uses EET (UTC+2) year-round
   let hours = utcHours % 12 === 0 ? 12 : utcHours % 12;
   let ampm = utcHours >= 12 ? "PM" : "AM";
 
