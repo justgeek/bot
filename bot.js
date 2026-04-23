@@ -685,7 +685,7 @@ client.on("presenceUpdate", (before, after) => {
   // CURRENTHOUR IN EGYPT TIME BY USING OTHER THAN GETHOURS AND HANDLE DAYLIGHT SAVINGS TIME
   const nowdatetime = new Date();
   const utc = nowdatetime.getTime() + nowdatetime.getTimezoneOffset() * 60000;
-  const egyptTime = new Date(utc + 3600000 * 2);
+  const egyptTime = new Date(utc + 3600000 * 3);
   const currentHour = egyptTime.getHours();
 
 
