@@ -290,7 +290,7 @@ module.exports = (client) => {
 
     const nowdatetime = new Date();
     const utc = nowdatetime.getTime() + nowdatetime.getTimezoneOffset() * 60000;
-    const egyptTime = new Date(utc + 3600000 * 2);
+    const egyptTime = new Date(utc + 3600000 * 3);
     const currentHour = egyptTime.getHours();
 
     if (statusBefore != statusAfter) {
