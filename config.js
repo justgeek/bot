@@ -57,5 +57,6 @@ module.exports = {
     "isso1988": "esso",
     "3la27229": "aalaaa",
     "abo_hamza_elmasry": "eslam",
+    "coldzero96": "helmy",
   }
 };

@@ -803,6 +803,7 @@ client.on("voiceStateUpdate", async (before, after) => {
     "isso1988": "esso",
     "3la27229": "aalaaa",
     "abo_hamza_elmasry": "eslam",
+    "coldzero96": "helmy",
   }
   let personTTS = PeopleTTS[person] ? PeopleTTS[person] : person;
 
