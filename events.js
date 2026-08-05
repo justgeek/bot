@@ -9,6 +9,7 @@ const { sendToChannel, now, getAuthorDisplayName } = require("./utils");
 const { memes, memesFolder, otherFolder } = require("./memes");
 const audio = require("./audioManager");
 const { handleAICommand } = require("./aiHandler");
+const { clearHistory } = require("./history");
 const { getRelevantEmojis, isValidDiscordEmoji } = require('./ai.js'); // Your existing logic file
 
 module.exports = (client) => {
@@ -87,6 +88,7 @@ module.exports = (client) => {
         '`!randomall <voice channel members row numbers to exclude (comma separated)>` (to exclude 3rd and 5th `!randomall 3,5`).',
         "`!<anything>`: Text-To-Speech.",
         "`!!<anything>`: AI response.",
+        "`!!clear`: clear the AI conversation history for this channel.",
         "`!memes`: list memes.",
         "`!joinme`: Join your current voice channel.",
         "`!restartbot`: Restart the bot.",
@@ -211,6 +213,11 @@ module.exports = (client) => {
           msg.delete();
         }
       } catch {}
+    } else if (message === "!!clear" || message === "!!reset") {
+      clearHistory(msg);
+      msg.delete();
+      // msg.reply("🧹 Cleared the AI conversation history for this channel.");
+      return;
     } else if (message.startsWith("!!")) {
       const userPrompt = msg.content.substring(msg.content.toLowerCase().indexOf("!!") + 2).trim();
     // } else if (message.startsWith("$$")) {
