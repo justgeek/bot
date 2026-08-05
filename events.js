@@ -211,10 +211,10 @@ module.exports = (client) => {
           msg.delete();
         }
       } catch {}
-    // } else if (message.startsWith("!!")) {
-      // const userPrompt = msg.content.substring(msg.content.toLowerCase().indexOf("!!") + 2).trim();
-    } else if (message.startsWith("$$")) {
-      const userPrompt = msg.content.substring(msg.content.toLowerCase().indexOf("$$") + 2).trim();
+    } else if (message.startsWith("!!")) {
+      const userPrompt = msg.content.substring(msg.content.toLowerCase().indexOf("!!") + 2).trim();
+    // } else if (message.startsWith("$$")) {
+    //   const userPrompt = msg.content.substring(msg.content.toLowerCase().indexOf("$$") + 2).trim();
       await handleAICommand(msg, userPrompt);
       return;
     } else if (message.startsWith("!restartbot")) {
