@@ -1,6 +1,7 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const Groq = require("groq-sdk");
 const { sendResponse } = require("./utils");
+const { getHistory, addToHistory } = require("./history");
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -27,11 +28,6 @@ async function handleAICommand(msg, userPrompt) {
     }
   }
 
-  const geminiRequest = [userPrompt];
-  if (imageParts.length > 0) {
-    geminiRequest.push(...imageParts);
-  }
-
   let groqUserContent = userPrompt;
   if (imageParts.length > 0) {
     groqUserContent = [];
@@ -47,7 +43,37 @@ async function handleAICommand(msg, userPrompt) {
       });
     }
   }
-      
+
+  // Pull recent conversation history (text-only; images aren't replayed
+  // into older turns) and shape it for each provider's expected format.
+  const history = getHistory(msg);
+
+  const groqHistoryMessages = history.map((h) => ({
+    role: h.role,
+    content: h.content,
+  }));
+
+  const geminiHistoryContents = history.map((h) => ({
+    role: h.role === "assistant" ? "model" : "user",
+    parts: [{ text: h.content }],
+  }));
+
+  const geminiCurrentParts = [];
+  if (userPrompt) geminiCurrentParts.push({ text: userPrompt });
+  geminiCurrentParts.push(...imageParts);
+
+  const geminiContents = [
+    ...geminiHistoryContents,
+    { role: "user", parts: geminiCurrentParts },
+  ];
+
+  // Call this once, right after a provider call succeeds, to record the
+  // exchange for the next "!!" message in this channel.
+  function recordExchange(assistantText) {
+    addToHistory(msg, "user", userPrompt);
+    addToHistory(msg, "assistant", assistantText);
+  }
+
   if (preferredService === 'gemini') {
     // Try Gemini first
     try {
@@ -65,7 +91,7 @@ async function handleAICommand(msg, userPrompt) {
         systemInstruction: process.env.systemInstruction,
       });
 
-      const result = await model.generateContent(geminiRequest);
+      const result = await model.generateContent({ contents: geminiContents });
       const response = await result.response;
 
       let text;
@@ -76,6 +102,7 @@ async function handleAICommand(msg, userPrompt) {
       }
       sendResponse(msg, text);
       console.log("Gemini Response:", text);
+      recordExchange(text);
 
     } catch (geminiError) {
       console.error("Gemini Error:", geminiError);
@@ -87,6 +114,7 @@ async function handleAICommand(msg, userPrompt) {
         const completion = await groq.chat.completions.create({
           messages: [
             { role: "system", content: process.env.systemInstruction },
+            ...groqHistoryMessages,
             { role: "user", content: groqUserContent },
           ],
           model: process.env.GROQ_AI_MODEL,
@@ -98,6 +126,7 @@ async function handleAICommand(msg, userPrompt) {
         response = response.replace(/<think>[\s\S]*?<\/think>/g, '');
         sendResponse(msg, response);
         console.log("Groq Response:", response);
+        recordExchange(response);
       } catch (groqError) {
         console.error("Groq Fallback Error:", groqError);
         msg.reply("Sorry, both AI services failed to process your request.");
@@ -111,6 +140,7 @@ async function handleAICommand(msg, userPrompt) {
       const completion = await groq.chat.completions.create({
         messages: [
           { role: "system", content: process.env.systemInstruction },
+          ...groqHistoryMessages,
           { role: "user", content: groqUserContent },
         ],
         model: process.env.GROQ_AI_MODEL,
@@ -122,6 +152,7 @@ async function handleAICommand(msg, userPrompt) {
       response = response.replace(/<think>[\s\S]*?<\/think>/g, '');
       sendResponse(msg, response);
       console.log("Groq Response:", response);
+      recordExchange(response);
 
     } catch (groqError) {
       console.error("Groq Error:", groqError);
@@ -142,7 +173,7 @@ async function handleAICommand(msg, userPrompt) {
           systemInstruction: process.env.systemInstruction,
         });
 
-        const result = await model.generateContent(geminiRequest);
+        const result = await model.generateContent({ contents: geminiContents });
         const response = await result.response;
 
         let text;
@@ -153,6 +184,7 @@ async function handleAICommand(msg, userPrompt) {
         }
         sendResponse(msg, text);
         console.log("Gemini Response:", text);
+        recordExchange(text);
       } catch (geminiError) {
         console.error("Gemini Fallback Error:", geminiError);
         msg.reply("Sorry, both AI services failed to process your request.");
