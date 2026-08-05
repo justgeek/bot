@@ -70,7 +70,7 @@ async function handleAICommand(msg, userPrompt) {
   // Call this once, right after a provider call succeeds, to record the
   // exchange for the next "!!" message in this channel.
   function recordExchange(assistantText) {
-    addToHistory(msg, "user", userPrompt);
+    addToHistory(msg, "user", userPrompt); 
     addToHistory(msg, "assistant", assistantText);
   }
 
