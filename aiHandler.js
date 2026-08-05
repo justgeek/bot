@@ -5,7 +5,8 @@ const { getHistory, addToHistory } = require("./history");
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-async function handleAICommand(msg, userPrompt) {
+async function handleAICommand(msg, userPrompt, options = {}) {
+  const { onReply } = options;
   const preferredService = process.env.AI_SERVICE?.toLowerCase();
 
   const imageParts = [];
@@ -68,10 +69,18 @@ async function handleAICommand(msg, userPrompt) {
   ];
 
   // Call this once, right after a provider call succeeds, to record the
-  // exchange for the next "!!" message in this channel.
+  // exchange for the next "!!" message in this channel, and to let the
+  // caller (e.g. events.js) know what the AI actually said, if it wants to.
   function recordExchange(assistantText) {
-    addToHistory(msg, "user", userPrompt); 
+    addToHistory(msg, "user", userPrompt);
     addToHistory(msg, "assistant", assistantText);
+    if (typeof onReply === "function") {
+      try {
+        onReply(assistantText);
+      } catch (err) {
+        console.error("onReply callback error:", err);
+      }
+    }
   }
 
   if (preferredService === 'gemini') {

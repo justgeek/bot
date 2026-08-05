@@ -37,24 +37,59 @@ module.exports = (client) => {
   client.on("messageCreate", async (msg) => {
     if (msg.author.bot) return;
 
-    // --- Direct Messages: only "moonscarlet", only the AI command ---
+    // --- Direct Messages ---
     // (DMs have no msg.guild / msg.member, which the guild logic below
     // relies on, so they're handled completely separately here.)
     if (!msg.guild) {
-      if (msg.author.username !== "moonscarlet") return;
+      if (msg.author.id === IDs.Moonscarlet) {
+        const dmMessage = msg.content.toLowerCase();
 
-      const dmMessage = msg.content.toLowerCase();
+        if (dmMessage === "!!clear" || dmMessage === "!!reset") {
+          clearHistory(msg);
+          msg.reply("🧹 Cleared the AI conversation history for this DM.");
+          return;
+        }
 
-      if (dmMessage === "!!clear" || dmMessage === "!!reset") {
-        clearHistory(msg);
-        msg.reply("🧹 Cleared the AI conversation history for this DM.");
+        if (dmMessage.startsWith("!!")) {
+          const userPrompt = msg.content.substring(msg.content.toLowerCase().indexOf("!!") + 2).trim();
+          await handleAICommand(msg, userPrompt);
+        }
         return;
       }
 
-      if (dmMessage.startsWith("!!")) {
-        const userPrompt = msg.content.substring(msg.content.toLowerCase().indexOf("!!") + 2).trim();
-        await handleAICommand(msg, userPrompt);
+      // Anyone else DMing the bot: reply to them with the AI directly (no
+      // "!!" needed), and keep moonscarlet in the loop with both what was
+      // said and what the bot replied.
+      let moonscarlet;
+      try {
+        moonscarlet = await client.users.fetch(IDs.Moonscarlet);
+        let forward = `📩 **DM from ${msg.author.username}** (\`${msg.author.id}\`):\n${msg.content || "*(no text)*"}`;
+
+        if (msg.attachments.size > 0) {
+          const urls = [...msg.attachments.values()].map((a) => a.url).join("\n");
+          forward += `\n📎 Attachments:\n${urls}`;
+        }
+
+        // Stay safely under Discord's 2000 char message limit.
+        if (forward.length > 1900) forward = forward.slice(0, 1900) + "… (truncated)";
+
+        await moonscarlet.send(forward);
+      } catch (err) {
+        console.error("Error forwarding DM to moonscarlet:", err);
       }
+
+      await handleAICommand(msg, msg.content, {
+        onReply: async (assistantText) => {
+          if (!moonscarlet) return;
+          try {
+            let replyNotice = `🤖 **Bot replied to ${msg.author.username}:**\n${assistantText}`;
+            if (replyNotice.length > 1900) replyNotice = replyNotice.slice(0, 1900) + "… (truncated)";
+            await moonscarlet.send(replyNotice);
+          } catch (err) {
+            console.error("Error forwarding bot reply to moonscarlet:", err);
+          }
+        },
+      });
       return;
     }
 
