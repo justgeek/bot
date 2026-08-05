@@ -35,6 +35,29 @@ module.exports = (client) => {
   });
 
   client.on("messageCreate", async (msg) => {
+    if (msg.author.bot) return;
+
+    // --- Direct Messages: only "moonscarlet", only the AI command ---
+    // (DMs have no msg.guild / msg.member, which the guild logic below
+    // relies on, so they're handled completely separately here.)
+    if (!msg.guild) {
+      if (msg.author.username !== "moonscarlet") return;
+
+      const dmMessage = msg.content.toLowerCase();
+
+      if (dmMessage === "!!clear" || dmMessage === "!!reset") {
+        clearHistory(msg);
+        msg.reply("🧹 Cleared the AI conversation history for this DM.");
+        return;
+      }
+
+      if (dmMessage.startsWith("!!")) {
+        const userPrompt = msg.content.substring(msg.content.toLowerCase().indexOf("!!") + 2).trim();
+        await handleAICommand(msg, userPrompt);
+      }
+      return;
+    }
+
     let message = msg.content.toLowerCase();
     if (msg.author.username + "#" + msg.author.discriminator == "Malevolent#0025") return;
 

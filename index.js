@@ -21,6 +21,13 @@ const client = new Discord.Client({
     Discord.GatewayIntentBits.GuildMembers,
     Discord.GatewayIntentBits.GuildPresences,
     Discord.GatewayIntentBits.GuildInvites,
+    Discord.GatewayIntentBits.DirectMessages, // needed to receive DMs
+  ],
+  // DM channels/messages aren't cached like guild ones, so discord.js needs
+  // these "partials" enabled or it silently drops the messageCreate event for DMs.
+  partials: [
+    Discord.Partials.Channel,
+    Discord.Partials.Message,
   ],
 });
 
