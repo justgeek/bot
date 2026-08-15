@@ -335,6 +335,8 @@ module.exports = (client) => {
   });
 
   client.on("messageDelete", (msg) => {
+    if (msg.author?.bot) return; // don't log the bot's own message deletions
+  
     const message = msg.content.toLowerCase();
     if (message.startsWith("!") || message == "!commands" || message == "!playlist") return;
     const deleted = `${now()}\t **${msg.author.username}:** ${msg.content}`;
@@ -343,7 +345,9 @@ module.exports = (client) => {
   });
 
   client.on("messageUpdate", (oldMessage, newMessage) => {
+    if (newMessage.author?.bot) return; // don't log the bot's own edits (e.g. meme menu refreshes)
     if (oldMessage == newMessage) return;
+  
     const edited = `${now()}\t **${newMessage.author.username}:**\n${oldMessage.content}\n>\n${newMessage.content}`;
     console.log("edited:", edited);
     sendToChannel(client, IDs.channelDel, edited);
