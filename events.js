@@ -164,6 +164,11 @@ module.exports = (client) => {
     } else if (message == "!playlist" || message == "!youtube") {
       msg.channel.send("https://www.youtube.com/playlist?list=PLhKVK0lPQ73sDSSxq09yx9QVgyr3MBR6d");
     } else if (memes[message]) {
+      const voiceChannel = msg.member.voice.channel;
+      if (!voiceChannel) {
+        msg.reply("You need to be in a voice channel to play a meme!");
+        return;
+      }      
       const memeFile = memesFolder + memes[message];
       const resource = createAudioResource(memeFile);
 
@@ -500,7 +505,6 @@ module.exports = (client) => {
         const resource = createAudioResource(memesFolder + memeFile);
         await audio.ensureVoiceReady(client, interaction);
         audio.playVoice(resource);
-        setLastMeme(interaction.guildId, memeKey);
   
         const logMessage = interaction.member.displayName + " " + memeKey;
         console.log(logMessage);
