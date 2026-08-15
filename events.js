@@ -12,6 +12,8 @@ const { handleAICommand } = require("./aiHandler");
 const { clearHistory } = require("./history");
 const { getRelevantEmojis, isValidDiscordEmoji } = require('./ai.js'); // Your existing logic file
 
+const { buildMemeMenus } = require("./menuBuilder");
+
 module.exports = (client) => {
   client.on("error", (e) => console.error("ERR NOT HANDLED:", e));
   // ADD THIS:
@@ -153,8 +155,12 @@ module.exports = (client) => {
       ];
       msg.channel.send("> **COMMANDS:**\n> " + commands.join("\n> "));
     } else if (message === "!memes") {
-      const memesKeys = "> ```" + Object.keys(memes).map((e) => e.toUpperCase()).join(", ") + "```";
-      msg.reply(memesKeys);
+      // const memesKeys = "> ```" + Object.keys(memes).map((e) => e.toUpperCase()).join(", ") + "```";
+      // msg.reply(memesKeys);
+      const messages = buildMemeMenus();
+      for (const payload of messages) {
+        await msg.channel.send(payload);
+      } 
     } else if (message == "!playlist" || message == "!youtube") {
       msg.channel.send("https://www.youtube.com/playlist?list=PLhKVK0lPQ73sDSSxq09yx9QVgyr3MBR6d");
     } else if (memes[message]) {
@@ -463,4 +469,29 @@ module.exports = (client) => {
     console.log(chatMsg);
     sendToChannel(client, IDs.channelMain, chatMsg);
   });
+  client.on("interactionCreate", async (interaction) => {
+    try {
+      if (interaction.isStringSelectMenu() && interaction.customId.startsWith("meme_select_")) {
+        const memeKey = interaction.values[0];
+        const memeFile = memes[memeKey];
+        if (!memeFile) {
+          return interaction.deferUpdate(); // silently ignore bad selection
+        }
+  
+        const resource = createAudioResource(memesFolder + memeFile);
+        await audio.ensureVoiceReady(client, interaction);
+        audio.playVoice(resource);
+        setLastMeme(interaction.guildId, memeKey);
+  
+        const logMessage = interaction.member.displayName + " " + memeKey;
+        console.log(logMessage);
+        sendToChannel(client, IDs.channelCommands, logMessage);
+  
+        await interaction.deferUpdate();
+      }
+    } catch (err) {
+      console.error("Error handling meme interaction:", err);
+    }
+  });
 };
+
