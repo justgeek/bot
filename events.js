@@ -474,20 +474,23 @@ module.exports = (client) => {
       if (interaction.isStringSelectMenu() && interaction.customId.startsWith("meme_select_")) {
         const memeKey = interaction.values[0];
         const memeFile = memes[memeKey];
+  
         if (!memeFile) {
-          return interaction.deferUpdate(); // silently ignore bad selection
+          await interaction.deferUpdate();
+          return;
         }
+  
+        // Re-send the same components to reset the menu's "selected" state,
+        // instead of deferUpdate() which leaves the checkmark stuck.
+        await interaction.update({ components: interaction.message.components });
   
         const resource = createAudioResource(memesFolder + memeFile);
         await audio.ensureVoiceReady(client, interaction);
         audio.playVoice(resource);
-        setLastMeme(interaction.guildId, memeKey);
   
         const logMessage = interaction.member.displayName + " " + memeKey;
         console.log(logMessage);
         sendToChannel(client, IDs.channelCommands, logMessage);
-  
-        await interaction.deferUpdate();
       }
     } catch (err) {
       console.error("Error handling meme interaction:", err);
