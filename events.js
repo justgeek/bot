@@ -484,13 +484,23 @@ module.exports = (client) => {
           return;
         }
   
-        // Re-send the same components to reset the menu's "selected" state,
-        // instead of deferUpdate() which leaves the checkmark stuck.
+        // Reset the menu's "selected" checkmark
         await interaction.update({ components: interaction.message.components });
+  
+        // Require the clicker to be in a voice channel
+        const voiceChannel = interaction.member.voice.channel;
+        if (!voiceChannel) {
+          await interaction.followUp({
+            content: "You need to be in a voice channel to play a meme!",
+            ephemeral: true,
+          });
+          return;
+        }
   
         const resource = createAudioResource(memesFolder + memeFile);
         await audio.ensureVoiceReady(client, interaction);
         audio.playVoice(resource);
+        setLastMeme(interaction.guildId, memeKey);
   
         const logMessage = interaction.member.displayName + " " + memeKey;
         console.log(logMessage);
