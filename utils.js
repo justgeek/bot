@@ -59,4 +59,35 @@ const sendResponse = (msg, responseText) => {
   }
 };
 
-module.exports = { sendToChannel, now, getAuthorDisplayName, sleep, sendResponse };
+function isCraig(user) {
+  if (!user) return false;
+  const username = (user.username || "").toLowerCase();
+  const discriminator = user.discriminator || "";
+  const tag = (user.tag || "").toLowerCase();
+  const fullTag = discriminator && discriminator !== "0" ? `${username}#${discriminator}` : tag;
+
+  return (
+    tag === "craig#1289" ||
+    fullTag === "craig#1289" ||
+    user.id === "272937604339466240" ||
+    (user.bot && username === "craig") ||
+    (username === "craig" && discriminator === "1289")
+  );
+}
+
+function isCraigMember(member) {
+  if (!member) return false;
+  if (isCraig(member.user)) return true;
+  if (member.user?.bot && (member.nickname === "مخبر" || member.displayName === "مخبر")) return true;
+  return false;
+}
+
+module.exports = {
+  sendToChannel,
+  now,
+  getAuthorDisplayName,
+  sleep,
+  sendResponse,
+  isCraig,
+  isCraigMember,
+};

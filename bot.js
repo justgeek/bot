@@ -26,6 +26,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const Groq = require("groq-sdk");
 const { getRelevantEmojis, isValidDiscordEmoji } = require('./ai.js');
 // const { textToSpeech } = require('./tts.js');
+const { isCraigMember } = require("./utils");
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -394,7 +395,11 @@ client.on("messageCreate", async (msg) => {
               memberVoiceChannelId = mem.voice.channel.id;
 
               console.log(memberNickname + " " + memberId + " " + memberVoiceChannelName);
-              if (
+              if (isCraigMember(mem)) {
+                if (mem.nickname !== "مخبر") {
+                  mem.setNickname("مخبر").catch((err) => console.error("Failed to rename Craig to مخبر:", err));
+                }
+              } else if (
                 memberVoiceChannelId == currentVoiceChannelId &&
                 // mem.displayName != "!Malevolent"
                 mem.user.tag != client.user.tag
@@ -822,6 +827,18 @@ client.on("voiceStateUpdate", async (before, after) => {
   if ((!before.channelId && after.channelId) || (before.channelId && after.channelId && before.channelId != after.channelId)) {
     //no before or there is before and after that are not the same
     chatMsg = now() + " **" + person + "** joined **" + client.channels.cache.get(after.channelId).name + "**"; //= joined
+
+    let member = after.member;
+    if (!member && after.guild) {
+      member = await after.guild.members.fetch(after.id).catch(() => null);
+    }
+    if (member && isCraigMember(member)) {
+      if (member.nickname !== "مخبر") {
+        member.setNickname("مخبر")
+          .then(() => console.log(`Renamed Craig (${member.user?.tag || member.id}) to مخبر`))
+          .catch((err) => console.error("Failed to rename Craig to مخبر:", err));
+      }
+    }
 
     if (after.channelId == voiceCurrent) {
 

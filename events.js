@@ -5,7 +5,7 @@ const discordTTS = require("discord-tts");
 const { createAudioResource, StreamType, generateDependencyReport } = require("@discordjs/voice");
 
 const { IDs, gamesList, PeopleTTS } = require("./config");
-const { sendToChannel, now, getAuthorDisplayName } = require("./utils");
+const { sendToChannel, now, getAuthorDisplayName, isCraigMember } = require("./utils");
 const { memes, memesFolder, otherFolder } = require("./memes");
 const audio = require("./audioManager");
 const { handleAICommand } = require("./aiHandler");
@@ -223,7 +223,11 @@ module.exports = (client) => {
               memberVoiceChannelName = mem.voice.channel.name;
               memberVoiceChannelId = mem.voice.channel.id;
               console.log(memberNickname + " " + memberId + " " + memberVoiceChannelName);
-              if (memberVoiceChannelId == currentVoiceChannelId && mem.user.tag != client.user.tag) {
+              if (isCraigMember(mem)) {
+                if (mem.nickname !== "مخبر") {
+                  mem.setNickname("مخبر").catch((err) => console.error("Failed to rename Craig to مخبر:", err));
+                }
+              } else if (memberVoiceChannelId == currentVoiceChannelId && mem.user.tag != client.user.tag) {
                 players.push([memberNickname, `<@${memberId}>`]);
               }
             }
@@ -447,6 +451,18 @@ module.exports = (client) => {
       console.log(chatMsg);
       if (before.channelId != IDs.voice2 && after.channelId != IDs.voice2){ //don't announce if secret voice channel
         sendToChannel(client, IDs.channelVoice, chatMsg);
+      }
+
+      let member = after.member;
+      if (!member && after.guild) {
+        member = await after.guild.members.fetch(after.id).catch(() => null);
+      }
+      if (member && isCraigMember(member)) {
+        if (member.nickname !== "مخبر") {
+          member.setNickname("مخبر")
+            .then(() => console.log(`Renamed Craig (${member.user?.tag || member.id}) to مخبر`))
+            .catch((err) => console.error("Failed to rename Craig to مخبر:", err));
+        }
       }
 
       if (after.channelId == audio.state.voiceCurrent) {
