@@ -23,7 +23,7 @@ module.exports = {
     ZEKUS: "644899011236724787",
   },
 
-  gamesList:[
+  gamesList: [
     "Turbo",
     "Custom Hero Clash (CHC)",
     // "Overwatch",
@@ -57,6 +57,7 @@ module.exports = {
     "isso1988": "esso",
     "3la27229": "aalaaa",
     "abo_hamza_elmasry": "eslam",
+    "assalamalssydrshadalssy": "eslam",
     "coldzero96": "helmy",
   }
 };
