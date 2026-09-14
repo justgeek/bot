@@ -86,19 +86,22 @@ function isCraigMember(member) {
 }
 
 async function renameCraigToMokhber(member, reason = "delayed") {
-  if (!member || !isCraigMember(member)) return;
-  if (member.nickname === "مخبر") return;
+  console.log(`[Craig] renameCraigToMokhber called. reason=${reason}, member=${member?.id}, isCraigMember=${isCraigMember(member)}, currentNickname=${JSON.stringify(member?.nickname)}, displayName=${JSON.stringify(member?.displayName)}, username=${JSON.stringify(member?.user?.username)}`);
+  if (!member) { console.log('[Craig] abort: no member'); return; }
+  if (!isCraigMember(member)) { console.log('[Craig] abort: isCraigMember=false'); return; }
+  if (member.nickname === "مخبر") { console.log('[Craig] abort: nickname already مخبر'); return; }
   try {
+    console.log(`[Craig] Attempting setNickname('مخبر') on ${member.user?.tag || member.id}...`);
     await member.setNickname("مخبر");
-    console.log(`Renamed Craig (${member.user?.tag || member.id}) to مخبر (${reason})`);
+    console.log(`[Craig] ✅ Successfully renamed Craig (${member.user?.tag || member.id}) to مخبر (${reason})`);
   } catch (err) {
     if (err.code === 50013) {
       console.error(
-        "Failed to rename Craig to مخبر: Missing Permissions (50013). " +
+        "[Craig] ❌ Failed to rename Craig to مخبر: Missing Permissions (50013). " +
         "Ensure the bot has 'Manage Nicknames' permission and its highest role is placed HIGHER than Craig's role in Server Settings -> Roles."
       );
     } else {
-      console.error(`Failed to rename Craig to مخبر (${reason}):`, err);
+      console.error(`[Craig] ❌ Failed to rename Craig to مخبر (${reason}): code=${err.code}`, err.message);
     }
   }
 }

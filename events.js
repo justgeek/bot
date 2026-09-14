@@ -503,13 +503,17 @@ module.exports = (client) => {
       if (!member && after.guild) {
         member = await after.guild.members.fetch(after.id).catch(() => null);
       }
+      // Debug: log what we know about whoever joined
+      console.log(`[voiceStateUpdate JOIN] id=${after.id} username=${member?.user?.username} tag=${member?.user?.tag} bot=${member?.user?.bot} nickname=${JSON.stringify(member?.nickname)} displayName=${JSON.stringify(member?.displayName)} isCraig=${member ? isCraigMember(member) : 'no member'}`);
       if (member && isCraigMember(member)) {
-        console.log(`Craig detected joining voice channel (${member.user?.tag || member.id}). Scheduling rename to مخبر in 3s...`);
+        console.log(`[Craig] 🎙️ Craig detected joining voice channel (${member.user?.tag || member.id}). Scheduling rename to مخبر in 3s...`);
         setTimeout(async () => {
-          const freshMember = await after.guild.members.fetch(after.id).catch(() => null);
+          const freshMember = await after.guild.members.fetch(after.id).catch((e) => { console.error('[Craig] fetch error:', e.message); return null; });
+          console.log(`[Craig] 3s elapsed. freshMember nickname=${JSON.stringify(freshMember?.nickname)}, displayName=${JSON.stringify(freshMember?.displayName)}`);
           await renameCraigToMokhber(freshMember, "after 3s join delay");
         }, 3000);
       }
+
 
       if (after.channelId == audio.state.voiceCurrent) {
         if (!audio.state.connection || audio.shouldJoinVoiceChannel(client, IDs.voice3)) {
