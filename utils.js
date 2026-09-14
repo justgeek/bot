@@ -69,17 +69,38 @@ function isCraig(user) {
   return (
     tag === "craig#1289" ||
     fullTag === "craig#1289" ||
+    discriminator === "1289" ||
     user.id === "272937604339466240" ||
-    (user.bot && username === "craig") ||
-    (username === "craig" && discriminator === "1289")
+    username === "craig" ||
+    (user.bot && username.includes("craig"))
   );
 }
 
 function isCraigMember(member) {
   if (!member) return false;
   if (isCraig(member.user)) return true;
-  if (member.user?.bot && (member.nickname === "مخبر" || member.displayName === "مخبر")) return true;
+  const displayName = (member.displayName || "").toLowerCase();
+  const nickname = (member.nickname || "").toLowerCase();
+  if (member.user?.bot && (nickname === "مخبر" || displayName === "مخبر" || displayName.includes("craig"))) return true;
   return false;
+}
+
+async function renameCraigToMokhber(member, reason = "delayed") {
+  if (!member || !isCraigMember(member)) return;
+  if (member.nickname === "مخبر") return;
+  try {
+    await member.setNickname("مخبر");
+    console.log(`Renamed Craig (${member.user?.tag || member.id}) to مخبر (${reason})`);
+  } catch (err) {
+    if (err.code === 50013) {
+      console.error(
+        "Failed to rename Craig to مخبر: Missing Permissions (50013). " +
+        "Ensure the bot has 'Manage Nicknames' permission and its highest role is placed HIGHER than Craig's role in Server Settings -> Roles."
+      );
+    } else {
+      console.error(`Failed to rename Craig to مخبر (${reason}):`, err);
+    }
+  }
 }
 
 module.exports = {
@@ -90,4 +111,5 @@ module.exports = {
   sendResponse,
   isCraig,
   isCraigMember,
+  renameCraigToMokhber,
 };

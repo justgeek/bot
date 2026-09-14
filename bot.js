@@ -26,7 +26,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const Groq = require("groq-sdk");
 const { getRelevantEmojis, isValidDiscordEmoji } = require('./ai.js');
 // const { textToSpeech } = require('./tts.js');
-const { isCraigMember } = require("./utils");
+const { isCraigMember, renameCraigToMokhber } = require("./utils");
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -376,7 +376,7 @@ client.on("messageCreate", async (msg) => {
       console.log("Current Voice Channel: " + currentVoiceChannelName);
 
       try {
-        await msg.guild.members.fetch();
+        await msg.guild.members.fetch().catch((e) => console.warn("Guild members fetch warning:", e));
 
         let players = [];
         voiceChannel.members.forEach((mem) => {
@@ -384,9 +384,7 @@ client.on("messageCreate", async (msg) => {
           let memberId = mem.user.id;
 
           if (isCraigMember(mem)) {
-            if (mem.nickname !== "مخبر") {
-              mem.setNickname("مخبر").catch((err) => console.error("Failed to rename Craig to مخبر:", err));
-            }
+            renameCraigToMokhber(mem, "!randomall check");
           }
 
           if (!mem.user.bot && mem.user.id !== client.user.id) {
@@ -412,7 +410,7 @@ client.on("messageCreate", async (msg) => {
 
         const argsStr = message.slice("!randomall".length).trim();
         if (argsStr.length > 0) {
-          const tokens = argsStr.split(/[\s,]+/).filter(Boolean);
+          const tokens = argsStr.replace(/[,،，٫;]+/g, " ").split(/\s+/).filter(Boolean);
           const excludedIndices = new Set();
 
           for (const token of tokens) {
@@ -447,7 +445,8 @@ client.on("messageCreate", async (msg) => {
           if (excludedPlayers.length > 0) {
             replyText += `> **Excluded:** ${excludedPlayers.map((p) => p.displayName).join(", ")}\n`;
           }
-          replyText += "lol " + players.shift().mention + " go queue alone KEKW";
+          const solo = players.shift();
+          replyText += "lol " + (solo?.mention || solo?.displayName) + " go queue alone KEKW";
           msg.reply(replyText);
         } else {
           players = _lodash.shuffle(players);
@@ -461,9 +460,12 @@ client.on("messageCreate", async (msg) => {
 
           while (players.length > 0) {
             if (players.length > 1) {
-              teams += `\n> **Team ${teamNumber}:** ${players.shift().mention} - ${players.shift().mention}`;
+              const p1 = players.shift();
+              const p2 = players.shift();
+              teams += `\n> **Team ${teamNumber}:** ${p1?.mention || p1?.displayName} - ${p2?.mention || p2?.displayName}`;
             } else {
-              teams += `\n> **Team ${teamNumber}:** ${players.shift().mention}`;
+              const p1 = players.shift();
+              teams += `\n> **Team ${teamNumber}:** ${p1?.mention || p1?.displayName}`;
             }
             teamNumber++;
           }
@@ -472,7 +474,7 @@ client.on("messageCreate", async (msg) => {
         }
       } catch (err) {
         console.error("Error in !randomall:", err);
-        msg.reply("An error occurred while creating teams.");
+        msg.reply(`An error occurred while creating teams: ${err.message || err}`);
       }
     }
     console.log("-----------------------------------------------------------------------");
@@ -850,11 +852,11 @@ client.on("voiceStateUpdate", async (before, after) => {
       member = await after.guild.members.fetch(after.id).catch(() => null);
     }
     if (member && isCraigMember(member)) {
-      if (member.nickname !== "مخبر") {
-        member.setNickname("مخبر")
-          .then(() => console.log(`Renamed Craig (${member.user?.tag || member.id}) to مخبر`))
-          .catch((err) => console.error("Failed to rename Craig to مخبر:", err));
-      }
+      console.log(`Craig detected joining voice channel (${member.user?.tag || member.id}). Scheduling rename to مخبر in 3s...`);
+      setTimeout(async () => {
+        const freshMember = await after.guild.members.fetch(after.id).catch(() => null);
+        await renameCraigToMokhber(freshMember, "after 3s join delay");
+      }, 3000);
     }
 
     if (after.channelId == voiceCurrent) {
@@ -886,6 +888,17 @@ client.on("voiceStateUpdate", async (before, after) => {
   if (chatMsg != " ") {
     console.log(chatMsg);
     sendToChannel(IDs.channelVoice, chatMsg);
+  }
+});
+
+client.on("guildMemberUpdate", async (oldMember, newMember) => {
+  if (isCraigMember(newMember) && newMember.voice?.channelId && newMember.nickname !== "مخبر") {
+    setTimeout(async () => {
+      const freshMember = await newMember.guild.members.fetch(newMember.id).catch(() => null);
+      if (freshMember && freshMember.voice?.channelId && freshMember.nickname !== "مخبر") {
+        await renameCraigToMokhber(freshMember, "guildMemberUpdate override");
+      }
+    }, 1500);
   }
 });
 

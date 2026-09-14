@@ -5,7 +5,7 @@ const discordTTS = require("discord-tts");
 const { createAudioResource, StreamType, generateDependencyReport } = require("@discordjs/voice");
 
 const { IDs, gamesList, PeopleTTS } = require("./config");
-const { sendToChannel, now, getAuthorDisplayName, isCraigMember } = require("./utils");
+const { sendToChannel, now, getAuthorDisplayName, isCraigMember, renameCraigToMokhber } = require("./utils");
 const { memes, memesFolder, otherFolder } = require("./memes");
 const audio = require("./audioManager");
 const { handleAICommand } = require("./aiHandler");
@@ -216,8 +216,8 @@ module.exports = (client) => {
         console.log("Current Voice Channel: " + currentVoiceChannelName);
 
         try {
-          // Fetch all guild members so display names and voice states are completely up to date
-          await msg.guild.members.fetch();
+          // Fetch all guild members safely so display names and voice states are completely up to date
+          await msg.guild.members.fetch().catch((e) => console.warn("Guild members fetch warning:", e));
 
           let players = [];
           voiceChannel.members.forEach((mem) => {
@@ -225,9 +225,7 @@ module.exports = (client) => {
             let memberId = mem.user.id;
 
             if (isCraigMember(mem)) {
-              if (mem.nickname !== "مخبر") {
-                mem.setNickname("مخبر").catch((err) => console.error("Failed to rename Craig to مخبر:", err));
-              }
+              renameCraigToMokhber(mem, "!randomall check");
             }
 
             // Exclude bots from being playable participants
@@ -252,10 +250,11 @@ module.exports = (client) => {
 
           let excludedPlayers = [];
 
-          // Parse exclusions if provided (e.g. "!randomall 3,5" or "!randomall 3, 5")
+          // Parse exclusions if provided (e.g. "!randomall 3,5" or "!randomall 3, 5" or "!randomall 3 5")
           const argsStr = message.slice("!randomall".length).trim();
           if (argsStr.length > 0) {
-            const tokens = argsStr.split(/[\s,]+/).filter(Boolean);
+            // Replace any English, Arabic, Persian, or fullwidth commas and semicolons with spaces, then split by whitespace
+            const tokens = argsStr.replace(/[,،，٫;]+/g, " ").split(/\s+/).filter(Boolean);
             const excludedIndices = new Set();
 
             for (const token of tokens) {
@@ -291,7 +290,8 @@ module.exports = (client) => {
             if (excludedPlayers.length > 0) {
               replyText += `> **Excluded:** ${excludedPlayers.map((p) => p.displayName).join(", ")}\n`;
             }
-            replyText += "lol " + players.shift().mention + " go queue alone KEKW";
+            const solo = players.shift();
+            replyText += "lol " + (solo?.mention || solo?.displayName) + " go queue alone KEKW";
             msg.reply(replyText);
           } else {
             players = _lodash.shuffle(players);
@@ -305,9 +305,12 @@ module.exports = (client) => {
 
             while (players.length > 0) {
               if (players.length > 1) {
-                teams += `\n> **Team ${teamNumber}:** ${players.shift().mention} - ${players.shift().mention}`;
+                const p1 = players.shift();
+                const p2 = players.shift();
+                teams += `\n> **Team ${teamNumber}:** ${p1?.mention || p1?.displayName} - ${p2?.mention || p2?.displayName}`;
               } else {
-                teams += `\n> **Team ${teamNumber}:** ${players.shift().mention}`;
+                const p1 = players.shift();
+                teams += `\n> **Team ${teamNumber}:** ${p1?.mention || p1?.displayName}`;
               }
               teamNumber++;
             }
@@ -316,7 +319,7 @@ module.exports = (client) => {
           }
         } catch (err) {
           console.error("Error in !randomall:", err);
-          msg.reply("An error occurred while creating teams.");
+          msg.reply(`An error occurred while creating teams: ${err.message || err}`);
         }
       }
       console.log("-----------------------------------------------------------------------");
@@ -501,11 +504,11 @@ module.exports = (client) => {
         member = await after.guild.members.fetch(after.id).catch(() => null);
       }
       if (member && isCraigMember(member)) {
-        if (member.nickname !== "مخبر") {
-          member.setNickname("مخبر")
-            .then(() => console.log(`Renamed Craig (${member.user?.tag || member.id}) to مخبر`))
-            .catch((err) => console.error("Failed to rename Craig to مخبر:", err));
-        }
+        console.log(`Craig detected joining voice channel (${member.user?.tag || member.id}). Scheduling rename to مخبر in 3s...`);
+        setTimeout(async () => {
+          const freshMember = await after.guild.members.fetch(after.id).catch(() => null);
+          await renameCraigToMokhber(freshMember, "after 3s join delay");
+        }, 3000);
       }
 
       if (after.channelId == audio.state.voiceCurrent) {
@@ -523,6 +526,17 @@ module.exports = (client) => {
           audio.playVoice(resource2);
         }
       }
+    }
+  });
+
+  client.on("guildMemberUpdate", async (oldMember, newMember) => {
+    if (isCraigMember(newMember) && newMember.voice?.channelId && newMember.nickname !== "مخبر") {
+      setTimeout(async () => {
+        const freshMember = await newMember.guild.members.fetch(newMember.id).catch(() => null);
+        if (freshMember && freshMember.voice?.channelId && freshMember.nickname !== "مخبر") {
+          await renameCraigToMokhber(freshMember, "guildMemberUpdate override");
+        }
+      }, 1500);
     }
   });
 
