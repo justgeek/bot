@@ -366,97 +366,114 @@ client.on("messageCreate", async (msg) => {
 
     console.log("-----------------------------------------------------------------------");
   } else if (message.startsWith("!randomall")) {
-    let players = [],
-      currentVoiceChannelName,
-      currentVoiceChannelId,
-      memberFullTag,
-      memberId,
-      memberVoiceChannelName,
-      memberVoiceChannelId;
+    const voiceChannel = msg.member?.voice?.channel;
 
-    if (!_lodash.isNull(msg.member.voice.channel)) {
-      currentVoiceChannelName = msg.member.voice.channel.name;
-      currentVoiceChannelId = msg.member.voice.channel.id;
-      console.log("Current Voice Channel:" + currentVoiceChannelName);
+    if (!voiceChannel) {
+      msg.reply("> You're not in a voice channel!");
+      console.log("-----------------------------------------------------------------------");
+    } else {
+      const currentVoiceChannelName = voiceChannel.name;
+      console.log("Current Voice Channel: " + currentVoiceChannelName);
 
-      //GET ALL MEMBERS OF SERVER
-      client.guilds.cache
-        .get(msg.guild.id)
-        .members.fetch()
-        .then((members) => {
-          members.forEach((mem) => {
-            memberNickname = mem.displayName;
-            memberFullTag = mem.user.username + "#" + mem.user.discriminator;
-            memberId = mem.user.id;
+      try {
+        await msg.guild.members.fetch();
 
-            if (!_lodash.isNull(mem.voice.channel)) {
-              //if member is in a voice channel
-              memberVoiceChannelName = mem.voice.channel.name;
-              memberVoiceChannelId = mem.voice.channel.id;
+        let players = [];
+        voiceChannel.members.forEach((mem) => {
+          let memberNickname = mem.displayName;
+          let memberId = mem.user.id;
 
-              console.log(memberNickname + " " + memberId + " " + memberVoiceChannelName);
-              if (isCraigMember(mem)) {
-                if (mem.nickname !== "مخبر") {
-                  mem.setNickname("مخبر").catch((err) => console.error("Failed to rename Craig to مخبر:", err));
-                }
-              } else if (
-                memberVoiceChannelId == currentVoiceChannelId &&
-                // mem.displayName != "!Malevolent"
-                mem.user.tag != client.user.tag
-              ) {
-                //if member is in the same voice channel as me
-                players.push([memberNickname, `<@${memberId}>`]); //TO TAG IN CHAT `<@${id}>` // users  `<@&${id}>` // roles
-              }
+          if (isCraigMember(mem)) {
+            if (mem.nickname !== "مخبر") {
+              mem.setNickname("مخبر").catch((err) => console.error("Failed to rename Craig to مخبر:", err));
             }
-          });
-          console.log("Players:", players);
-          players.sort();
-          console.log("Sorted Players:", players);
-
-          //REMOVE UNWANTED IDX HERE
-          if (message.startsWith("!randomall ")) {
-            let playersTemp = [];
-            message = message.replace("!randomall ", "").replaceAll(" ", "");
-            console.log("message:", message);
-
-            let excludedIdx = message.split(",");
-            excludedIdx.forEach((e, idx, arr) => (arr[idx] -= 1)); //make it IDX instead of row number
-            console.log("excludedIdx:", excludedIdx);
-            players.forEach((e, idx) => {
-              //if player idx is in the excluded idx array don't push to finalplayers
-              if (excludedIdx.find((e) => e == idx) == undefined) playersTemp.push(e);
-            });
-            console.log("playersTemp", playersTemp);
-            players = playersTemp;
           }
 
-          if (players.length == 0) {
-            //just one player
-            msg.reply("no players no games!");
-          } else if (players.length == 1) {
-            //just one player
-            msg.reply("lol " + players.shift()[1] + " go queue alone KEKW");
-          } else {
-            players = _lodash.shuffle(players);
-            console.log("shuffled players:", players);
-
-            let teams = `> **${players.length} players:**`,
-              teamNumber = 1;
-
-            for (let i = 0; i < players.length / 2; i + 2) {
-              if (players.length > 1) {
-                teams += `\n> **Team ${teamNumber}:** ${players.shift()[1]} - ${players.shift()[1]}`;
-              } else {
-                teams += `\n> **Team ${teamNumber}:** ${players.shift()[1]}`;
-              }
-              teamNumber++;
-            }
-            console.log("Teams: ", teams);
-            msg.reply(teams);
+          if (!mem.user.bot && mem.user.id !== client.user.id) {
+            players.push({
+              displayName: memberNickname,
+              mention: `<@${memberId}>`,
+              id: memberId,
+            });
           }
         });
-    } else {
-      msg.reply("> You're not in a voice channel!");
+
+        // Sort players to match Discord's voice channel member display order
+        players.sort((a, b) => {
+          return (
+            a.displayName.localeCompare(b.displayName, undefined, { numeric: true, sensitivity: "base" }) ||
+            a.displayName.localeCompare(b.displayName, undefined, { numeric: true })
+          );
+        });
+
+        console.log("Sorted Players (Voice Channel Order):", players.map((p, i) => `${i + 1}. ${p.displayName}`));
+
+        let excludedPlayers = [];
+
+        const argsStr = message.slice("!randomall".length).trim();
+        if (argsStr.length > 0) {
+          const tokens = argsStr.split(/[\s,]+/).filter(Boolean);
+          const excludedIndices = new Set();
+
+          for (const token of tokens) {
+            const rowNum = parseInt(token, 10);
+            if (!isNaN(rowNum) && rowNum >= 1 && rowNum <= players.length) {
+              excludedIndices.add(rowNum - 1);
+            } else {
+              const foundIdx = players.findIndex(
+                (p) => p.displayName.toLowerCase() === token.toLowerCase()
+              );
+              if (foundIdx !== -1) {
+                excludedIndices.add(foundIdx);
+              }
+            }
+          }
+
+          const remainingPlayers = [];
+          players.forEach((player, idx) => {
+            if (excludedIndices.has(idx)) {
+              excludedPlayers.push(player);
+            } else {
+              remainingPlayers.push(player);
+            }
+          });
+          players = remainingPlayers;
+        }
+
+        if (players.length === 0) {
+          msg.reply("no players no games!");
+        } else if (players.length === 1) {
+          let replyText = "";
+          if (excludedPlayers.length > 0) {
+            replyText += `> **Excluded:** ${excludedPlayers.map((p) => p.displayName).join(", ")}\n`;
+          }
+          replyText += "lol " + players.shift().mention + " go queue alone KEKW";
+          msg.reply(replyText);
+        } else {
+          players = _lodash.shuffle(players);
+          console.log("shuffled players:", players.map((p) => p.displayName));
+          let teams = "";
+          if (excludedPlayers.length > 0) {
+            teams += `> **Excluded:** ${excludedPlayers.map((p) => p.displayName).join(", ")}\n`;
+          }
+          teams += `> **${players.length} players:**`;
+          let teamNumber = 1;
+
+          while (players.length > 0) {
+            if (players.length > 1) {
+              teams += `\n> **Team ${teamNumber}:** ${players.shift().mention} - ${players.shift().mention}`;
+            } else {
+              teams += `\n> **Team ${teamNumber}:** ${players.shift().mention}`;
+            }
+            teamNumber++;
+          }
+          console.log("Teams:\n%s", teams);
+          msg.reply(teams);
+        }
+      } catch (err) {
+        console.error("Error in !randomall:", err);
+        msg.reply("An error occurred while creating teams.");
+      }
     }
     console.log("-----------------------------------------------------------------------");
   } else if (message.startsWith("!joinme")) {

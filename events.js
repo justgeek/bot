@@ -206,75 +206,118 @@ module.exports = (client) => {
       }
       console.log("-----------------------------------------------------------------------");
     } else if (message.startsWith("!randomall")) {
-      let players =[], currentVoiceChannelName, currentVoiceChannelId, memberFullTag, memberId, memberVoiceChannelName, memberVoiceChannelId;
+      const voiceChannel = msg.member?.voice?.channel;
 
-      if (!_lodash.isNull(msg.member.voice.channel)) {
-        currentVoiceChannelName = msg.member.voice.channel.name;
-        currentVoiceChannelId = msg.member.voice.channel.id;
-        console.log("Current Voice Channel:" + currentVoiceChannelName);
+      if (!voiceChannel) {
+        msg.reply("> You're not in a voice channel!");
+        console.log("-----------------------------------------------------------------------");
+      } else {
+        const currentVoiceChannelName = voiceChannel.name;
+        console.log("Current Voice Channel: " + currentVoiceChannelName);
 
-        client.guilds.cache.get(msg.guild.id).members.fetch().then((members) => {
-          members.forEach((mem) => {
+        try {
+          // Fetch all guild members so display names and voice states are completely up to date
+          await msg.guild.members.fetch();
+
+          let players = [];
+          voiceChannel.members.forEach((mem) => {
             let memberNickname = mem.displayName;
-            memberFullTag = mem.user.username + "#" + mem.user.discriminator;
-            memberId = mem.user.id;
+            let memberId = mem.user.id;
 
-            if (!_lodash.isNull(mem.voice.channel)) {
-              memberVoiceChannelName = mem.voice.channel.name;
-              memberVoiceChannelId = mem.voice.channel.id;
-              console.log(memberNickname + " " + memberId + " " + memberVoiceChannelName);
-              if (isCraigMember(mem)) {
-                if (mem.nickname !== "مخبر") {
-                  mem.setNickname("مخبر").catch((err) => console.error("Failed to rename Craig to مخبر:", err));
-                }
-              } else if (memberVoiceChannelId == currentVoiceChannelId && mem.user.tag != client.user.tag) {
-                players.push([memberNickname, `<@${memberId}>`]);
+            if (isCraigMember(mem)) {
+              if (mem.nickname !== "مخبر") {
+                mem.setNickname("مخبر").catch((err) => console.error("Failed to rename Craig to مخبر:", err));
               }
             }
+
+            // Exclude bots from being playable participants
+            if (!mem.user.bot && mem.user.id !== client.user.id) {
+              players.push({
+                displayName: memberNickname,
+                mention: `<@${memberId}>`,
+                id: memberId,
+              });
+            }
           });
-          console.log("Players:", players);
-          players.sort();
-          console.log("Sorted Players:", players);
 
-          if (message.startsWith("!randomall ")) {
-            let playersTemp =[];
-            message = message.replace("!randomall ", "").replaceAll(" ", "");
-            console.log("message:", message);
+          // Sort players to match Discord's voice channel member display order (case-insensitive alphabetical, natural numeric)
+          players.sort((a, b) => {
+            return (
+              a.displayName.localeCompare(b.displayName, undefined, { numeric: true, sensitivity: "base" }) ||
+              a.displayName.localeCompare(b.displayName, undefined, { numeric: true })
+            );
+          });
 
-            let excludedIdx = message.split(",");
-            excludedIdx.forEach((e, idx, arr) => (arr[idx] -= 1));
-            console.log("excludedIdx:", excludedIdx);
-            players.forEach((e, idx) => {
-              if (excludedIdx.find((e) => e == idx) == undefined) playersTemp.push(e);
+          console.log("Sorted Players (Voice Channel Order):", players.map((p, i) => `${i + 1}. ${p.displayName}`));
+
+          let excludedPlayers = [];
+
+          // Parse exclusions if provided (e.g. "!randomall 3,5" or "!randomall 3, 5")
+          const argsStr = message.slice("!randomall".length).trim();
+          if (argsStr.length > 0) {
+            const tokens = argsStr.split(/[\s,]+/).filter(Boolean);
+            const excludedIndices = new Set();
+
+            for (const token of tokens) {
+              const rowNum = parseInt(token, 10);
+              if (!isNaN(rowNum) && rowNum >= 1 && rowNum <= players.length) {
+                excludedIndices.add(rowNum - 1);
+              } else {
+                // Also support excluding directly by display name (case-insensitive)
+                const foundIdx = players.findIndex(
+                  (p) => p.displayName.toLowerCase() === token.toLowerCase()
+                );
+                if (foundIdx !== -1) {
+                  excludedIndices.add(foundIdx);
+                }
+              }
+            }
+
+            const remainingPlayers = [];
+            players.forEach((player, idx) => {
+              if (excludedIndices.has(idx)) {
+                excludedPlayers.push(player);
+              } else {
+                remainingPlayers.push(player);
+              }
             });
-            console.log("playersTemp", playersTemp);
-            players = playersTemp;
+            players = remainingPlayers;
           }
 
-          if (players.length == 0) {
+          if (players.length === 0) {
             msg.reply("no players no games!");
-          } else if (players.length == 1) {
-            msg.reply("lol " + players.shift()[1] + " go queue alone KEKW");
+          } else if (players.length === 1) {
+            let replyText = "";
+            if (excludedPlayers.length > 0) {
+              replyText += `> **Excluded:** ${excludedPlayers.map((p) => p.displayName).join(", ")}\n`;
+            }
+            replyText += "lol " + players.shift().mention + " go queue alone KEKW";
+            msg.reply(replyText);
           } else {
             players = _lodash.shuffle(players);
-            console.log("shuffled players:", players);
-            let teams = `> **${players.length} players:**`, teamNumber = 1;
+            console.log("shuffled players:", players.map((p) => p.displayName));
+            let teams = "";
+            if (excludedPlayers.length > 0) {
+              teams += `> **Excluded:** ${excludedPlayers.map((p) => p.displayName).join(", ")}\n`;
+            }
+            teams += `> **${players.length} players:**`;
+            let teamNumber = 1;
 
-            // Optimization: Adjusted same visually bugged loop pattern into a clear block
             while (players.length > 0) {
               if (players.length > 1) {
-                teams += `\n> **Team ${teamNumber}:** ${players.shift()[1]} - ${players.shift()[1]}`;
+                teams += `\n> **Team ${teamNumber}:** ${players.shift().mention} - ${players.shift().mention}`;
               } else {
-                teams += `\n> **Team ${teamNumber}:** ${players.shift()[1]}`;
+                teams += `\n> **Team ${teamNumber}:** ${players.shift().mention}`;
               }
               teamNumber++;
             }
-            console.log("Teams: ", teams);
+            console.log("Teams:\n%s", teams);
             msg.reply(teams);
           }
-        });
-      } else {
-        msg.reply("> You're not in a voice channel!");
+        } catch (err) {
+          console.error("Error in !randomall:", err);
+          msg.reply("An error occurred while creating teams.");
+        }
       }
       console.log("-----------------------------------------------------------------------");
     } else if (message.startsWith("!joinme")) {
