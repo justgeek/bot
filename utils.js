@@ -81,7 +81,7 @@ function isCraigMember(member) {
   if (isCraig(member.user)) return true;
   const displayName = (member.displayName || "").toLowerCase();
   const nickname = (member.nickname || "").toLowerCase();
-  if (member.user?.bot && (nickname === "مخبر" || displayName === "مخبر" || displayName.includes("craig"))) return true;
+  if (member.user?.bot && (nickname.includes("مخبر") || displayName.includes("مخبر") || displayName.includes("craig"))) return true;
   return false;
 }
 
@@ -97,14 +97,14 @@ async function renameCraigToMokhber(member, reason = "delayed") {
     return;
   }
 
-  // Skip if already renamed or if Craig is actively recording (e.g. "![RECORDING] مخبر")
-  if (member.nickname === "مخبر" || member.nickname?.includes("مخبر")) {
-    console.log('[Craig] abort: nickname already مخبر or contains مخبر');
+  // Only abort if the nickname is ALREADY strictly "مخبر" (wiping any "![RECORDING]" prefix)
+  if (member.nickname === "مخبر") {
+    console.log('[Craig] abort: nickname is already strictly مخبر');
     return;
   }
 
-  // Pre-check role hierarchy and permissions to avoid unhandled 50013 errors
-  if (!member.manageable) {
+  // Pre-check role hierarchy if cached to avoid uncaught 50013 errors
+  if (member.guild?.members?.me && !member.manageable) {
     console.warn(
       `[Craig] ⚠️ Cannot rename Craig: Bot lacks role hierarchy over Craig. Ensure your bot's role is placed HIGHER than Craig's role in Server Settings -> Roles.`
     );

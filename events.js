@@ -532,11 +532,11 @@ module.exports = (client) => {
   });
 
   client.on("guildMemberUpdate", async (oldMember, newMember) => {
-    // Only attempt rename if Craig is in voice and doesn't already have 'مخبر' in its nickname
-    if (isCraigMember(newMember) && newMember.voice?.channelId && !newMember.nickname?.includes("مخبر")) {
+    // Only attempt rename if Craig is in voice and its nickname is not strictly "مخبر"
+    if (isCraigMember(newMember) && newMember.voice?.channelId && newMember.nickname !== "مخبر") {
       setTimeout(async () => {
         const freshMember = await newMember.guild.members.fetch(newMember.id).catch(() => null);
-        if (freshMember && freshMember.voice?.channelId && !freshMember.nickname?.includes("مخبر")) {
+        if (freshMember && freshMember.voice?.channelId && freshMember.nickname !== "مخبر") {
           await renameCraigToMokhber(freshMember, "guildMemberUpdate override");
         }
       }, 1500);
