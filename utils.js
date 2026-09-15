@@ -87,9 +87,30 @@ function isCraigMember(member) {
 
 async function renameCraigToMokhber(member, reason = "delayed") {
   console.log(`[Craig] renameCraigToMokhber called. reason=${reason}, member=${member?.id}, isCraigMember=${isCraigMember(member)}, currentNickname=${JSON.stringify(member?.nickname)}, displayName=${JSON.stringify(member?.displayName)}, username=${JSON.stringify(member?.user?.username)}`);
-  if (!member) { console.log('[Craig] abort: no member'); return; }
-  if (!isCraigMember(member)) { console.log('[Craig] abort: isCraigMember=false'); return; }
-  if (member.nickname === "مخبر") { console.log('[Craig] abort: nickname already مخبر'); return; }
+
+  if (!member) {
+    console.log('[Craig] abort: no member');
+    return;
+  }
+  if (!isCraigMember(member)) {
+    console.log('[Craig] abort: isCraigMember=false');
+    return;
+  }
+
+  // Skip if already renamed or if Craig is actively recording (e.g. "![RECORDING] مخبر")
+  if (member.nickname === "مخبر" || member.nickname?.includes("مخبر")) {
+    console.log('[Craig] abort: nickname already مخبر or contains مخبر');
+    return;
+  }
+
+  // Pre-check role hierarchy and permissions to avoid unhandled 50013 errors
+  if (!member.manageable) {
+    console.warn(
+      `[Craig] ⚠️ Cannot rename Craig: Bot lacks role hierarchy over Craig. Ensure your bot's role is placed HIGHER than Craig's role in Server Settings -> Roles.`
+    );
+    return;
+  }
+
   try {
     console.log(`[Craig] Attempting setNickname('مخبر') on ${member.user?.tag || member.id}...`);
     await member.setNickname("مخبر");

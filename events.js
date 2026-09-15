@@ -16,7 +16,6 @@ const { buildMemeMenus } = require("./menuBuilder");
 
 module.exports = (client) => {
   client.on("error", (e) => console.error("ERR NOT HANDLED:", e));
-  // ADD THIS:
 
   client.on("ready", () => {
     console.log(`Logged in as ${client.user.tag}!`);
@@ -24,12 +23,12 @@ module.exports = (client) => {
       const voicePkg = require('@discordjs/voice/package.json');
       console.log(`Runtime Node: ${process.version}`);
       console.log(`@discordjs/voice version: ${voicePkg.version}`);
-    } catch {}
+    } catch { }
     client.user.setStatus('invisible');
     sendToChannel(client, IDs.channelV, 'Sup!\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t("**!commands**" for stuff)');
 
     // Optional: print dependency report once for debugging audio env
-    try { console.log(generateDependencyReport()); } catch {}
+    try { console.log(generateDependencyReport()); } catch { }
 
     if (audio.shouldJoinVoiceChannel(client, IDs.voice3)) {
       audio.joinBanhaVoiceChannel(client, IDs.voice3);
@@ -109,7 +108,7 @@ module.exports = (client) => {
       // msg.react(msg.guild.emojis.cache.get("1018204796689322014")); //BRUH
     }
 
-    const reactTo =['ASD']
+    const reactTo = ['ASD'];
     if ((reactTo.includes(msg.author.username) && !message.startsWith("!")) || message.startsWith("_")) {
       try {
         const suggestedEmojis = await getRelevantEmojis(msg.content, 5, 'openai/gpt-oss-120b');
@@ -138,7 +137,7 @@ module.exports = (client) => {
     }
 
     if (message === "!commands" || message === "!help") {
-      const commands =[
+      const commands = [
         // '**!round**: Prints the current CHC round number',
         '`!youtube` or `!playlist`: print YouTube "Our Games" playlist link.',
         // "**!games**: list possible games to play.",
@@ -160,7 +159,7 @@ module.exports = (client) => {
       const messages = buildMemeMenus();
       for (const payload of messages) {
         await msg.channel.send(payload);
-      } 
+      }
     } else if (message == "!playlist" || message == "!youtube") {
       msg.channel.send("https://www.youtube.com/playlist?list=PLhKVK0lPQ73sDSSxq09yx9QVgyr3MBR6d");
     } else if (memes[message]) {
@@ -168,7 +167,7 @@ module.exports = (client) => {
       if (!voiceChannel) {
         msg.reply("You need to be in a voice channel to play a meme!");
         return;
-      }      
+      }
       const memeFile = memesFolder + memes[message];
       const resource = createAudioResource(memeFile);
 
@@ -190,7 +189,7 @@ module.exports = (client) => {
         players = _lodash.shuffle(players);
         console.log("shuffled players: %s", players);
         let teams = `> **${players.length} players:**`, teamNumber = 1;
-        
+
         [1, 2, 3, 4]; // Original line preserved
         // Optimization: Refactored i+2 loop visually into a safer while loop with identical output
         while (players.length > 0) {
@@ -331,7 +330,7 @@ module.exports = (client) => {
           await audio.joinBanhaVoiceChannel(client, vc);
           msg.delete();
         }
-      } catch {}
+      } catch { }
     } else if (message === "!!clear" || message === "!!reset") {
       clearHistory(msg);
       msg.delete();
@@ -339,8 +338,8 @@ module.exports = (client) => {
       return;
     } else if (message.startsWith("!!")) {
       const userPrompt = msg.content.substring(msg.content.toLowerCase().indexOf("!!") + 2).trim();
-    // } else if (message.startsWith("$$")) {
-    //   const userPrompt = msg.content.substring(msg.content.toLowerCase().indexOf("$$") + 2).trim();
+      // } else if (message.startsWith("$$")) {
+      //   const userPrompt = msg.content.substring(msg.content.toLowerCase().indexOf("$$") + 2).trim();
       await handleAICommand(msg, userPrompt);
       return;
     } else if (message.startsWith("!restartbot")) {
@@ -349,7 +348,7 @@ module.exports = (client) => {
       process.exit(1);
     } else if (message.startsWith("!")) {
       message = message.replace("!", "").trim();
-    // } else if (message.startsWith("$")) {
+      // } else if (message.startsWith("$")) {
       // message = message.replace("$", "").trim();
 
       let lang = "ja";
@@ -372,7 +371,7 @@ module.exports = (client) => {
           fs.unlink(audioPath, (err) => {
             if (err) console.error('Error deleting audio file:', err);
           });
-        }, 5000); 
+        }, 5000);
 
       } catch (error) {
         console.error('ElevenLabs TTS failed, falling back to default TTS:', error);
@@ -391,7 +390,7 @@ module.exports = (client) => {
 
   client.on("messageDelete", (msg) => {
     if (msg.author?.bot) return; // don't log the bot's own message deletions
-  
+
     const message = msg.content.toLowerCase();
     if (message.startsWith("!") || message == "!commands" || message == "!playlist") return;
     const deleted = `${now()}\t **${msg.author.username}:** ${msg.content}`;
@@ -402,7 +401,7 @@ module.exports = (client) => {
   client.on("messageUpdate", (oldMessage, newMessage) => {
     if (newMessage.author?.bot) return; // don't log the bot's own edits (e.g. meme menu refreshes)
     if (oldMessage == newMessage) return;
-  
+
     const edited = `${now()}\t **${newMessage.author.username}:**\n${oldMessage.content}\n>\n${newMessage.content}`;
     console.log("edited:", edited);
     sendToChannel(client, IDs.channelDel, edited);
@@ -428,13 +427,13 @@ module.exports = (client) => {
       sendToChannel(client, IDs.channelStatus, msg);
     }
 
-    const beforeActivities = before ? before.activities :[];
-    const afterActivities = after ? after.activities :[];
+    const beforeActivities = before ? before.activities : [];
+    const afterActivities = after ? after.activities : [];
 
     afterActivities.forEach(activity => {
       if (activity.name === "Hang Status") return;
       const isNewActivity = !beforeActivities.some(a => a.name === activity.name);
-      
+
       if (isNewActivity) {
         let action = "Activity:";
         switch (activity.type) {
@@ -450,7 +449,7 @@ module.exports = (client) => {
         const stateStr = activity.state ? ` | ${activity.state}` : "";
         const msg2 = now() + "\t**" + user.username + ":\t**" + action + " " + activity.name + details + stateStr;
         console.log(msg2);
-        sendToChannel(client, IDs.channelActivity, msg2); 
+        sendToChannel(client, IDs.channelActivity, msg2);
       }
     });
 
@@ -470,7 +469,7 @@ module.exports = (client) => {
     }
   });
 
-  client.on("voiceStateUpdate", async (before, after) => {  
+  client.on("voiceStateUpdate", async (before, after) => {
     if (after.id == client.user.id) return;
     let chatMsg = " ";
 
@@ -480,10 +479,10 @@ module.exports = (client) => {
     if ((before.channelId && !after.channelId) || (before.channelId && after.channelId && before.channelId != after.channelId)) {
       chatMsg = now() + " **" + person + "** left **" + client.channels.cache.get(before.channelId).name + "**";
       console.log(chatMsg);
-      if (before.channelId != IDs.voice2 && after.channelId != IDs.voice2){ //don't announce if secret voice channel
+      if (before.channelId != IDs.voice2 && after.channelId != IDs.voice2) { //don't announce if secret voice channel
         sendToChannel(client, IDs.channelVoice, chatMsg);
       }
-      
+
       if (before.channelId == audio.state.voiceCurrent) {
         const stream = discordTTS.getVoiceStream(personTTS + " left", { lang: "ja" });
         const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
@@ -493,9 +492,9 @@ module.exports = (client) => {
     }
 
     if ((!before.channelId && after.channelId) || (before.channelId && after.channelId && before.channelId != after.channelId)) {
-      chatMsg = now() + " **" + person + "** joined **" + client.channels.cache.get(after.channelId).name + "**"; 
+      chatMsg = now() + " **" + person + "** joined **" + client.channels.cache.get(after.channelId).name + "**";
       console.log(chatMsg);
-      if (before.channelId != IDs.voice2 && after.channelId != IDs.voice2){ //don't announce if secret voice channel
+      if (before.channelId != IDs.voice2 && after.channelId != IDs.voice2) { //don't announce if secret voice channel
         sendToChannel(client, IDs.channelVoice, chatMsg);
       }
 
@@ -513,7 +512,6 @@ module.exports = (client) => {
           await renameCraigToMokhber(freshMember, "after 3s join delay");
         }, 3000);
       }
-
 
       if (after.channelId == audio.state.voiceCurrent) {
         if (!audio.state.connection || audio.shouldJoinVoiceChannel(client, IDs.voice3)) {
@@ -534,10 +532,11 @@ module.exports = (client) => {
   });
 
   client.on("guildMemberUpdate", async (oldMember, newMember) => {
-    if (isCraigMember(newMember) && newMember.voice?.channelId && newMember.nickname !== "مخبر") {
+    // Only attempt rename if Craig is in voice and doesn't already have 'مخبر' in its nickname
+    if (isCraigMember(newMember) && newMember.voice?.channelId && !newMember.nickname?.includes("مخبر")) {
       setTimeout(async () => {
         const freshMember = await newMember.guild.members.fetch(newMember.id).catch(() => null);
-        if (freshMember && freshMember.voice?.channelId && freshMember.nickname !== "مخبر") {
+        if (freshMember && freshMember.voice?.channelId && !freshMember.nickname?.includes("مخبر")) {
           await renameCraigToMokhber(freshMember, "guildMemberUpdate override");
         }
       }, 1500);
@@ -555,20 +554,21 @@ module.exports = (client) => {
     console.log(chatMsg);
     sendToChannel(client, IDs.channelMain, chatMsg);
   });
+
   client.on("interactionCreate", async (interaction) => {
     try {
       if (interaction.isStringSelectMenu() && interaction.customId.startsWith("meme_select_")) {
         const memeKey = interaction.values[0];
         const memeFile = memes[memeKey];
-  
+
         if (!memeFile) {
           await interaction.deferUpdate();
           return;
         }
-  
+
         // Reset the menu's "selected" checkmark
         await interaction.update({ components: interaction.message.components });
-  
+
         // Require the clicker to be in a voice channel
         const voiceChannel = interaction.member.voice.channel;
         if (!voiceChannel) {
@@ -578,11 +578,11 @@ module.exports = (client) => {
           });
           return;
         }
-  
+
         const resource = createAudioResource(memesFolder + memeFile);
         await audio.ensureVoiceReady(client, interaction);
         audio.playVoice(resource);
-  
+
         const logMessage = interaction.member.displayName + " " + memeKey;
         console.log(logMessage);
         sendToChannel(client, IDs.channelCommands, logMessage);
@@ -592,4 +592,3 @@ module.exports = (client) => {
     }
   });
 };
-
