@@ -509,8 +509,8 @@ module.exports = (client) => {
         setTimeout(async () => {
           const freshMember = await after.guild.members.fetch(after.id).catch((e) => { console.error('[Craig] fetch error:', e.message); return null; });
           console.log(`[Craig] 3s elapsed. freshMember nickname=${JSON.stringify(freshMember?.nickname)}, displayName=${JSON.stringify(freshMember?.displayName)}`);
-          await renameCraigToMokhber(freshMember, "after 3s join delay");
-        }, 3000);
+          await renameCraigToMokhber(freshMember, "after join delay");
+        }, 500);
       }
 
       if (after.channelId == audio.state.voiceCurrent) {
