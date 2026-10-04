@@ -470,7 +470,7 @@ module.exports = (client) => {
   });
 
   client.on("voiceStateUpdate", async (before, after) => {
-    if (after.id == client.user.id || after.id == 272937604339466240) return; //bot or craig
+    if (after.id == client.user.id) return;
     let chatMsg = " ";
 
     const person = after.member.user.username;
@@ -492,12 +492,6 @@ module.exports = (client) => {
     }
 
     if ((!before.channelId && after.channelId) || (before.channelId && after.channelId && before.channelId != after.channelId)) {
-      chatMsg = now() + " **" + person + "** joined **" + client.channels.cache.get(after.channelId).name + "**";
-      console.log(chatMsg);
-      if (before.channelId != IDs.voice2 && after.channelId != IDs.voice2) { //don't announce if secret voice channel
-        sendToChannel(client, IDs.channelVoice, chatMsg);
-      }
-
       let member = after.member;
       if (!member && after.guild) {
         member = await after.guild.members.fetch(after.id).catch(() => null);
@@ -527,6 +521,13 @@ module.exports = (client) => {
           let resource2 = createAudioResource(memeFile);
           audio.playVoice(resource2);
         }
+      }
+
+      if (after.id == 272937604339466240) return; //craig
+      chatMsg = now() + " **" + person + "** joined **" + client.channels.cache.get(after.channelId).name + "**";
+      console.log(chatMsg);
+      if (before.channelId != IDs.voice2 && after.channelId != IDs.voice2) { //don't announce if secret voice channel
+        sendToChannel(client, IDs.channelVoice, chatMsg);
       }
     }
   });
