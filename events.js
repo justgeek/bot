@@ -470,7 +470,7 @@ module.exports = (client) => {
   });
 
   client.on("voiceStateUpdate", async (before, after) => {
-    if (after.id == client.user.id) return;
+    if (after.id == client.user.id || after.id == 272937604339466240) return; //bot or craig
     let chatMsg = " ";
 
     const person = after.member.user.username;
