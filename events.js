@@ -25,7 +25,7 @@ module.exports = (client) => {
       console.log(`@discordjs/voice version: ${voicePkg.version}`);
     } catch { }
     client.user.setStatus('invisible');
-    sendToChannel(client, IDs.channelDel, 'Sup!\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t("**!commands**" for stuff)');
+    sendToChannel(client, IDs.channelStatus, 'Sup!\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t("**!commands**" for stuff)');
 
     // Optional: print dependency report once for debugging audio env
     try { console.log(generateDependencyReport()); } catch { }
