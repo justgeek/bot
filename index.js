@@ -13,7 +13,7 @@ const ffmpeg = require("ffmpeg");
 
 // Create Discord Client
 const client = new Discord.Client({
-  intents:[
+  intents: [
     Discord.GatewayIntentBits.Guilds,
     Discord.GatewayIntentBits.GuildMessages,
     Discord.GatewayIntentBits.MessageContent,
@@ -41,9 +41,8 @@ client.login(process.env.BOT_TOKEN);
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.get("/", (req, res) => {
-  res.send("BANHA FOREVER !!!!! BOT IS RUNNING OK");
-});
+// Dashboard at "/" + JSON API at "/api/*" (plain-text check moved to "/health")
+require("./dashboard")(app, client);
 
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`);

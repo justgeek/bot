@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Banha Bot Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  body { font-family: "gg sans", "Noto Sans", "Segoe UI", system-ui, -apple-system, sans-serif; }
+  .pulse { animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+  button:focus-visible { outline: 2px solid #5865F2; outline-offset: 2px; }
+</style>
+</head>
+<body class="bg-[#1e1f22] text-[#dbdee1] min-h-screen">
+<div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
+
+  <header class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h1 id="serverName" class="text-2xl font-bold text-white">Banha</h1>
+      <p class="text-sm text-[#949ba4]">Who is in voice, who is online, and what changed recently</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <span id="pill" class="inline-flex items-center gap-2 rounded-full bg-[#23a55a]/15 text-[#23a55a] px-3 py-1 text-sm font-medium">
+        <span id="pillDot" class="pulse h-2 w-2 rounded-full bg-[#23a55a]"></span>
+        <span id="pillText">Online &amp; Monitoring</span>
+      </span>
+      <time id="clock" class="text-sm text-[#949ba4] tabular-nums"></time>
+    </div>
+  </header>
+
+  <section class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <div class="rounded-xl bg-[#1e293b] p-4 border-l-4 border-[#5865F2]">
+      <p class="text-sm text-[#949ba4]">Currently in voice</p>
+      <p id="mVoice" class="mt-1 text-3xl font-bold text-white tabular-nums">-</p>
+    </div>
+    <div class="rounded-xl bg-[#1e293b] p-4 border-l-4 border-[#23a55a]">
+      <p class="text-sm text-[#949ba4]">Online members</p>
+      <p id="mOnline" class="mt-1 text-3xl font-bold text-white tabular-nums">-</p>
+    </div>
+    <div class="rounded-xl bg-[#1e293b] p-4 border-l-4 border-[#f0b232]">
+      <p class="text-sm text-[#949ba4]">Busy / idle members</p>
+      <p class="mt-1 text-3xl font-bold text-white tabular-nums">
+        <span id="mDnd" class="text-[#f23f43]">-</span><span class="text-[#949ba4]"> / </span><span id="mIdle" class="text-[#f0b232]">-</span>
+      </p>
+    </div>
+    <div class="rounded-xl bg-[#1e293b] p-4 border-l-4 border-[#80848e]">
+      <p class="text-sm text-[#949ba4]">Total voice hours logged</p>
+      <p id="mHours" class="mt-1 text-3xl font-bold text-white tabular-nums">-</p>
+    </div>
+  </section>
+
+  <div id="errorBanner" class="hidden rounded-lg bg-[#f23f43]/15 text-[#f23f43] px-4 py-2 text-sm">
+    Can't reach the bot right now. Retrying in a few seconds.
+  </div>
+
+  <section class="grid lg:grid-cols-3 gap-4">
+    <div class="lg:col-span-2 rounded-xl bg-[#1e293b] p-5">
+      <div class="flex items-center justify-between gap-3 mb-4">
+        <h2 class="text-lg font-semibold text-white">Voice leaderboard</h2>
+        <div class="inline-flex rounded-lg bg-[#0f172a] p-1 text-sm">
+          <button id="tabWeek" class="px-3 py-1 rounded-md bg-[#5865F2] text-white">Last 7 days</button>
+          <button id="tabAll" class="px-3 py-1 rounded-md text-[#949ba4] hover:text-white">All time</button>
+        </div>
+      </div>
+      <div class="relative h-72">
+        <canvas id="lbChart" aria-label="Voice hours per member"></canvas>
+        <p id="lbEmpty" class="hidden absolute inset-0 flex items-center justify-center text-[#949ba4]">No voice time logged yet for this period.</p>
+      </div>
+    </div>
+
+    <div class="rounded-xl bg-[#1e293b] p-5">
+      <h2 class="text-lg font-semibold text-white mb-4">Voice channels right now</h2>
+      <div id="voiceList" class="space-y-4"></div>
+    </div>
+  </section>
+
+  <section class="rounded-xl bg-[#1e293b] p-5">
+    <h2 class="text-lg font-semibold text-white mb-4">Recent activity</h2>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left text-[#949ba4]">
+            <th class="pb-2 pr-4 font-medium">When</th>
+            <th class="pb-2 pr-4 font-medium">Member</th>
+            <th class="pb-2 font-medium">What happened</th>
+          </tr>
+        </thead>
+        <tbody id="logRows" class="divide-y divide-[#0f172a]"></tbody>
+      </table>
+    </div>
+    <p id="logEmpty" class="hidden text-[#949ba4] py-6 text-center">Nothing logged yet. Activity shows up here as members change status or join voice.</p>
+  </section>
+</div>
+
+<script>
+const KEY = new URLSearchParams(location.search).get("key");
+const api = (p) =>
+  fetch("/api/" + p + (KEY ? "?key=" + encodeURIComponent(KEY) : ""), { cache: "no-store" })
+    .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); });
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const STATUS = {
+  online:  { label: "Online",  cls: "bg-[#23a55a]/15 text-[#23a55a]" },
+  idle:    { label: "Idle",    cls: "bg-[#f0b232]/15 text-[#f0b232]" },
+  dnd:     { label: "Busy",    cls: "bg-[#f23f43]/15 text-[#f23f43]" },
+  offline: { label: "Offline", cls: "bg-[#80848e]/20 text-[#b5bac1]" },
+};
+const badge = (cls, text) => `<span class="inline-block rounded px-2 py-0.5 text-xs font-medium ${cls}">${esc(text)}</span>`;
+
+// Clock in Egypt time (handles UTC+2 / UTC+3 automatically)
+const clockFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", dateStyle: "medium", timeStyle: "medium" });
+const stampFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", dateStyle: "short", timeStyle: "short" });
+const tick = () => { $("clock").textContent = clockFmt.format(new Date()) + " Cairo"; };
+tick(); setInterval(tick, 1000);
+
+function ago(iso) {
+  const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000));
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s / 60) + "m ago";
+  if (s < 86400) return Math.floor(s / 3600) + "h ago";
+  return Math.floor(s / 86400) + "d ago";
+}
+function dur(secs) {
+  secs = Number(secs) || 0;
+  const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
+  if (h) return h + "h " + m + "m";
+  if (m) return m + "m";
+  return secs + "s";
+}
+
+// ---- Leaderboard ----
+let lbData = { last_7_days: [], all_time: [] };
+let lbTab = "last_7_days";
+let chart;
+
+function renderChart() {
+  const rows = lbData[lbTab] || [];
+  $("lbEmpty").classList.toggle("hidden", rows.length > 0);
+  $("lbChart").classList.toggle("hidden", rows.length === 0);
+  const labels = rows.map((r) => r.username);
+  const values = rows.map((r) => r.total_hours);
+
+  if (!chart) {
+    chart = new Chart($("lbChart"), {
+      type: "bar",
+      data: { labels, datasets: [{ label: "Hours in voice", data: values, backgroundColor: "#5865F2", borderRadius: 4 }] },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => " " + c.parsed.x + " h" } } },
+        scales: {
+          x: { beginAtZero: true, grid: { color: "#334155" }, ticks: { color: "#949ba4" }, title: { display: true, text: "Hours", color: "#949ba4" } },
+          y: { grid: { display: false }, ticks: { color: "#dbdee1" } },
+        },
+      },
+    });
+  } else {
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = values;
+    chart.update();
+  }
+}
+
+function setTab(tab) {
+  lbTab = tab;
+  const on = "px-3 py-1 rounded-md bg-[#5865F2] text-white";
+  const off = "px-3 py-1 rounded-md text-[#949ba4] hover:text-white";
+  $("tabWeek").className = tab === "last_7_days" ? on : off;
+  $("tabAll").className = tab === "all_time" ? on : off;
+  renderChart();
+}
+$("tabWeek").onclick = () => setTab("last_7_days");
+$("tabAll").onclick = () => setTab("all_time");
+
+// ---- Overview ----
+function renderOverview(o) {
+  $("serverName").textContent = o.server_name;
+  $("mVoice").textContent = o.in_voice_count;
+  $("mOnline").textContent = o.counts.online;
+  $("mDnd").textContent = o.counts.dnd;
+  $("mIdle").textContent = o.counts.idle;
+  $("mHours").textContent = o.total_voice_hours.toLocaleString();
+
+  $("voiceList").innerHTML = o.in_voice.length
+    ? o.in_voice.map((c) => `
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-medium text-white">${esc(c.channel_name)}</span>
+            <span class="text-xs text-[#949ba4]">${c.members.length} in channel</span>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            ${c.members.map((m) => `<span class="rounded-full bg-[#0f172a] px-3 py-1 text-sm">${esc(m.username)}</span>`).join("")}
+          </div>
+        </div>`).join("")
+    : `<p class="text-[#949ba4]">Nobody is in voice right now.</p>`;
+}
+
+// ---- Logs ----
+function renderLogs(logs) {
+  $("logEmpty").classList.toggle("hidden", logs.length > 0);
+  $("logRows").innerHTML = logs.map((l) => {
+    let b, text;
+    if (l.type === "presence") {
+      const s = STATUS[l.status] || STATUS.offline;
+      b = badge(s.cls, s.label);
+      text = "switched to " + s.label;
+    } else if (l.type === "voice_join") {
+      b = badge("bg-[#5865F2]/20 text-[#a5b0ff]", "Joined voice");
+      text = "joined " + (l.channel_name || "a voice channel");
+    } else {
+      b = badge("bg-[#5865F2]/10 text-[#8a94d6]", "Left voice");
+      text = "left " + (l.channel_name || "a voice channel") + (l.duration_seconds != null ? " after " + dur(l.duration_seconds) : "");
+    }
+    return `<tr>
+      <td class="py-2 pr-4 whitespace-nowrap text-[#949ba4]" title="${esc(stampFmt.format(new Date(l.at)))} Cairo">${esc(ago(l.at))}</td>
+      <td class="py-2 pr-4 whitespace-nowrap text-white">${esc(l.username)}</td>
+      <td class="py-2">${b} <span class="ml-2">${esc(text)}</span></td>
+    </tr>`;
+  }).join("");
+}
+
+// ---- Refresh loop ----
+function setConnected(ok) {
+  $("errorBanner").classList.toggle("hidden", ok);
+  const pill = $("pill"), dot = $("pillDot");
+  pill.className = "inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-medium " +
+    (ok ? "bg-[#23a55a]/15 text-[#23a55a]" : "bg-[#f23f43]/15 text-[#f23f43]");
+  dot.className = "pulse h-2 w-2 rounded-full " + (ok ? "bg-[#23a55a]" : "bg-[#f23f43]");
+  $("pillText").textContent = ok ? "Online & Monitoring" : "Connection lost";
+}
+
+async function refresh() {
+  const results = await Promise.allSettled([api("overview"), api("voice-leaderboard"), api("recent-logs")]);
+  const [ov, lb, lg] = results;
+  if (ov.status === "fulfilled") renderOverview(ov.value);
+  if (lb.status === "fulfilled") { lbData = lb.value; renderChart(); }
+  if (lg.status === "fulfilled") renderLogs(lg.value.logs);
+  setConnected(ov.status === "fulfilled");
+}
+
+refresh();
+setInterval(refresh, 20000);
+</script>
+</body>
+</html>

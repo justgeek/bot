@@ -13,6 +13,7 @@ const { clearHistory } = require("./history");
 const { getRelevantEmojis, isValidDiscordEmoji } = require('./ai.js'); // Your existing logic file
 
 const { buildMemeMenus } = require("./menuBuilder");
+const db = require("./db");
 
 module.exports = (client) => {
   client.on("error", (e) => console.error("ERR NOT HANDLED:", e));
@@ -33,6 +34,14 @@ module.exports = (client) => {
     if (audio.shouldJoinVoiceChannel(client, IDs.voice3)) {
       audio.joinBanhaVoiceChannel(client, IDs.voice3);
     }
+
+    // Load all members + presences so the dashboard counts are complete, then
+    // sync the database with who is actually in voice after a (re)start.
+    const guild = client.guilds.cache.get(IDs.guild);
+    const membersLoaded = guild
+      ? guild.members.fetch({ withPresences: true }).catch((e) => console.warn("Member fetch warning:", e.message))
+      : Promise.resolve();
+    membersLoaded.then(() => db.reconcileVoiceSessions(client));
   });
 
   client.on("messageCreate", async (msg) => {
@@ -427,6 +436,13 @@ module.exports = (client) => {
       sendToChannel(client, IDs.channelStatus, msg);
     }
 
+    // --- Database logging: status changes only (never games/Spotify/activities) ---
+    const dbStatusBefore = before?.status || "offline";
+    const dbStatusAfter = after?.status || "offline";
+    if (dbStatusBefore !== dbStatusAfter && !user?.bot) {
+      db.logPresence(userID, user?.username || after.user?.username || userID, dbStatusAfter);
+    }
+
     const beforeActivities = before ? before.activities : [];
     const afterActivities = after ? after.activities : [];
 
@@ -471,6 +487,19 @@ module.exports = (client) => {
 
   client.on("voiceStateUpdate", async (before, after) => {
     if (after.id == client.user.id) return;
+
+    // --- Database logging: voice sessions ---
+    // Only react to actual channel changes (mute/deafen/stream toggles fire this
+    // event too, with the same channel). Bots such as Craig are not logged.
+    if (before.channelId !== after.channelId && !after.member?.user?.bot) {
+      const dbUserId = after.id;
+      const dbUsername = after.member?.user?.username || dbUserId;
+      if (before.channelId) db.endVoiceSession(dbUserId);
+      if (after.channelId && db.isTrackedChannel(after.channelId)) {
+        db.startVoiceSession(dbUserId, dbUsername, after.channelId, after.channel?.name);
+      }
+    }
+
     let chatMsg = " ";
 
     const person = after.member.user.username;
