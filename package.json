@@ -23,7 +23,8 @@
     "screenshot-desktop": "^1.12.7",
     "sharp": "^0.31.0",
     "sodium-native": "^5.1.0",
-    "talkify-tts": "^4.0.0"
+    "talkify-tts": "^4.0.0",
+    "ws": "^8.22.0"
   },
   "name": "bot",
   "version": "1.0.0",

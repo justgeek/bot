@@ -440,7 +440,12 @@ module.exports = (client) => {
     const dbStatusBefore = before?.status || "offline";
     const dbStatusAfter = after?.status || "offline";
     if (dbStatusBefore !== dbStatusAfter && !user?.bot) {
-      db.logPresence(userID, user?.username || after.user?.username || userID, dbStatusAfter);
+      db.logPresence(
+        userID,
+        user?.username || after.user?.username || userID,
+        dbStatusAfter,
+        after.member?.displayName
+      );
     }
 
     const beforeActivities = before ? before.activities : [];
@@ -496,7 +501,7 @@ module.exports = (client) => {
       const dbUsername = after.member?.user?.username || dbUserId;
       if (before.channelId) db.endVoiceSession(dbUserId);
       if (after.channelId && db.isTrackedChannel(after.channelId)) {
-        db.startVoiceSession(dbUserId, dbUsername, after.channelId, after.channel?.name);
+        db.startVoiceSession(dbUserId, dbUsername, after.channelId, after.channel?.name, after.member?.displayName);
       }
     }
 

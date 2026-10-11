@@ -11,18 +11,23 @@
   .pulse { animation: pulse 2s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .35; } }
   @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
-  button:focus-visible { outline: 2px solid #5865F2; outline-offset: 2px; }
+  button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid #5865F2; outline-offset: 2px; }
+  select, input { color-scheme: dark; }
+  th[data-sort] { cursor: pointer; user-select: none; }
+  th[data-sort]:hover { color: #fff; }
+  .scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scroll-thin::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
 </style>
 </head>
 <body class="bg-[#1e1f22] text-[#dbdee1] min-h-screen">
-<div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
+<div class="max-w-7xl mx-auto px-4 pb-12">
 
-  <header class="flex flex-wrap items-center justify-between gap-3">
+  <header class="py-5 flex flex-wrap items-center justify-between gap-3">
     <div>
       <h1 id="serverName" class="text-2xl font-bold text-white">Banha</h1>
-      <p class="text-sm text-[#949ba4]">Who is in voice, who is online, and what changed recently</p>
+      <p class="text-sm text-[#949ba4]">Voice and status activity, with times shown in Cairo time</p>
     </div>
-    <div class="flex items-center gap-3">
+    <div class="flex flex-wrap items-center gap-3">
       <span id="pill" class="inline-flex items-center gap-2 rounded-full bg-[#23a55a]/15 text-[#23a55a] px-3 py-1 text-sm font-medium">
         <span id="pillDot" class="pulse h-2 w-2 rounded-full bg-[#23a55a]"></span>
         <span id="pillText">Online &amp; Monitoring</span>
@@ -31,92 +36,286 @@
     </div>
   </header>
 
-  <section class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-    <div class="rounded-xl bg-[#1e293b] p-4 border-l-4 border-[#5865F2]">
-      <p class="text-sm text-[#949ba4]">Currently in voice</p>
-      <p id="mVoice" class="mt-1 text-3xl font-bold text-white tabular-nums">-</p>
+  <!-- Filters -->
+  <div class="sticky top-0 z-20 -mx-4 px-4 py-3 bg-[#1e1f22]/95 backdrop-blur border-b border-[#2b2d31] flex flex-wrap items-center gap-3">
+    <div id="rangeBtns" class="inline-flex rounded-lg bg-[#0f172a] p-1 text-sm"></div>
+    <select id="fUser" aria-label="Member" class="rounded-lg bg-[#0f172a] border border-[#334155] px-3 py-1.5 text-sm max-w-[12rem]"><option value="">All members</option></select>
+    <select id="fChannel" aria-label="Voice channel" class="rounded-lg bg-[#0f172a] border border-[#334155] px-3 py-1.5 text-sm max-w-[12rem]"><option value="">All voice channels</option></select>
+    <button id="fClear" class="hidden text-sm text-[#a5b0ff] hover:underline">Clear filters</button>
+    <div class="ml-auto flex items-center gap-3 text-xs text-[#949ba4]">
+      <span id="updated">Loading...</span>
+      <button id="refreshNow" class="rounded-md bg-[#5865F2] hover:bg-[#4752c4] text-white px-3 py-1.5 text-sm">Refresh now</button>
     </div>
-    <div class="rounded-xl bg-[#1e293b] p-4 border-l-4 border-[#23a55a]">
-      <p class="text-sm text-[#949ba4]">Online members</p>
-      <p id="mOnline" class="mt-1 text-3xl font-bold text-white tabular-nums">-</p>
-    </div>
-    <div class="rounded-xl bg-[#1e293b] p-4 border-l-4 border-[#f0b232]">
-      <p class="text-sm text-[#949ba4]">Busy / idle members</p>
-      <p class="mt-1 text-3xl font-bold text-white tabular-nums">
-        <span id="mDnd" class="text-[#f23f43]">-</span><span class="text-[#949ba4]"> / </span><span id="mIdle" class="text-[#f0b232]">-</span>
-      </p>
-    </div>
-    <div class="rounded-xl bg-[#1e293b] p-4 border-l-4 border-[#80848e]">
-      <p class="text-sm text-[#949ba4]">Total voice hours logged</p>
-      <p id="mHours" class="mt-1 text-3xl font-bold text-white tabular-nums">-</p>
-    </div>
-  </section>
-
-  <div id="errorBanner" class="hidden rounded-lg bg-[#f23f43]/15 text-[#f23f43] px-4 py-2 text-sm">
-    Can't reach the bot right now. Retrying in a few seconds.
   </div>
 
-  <section class="grid lg:grid-cols-3 gap-4">
-    <div class="lg:col-span-2 rounded-xl bg-[#1e293b] p-5">
-      <div class="flex items-center justify-between gap-3 mb-4">
-        <h2 class="text-lg font-semibold text-white">Voice leaderboard</h2>
-        <div class="inline-flex rounded-lg bg-[#0f172a] p-1 text-sm">
-          <button id="tabWeek" class="px-3 py-1 rounded-md bg-[#5865F2] text-white">Last 7 days</button>
-          <button id="tabAll" class="px-3 py-1 rounded-md text-[#949ba4] hover:text-white">All time</button>
+  <div id="errorBanner" class="hidden mt-4 rounded-lg bg-[#f23f43]/15 text-[#f23f43] px-4 py-2 text-sm">
+    Can't reach the bot right now. Retrying in a few seconds.
+  </div>
+  <div id="truncBanner" class="hidden mt-4 rounded-lg bg-[#f0b232]/15 text-[#f0b232] px-4 py-2 text-sm">
+    This range has more than 50,000 records, so the oldest ones were left out. Pick a shorter range for exact numbers.
+  </div>
+
+  <main class="space-y-10 pt-6">
+
+    <!-- Right now -->
+    <section>
+      <h2 class="text-xl font-semibold text-white mb-3">Right now</h2>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="rounded-xl bg-[#1e293b] p-4 border-l-4 border-[#5865F2]">
+          <p class="text-sm text-[#949ba4]">Currently in voice</p>
+          <p id="mVoice" class="mt-1 text-3xl font-bold text-white tabular-nums">-</p>
+        </div>
+        <div class="rounded-xl bg-[#1e293b] p-4 border-l-4 border-[#23a55a]">
+          <p class="text-sm text-[#949ba4]">Online members</p>
+          <p id="mOnline" class="mt-1 text-3xl font-bold text-white tabular-nums">-</p>
+        </div>
+        <div class="rounded-xl bg-[#1e293b] p-4 border-l-4 border-[#f0b232]">
+          <p class="text-sm text-[#949ba4]">Busy / idle members</p>
+          <p class="mt-1 text-3xl font-bold text-white tabular-nums"><span id="mDnd" class="text-[#f23f43]">-</span><span class="text-[#949ba4]"> / </span><span id="mIdle" class="text-[#f0b232]">-</span></p>
+        </div>
+        <div class="rounded-xl bg-[#1e293b] p-4 border-l-4 border-[#80848e]">
+          <p class="text-sm text-[#949ba4]">Total voice hours logged</p>
+          <p id="mHours" class="mt-1 text-3xl font-bold text-white tabular-nums">-</p>
         </div>
       </div>
-      <div class="relative h-72">
-        <canvas id="lbChart" aria-label="Voice hours per member"></canvas>
-        <p id="lbEmpty" class="hidden absolute inset-0 flex items-center justify-center text-[#949ba4]">No voice time logged yet for this period.</p>
+      <div class="grid lg:grid-cols-2 gap-4 mt-4">
+        <div class="rounded-xl bg-[#1e293b] p-5">
+          <h3 class="font-semibold text-white mb-3">Voice channels</h3>
+          <div id="voiceList" class="space-y-4"></div>
+        </div>
+        <div class="rounded-xl bg-[#1e293b] p-5">
+          <h3 class="font-semibold text-white mb-3">Members who are not offline</h3>
+          <div id="onlineList" class="flex flex-wrap gap-2 max-h-48 overflow-y-auto scroll-thin"></div>
+        </div>
       </div>
-    </div>
+    </section>
 
-    <div class="rounded-xl bg-[#1e293b] p-5">
-      <h2 class="text-lg font-semibold text-white mb-4">Voice channels right now</h2>
-      <div id="voiceList" class="space-y-4"></div>
-    </div>
-  </section>
+    <!-- Highlights -->
+    <section>
+      <h2 class="text-xl font-semibold text-white mb-1">Highlights</h2>
+      <p id="rangeLabel" class="text-sm text-[#949ba4] mb-3"></p>
+      <div id="insights" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    </section>
 
-  <section class="rounded-xl bg-[#1e293b] p-5">
-    <h2 class="text-lg font-semibold text-white mb-4">Recent activity</h2>
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead>
-          <tr class="text-left text-[#949ba4]">
-            <th class="pb-2 pr-4 font-medium">When</th>
-            <th class="pb-2 pr-4 font-medium">Member</th>
-            <th class="pb-2 font-medium">What happened</th>
-          </tr>
-        </thead>
-        <tbody id="logRows" class="divide-y divide-[#0f172a]"></tbody>
-      </table>
-    </div>
-    <p id="logEmpty" class="hidden text-[#949ba4] py-6 text-center">Nothing logged yet. Activity shows up here as members change status or join voice.</p>
-  </section>
+    <!-- Voice analytics -->
+    <section>
+      <h2 class="text-xl font-semibold text-white mb-3">Voice analytics</h2>
+      <div id="kpis" class="grid grid-cols-2 md:grid-cols-4 gap-4"></div>
+
+      <div class="grid gap-4 mt-4">
+        <div class="rounded-xl bg-[#1e293b] p-5">
+          <h3 class="font-semibold text-white">Voice hours per day</h3>
+          <p class="text-xs text-[#949ba4] mb-3">Bars show hours in voice. The line shows how many different members joined that day.</p>
+          <div class="relative h-64"><canvas id="cDaily"></canvas><p class="empty hidden absolute inset-0 flex items-center justify-center text-[#949ba4]">No voice activity in this range.</p></div>
+        </div>
+      </div>
+
+      <div class="grid lg:grid-cols-2 gap-4 mt-4">
+        <div class="rounded-xl bg-[#1e293b] p-5">
+          <h3 class="font-semibold text-white">When people are in voice</h3>
+          <p class="text-xs text-[#949ba4] mb-3">Total hours by hour of the day (Cairo time).</p>
+          <div class="relative h-64"><canvas id="cHourly"></canvas><p class="empty hidden absolute inset-0 flex items-center justify-center text-[#949ba4]">No voice activity in this range.</p></div>
+        </div>
+        <div class="rounded-xl bg-[#1e293b] p-5">
+          <h3 class="font-semibold text-white">Busiest days and hours</h3>
+          <p class="text-xs text-[#949ba4] mb-3">Darker blue means more time in voice. Hover a square for the exact hours.</p>
+          <div id="heatmap" class="overflow-x-auto scroll-thin"></div>
+        </div>
+      </div>
+
+      <div class="grid lg:grid-cols-2 gap-4 mt-4">
+        <div class="rounded-xl bg-[#1e293b] p-5">
+          <h3 class="font-semibold text-white">Most time in voice</h3>
+          <p class="text-xs text-[#949ba4] mb-3">Click a bar to filter everything to that member.</p>
+          <div class="relative h-72"><canvas id="cLeader"></canvas><p class="empty hidden absolute inset-0 flex items-center justify-center text-[#949ba4]">No voice activity in this range.</p></div>
+        </div>
+        <div class="rounded-xl bg-[#1e293b] p-5">
+          <h3 class="font-semibold text-white">Time per voice channel</h3>
+          <p class="text-xs text-[#949ba4] mb-3">Share of total voice hours.</p>
+          <div class="relative h-72"><canvas id="cChannels"></canvas><p class="empty hidden absolute inset-0 flex items-center justify-center text-[#949ba4]">No voice activity in this range.</p></div>
+        </div>
+      </div>
+
+      <div class="grid lg:grid-cols-2 gap-4 mt-4">
+        <div class="rounded-xl bg-[#1e293b] p-5">
+          <h3 class="font-semibold text-white">How long sessions last</h3>
+          <p class="text-xs text-[#949ba4] mb-3">Number of sessions by length.</p>
+          <div class="relative h-64"><canvas id="cHist"></canvas><p class="empty hidden absolute inset-0 flex items-center justify-center text-[#949ba4]">No voice activity in this range.</p></div>
+        </div>
+        <div class="rounded-xl bg-[#1e293b] p-5">
+          <h3 class="font-semibold text-white">Who hangs out together</h3>
+          <p class="text-xs text-[#949ba4] mb-3">Hours two members spent in the same channel at the same time.</p>
+          <div id="pairs" class="space-y-3"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Status analytics -->
+    <section>
+      <h2 class="text-xl font-semibold text-white mb-1">Status analytics</h2>
+      <p class="text-sm text-[#949ba4] mb-3">Time in each status is counted from each member's first recorded change in the range, so it is most accurate once the bot has been running a while.</p>
+      <div class="grid lg:grid-cols-3 gap-4">
+        <div class="rounded-xl bg-[#1e293b] p-5">
+          <h3 class="font-semibold text-white mb-3">Time spent in each status</h3>
+          <div class="relative h-64"><canvas id="cStatus"></canvas><p class="empty hidden absolute inset-0 flex items-center justify-center text-[#949ba4]">No status changes in this range.</p></div>
+        </div>
+        <div class="rounded-xl bg-[#1e293b] p-5 lg:col-span-2">
+          <h3 class="font-semibold text-white">Hours online, idle and busy per member</h3>
+          <p class="text-xs text-[#949ba4] mb-3">Top 10 by time not offline.</p>
+          <div class="relative h-64"><canvas id="cStatusMembers"></canvas><p class="empty hidden absolute inset-0 flex items-center justify-center text-[#949ba4]">No status changes in this range.</p></div>
+        </div>
+      </div>
+      <div class="grid lg:grid-cols-2 gap-4 mt-4">
+        <div class="rounded-xl bg-[#1e293b] p-5">
+          <h3 class="font-semibold text-white">When people are online</h3>
+          <p class="text-xs text-[#949ba4] mb-3">Total hours not offline, by hour of the day (Cairo time).</p>
+          <div class="relative h-64"><canvas id="cActiveHourly"></canvas><p class="empty hidden absolute inset-0 flex items-center justify-center text-[#949ba4]">No status changes in this range.</p></div>
+        </div>
+        <div class="rounded-xl bg-[#1e293b] p-5">
+          <h3 class="font-semibold text-white">Status changes per day</h3>
+          <p class="text-xs text-[#949ba4] mb-3">How often members switched status.</p>
+          <div class="relative h-64"><canvas id="cChanges"></canvas><p class="empty hidden absolute inset-0 flex items-center justify-center text-[#949ba4]">No status changes in this range.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Members table -->
+    <section class="rounded-xl bg-[#1e293b] p-5">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <h2 class="text-xl font-semibold text-white">Members</h2>
+        <input id="memberSearch" type="search" placeholder="Search members" class="rounded-lg bg-[#0f172a] border border-[#334155] px-3 py-1.5 text-sm w-48">
+      </div>
+      <p class="text-xs text-[#949ba4] mb-3">Click a column to sort. Click a member to filter the whole dashboard to them.</p>
+      <div class="overflow-x-auto scroll-thin">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-[#949ba4]">
+              <th class="pb-2 pr-4 font-medium" data-sort="name">Member</th>
+              <th class="pb-2 pr-4 font-medium text-right" data-sort="seconds">Voice hours</th>
+              <th class="pb-2 pr-4 font-medium text-right" data-sort="sessions">Sessions</th>
+              <th class="pb-2 pr-4 font-medium text-right" data-sort="avg_session_seconds">Avg session</th>
+              <th class="pb-2 pr-4 font-medium text-right" data-sort="longest_seconds">Longest</th>
+              <th class="pb-2 pr-4 font-medium" data-sort="favorite_channel">Favorite channel</th>
+              <th class="pb-2 pr-4 font-medium text-right" data-sort="active_days">Active days</th>
+              <th class="pb-2 font-medium" data-sort="last_seen_at">Last in voice</th>
+            </tr>
+          </thead>
+          <tbody id="memberRows" class="divide-y divide-[#0f172a]"></tbody>
+        </table>
+      </div>
+      <p id="memberEmpty" class="hidden text-[#949ba4] py-6 text-center">No members to show for these filters.</p>
+    </section>
+
+    <!-- Sessions -->
+    <section class="rounded-xl bg-[#1e293b] p-5">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <h2 class="text-xl font-semibold text-white">Voice sessions</h2>
+        <a id="csvLink" href="#" class="text-sm text-[#a5b0ff] hover:underline">Download all as CSV</a>
+      </div>
+      <div class="overflow-x-auto scroll-thin">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-[#949ba4]">
+              <th class="pb-2 pr-4 font-medium">Member</th>
+              <th class="pb-2 pr-4 font-medium">Channel</th>
+              <th class="pb-2 pr-4 font-medium">Joined</th>
+              <th class="pb-2 pr-4 font-medium">Left</th>
+              <th class="pb-2 font-medium text-right">Length</th>
+            </tr>
+          </thead>
+          <tbody id="sessRows" class="divide-y divide-[#0f172a]"></tbody>
+        </table>
+      </div>
+      <p id="sessEmpty" class="hidden text-[#949ba4] py-6 text-center">No sessions for these filters.</p>
+      <div class="flex items-center justify-between mt-3 text-sm">
+        <span id="sessCount" class="text-[#949ba4]"></span>
+        <button id="sessMore" class="hidden rounded-md bg-[#0f172a] hover:bg-[#334155] px-3 py-1.5">Show more</button>
+      </div>
+    </section>
+
+    <!-- Activity log -->
+    <section class="rounded-xl bg-[#1e293b] p-5">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <h2 class="text-xl font-semibold text-white">Recent activity</h2>
+        <select id="logType" aria-label="Activity type" class="rounded-lg bg-[#0f172a] border border-[#334155] px-3 py-1.5 text-sm">
+          <option value="all">Status and voice</option>
+          <option value="presence">Status changes only</option>
+          <option value="voice">Voice joins and leaves only</option>
+        </select>
+      </div>
+      <div class="overflow-x-auto scroll-thin">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-[#949ba4]">
+              <th class="pb-2 pr-4 font-medium">When</th>
+              <th class="pb-2 pr-4 font-medium">Member</th>
+              <th class="pb-2 font-medium">What happened</th>
+            </tr>
+          </thead>
+          <tbody id="logRows" class="divide-y divide-[#0f172a]"></tbody>
+        </table>
+      </div>
+      <p id="logEmpty" class="hidden text-[#949ba4] py-6 text-center">Nothing logged yet. Activity shows up here as members change status or join voice.</p>
+    </section>
+  </main>
 </div>
 
 <script>
+// ---------- Setup ----------
 const KEY = new URLSearchParams(location.search).get("key");
-const api = (p) =>
-  fetch("/api/" + p + (KEY ? "?key=" + encodeURIComponent(KEY) : ""), { cache: "no-store" })
-    .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); });
-
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-const STATUS = {
-  online:  { label: "Online",  cls: "bg-[#23a55a]/15 text-[#23a55a]" },
-  idle:    { label: "Idle",    cls: "bg-[#f0b232]/15 text-[#f0b232]" },
-  dnd:     { label: "Busy",    cls: "bg-[#f23f43]/15 text-[#f23f43]" },
-  offline: { label: "Offline", cls: "bg-[#80848e]/20 text-[#b5bac1]" },
-};
-const badge = (cls, text) => `<span class="inline-block rounded px-2 py-0.5 text-xs font-medium ${cls}">${esc(text)}</span>`;
+function api(path, params = {}) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== "" && v != null) q.set(k, v);
+  if (KEY) q.set("key", KEY);
+  const qs = q.toString();
+  return fetch("/api/" + path + (qs ? "?" + qs : ""), { cache: "no-store" }).then((r) => {
+    if (!r.ok) throw new Error(r.status);
+    return r.json();
+  });
+}
 
-// Clock in Egypt time (handles UTC+2 / UTC+3 automatically)
+const RANGES = [["24h", "24 hours"], ["7d", "7 days"], ["30d", "30 days"], ["90d", "90 days"], ["365d", "1 year"], ["all", "All time"]];
+const RANGE_TEXT = { "24h": "the last 24 hours", "7d": "the last 7 days", "30d": "the last 30 days", "90d": "the last 90 days", "365d": "the last year", all: "all time" };
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAYS_FULL = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const STATUS = {
+  online:  { label: "Online",  color: "#23a55a", cls: "bg-[#23a55a]/15 text-[#23a55a]" },
+  idle:    { label: "Idle",    color: "#f0b232", cls: "bg-[#f0b232]/15 text-[#f0b232]" },
+  dnd:     { label: "Busy",    color: "#f23f43", cls: "bg-[#f23f43]/15 text-[#f23f43]" },
+  offline: { label: "Offline", color: "#80848e", cls: "bg-[#80848e]/20 text-[#b5bac1]" },
+};
+const PALETTE = ["#5865F2", "#eb459e", "#23a55a", "#f0b232", "#00a8fc", "#f23f43", "#9b84ee", "#3ba55d"];
+
+// ---------- State (filters live in the URL so a view can be shared) ----------
+const params = new URLSearchParams(location.search);
+const state = {
+  range: RANGES.some((r) => r[0] === params.get("range")) ? params.get("range") : "7d",
+  user: params.get("user") || "",
+  channel: params.get("channel") || "",
+  logType: "all",
+  sessLimit: 25,
+  memberSort: { key: "seconds", dir: -1 },
+  memberSearch: "",
+};
+let lastStats = null;
+
+function syncUrl() {
+  const q = new URLSearchParams();
+  if (KEY) q.set("key", KEY);
+  q.set("range", state.range);
+  if (state.user) q.set("user", state.user);
+  if (state.channel) q.set("channel", state.channel);
+  history.replaceState(null, "", "?" + q.toString());
+}
+
+// ---------- Formatting ----------
 const clockFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", dateStyle: "medium", timeStyle: "medium" });
-const stampFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", dateStyle: "short", timeStyle: "short" });
-const tick = () => { $("clock").textContent = clockFmt.format(new Date()) + " Cairo"; };
-tick(); setInterval(tick, 1000);
+const stampFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+const fullFmt = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", dateStyle: "medium", timeStyle: "short" });
+const stamp = (iso) => stampFmt.format(new Date(iso));
 
 function ago(iso) {
   const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000));
@@ -126,60 +325,109 @@ function ago(iso) {
   return Math.floor(s / 86400) + "d ago";
 }
 function dur(secs) {
-  secs = Number(secs) || 0;
+  secs = Math.round(Number(secs) || 0);
   const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60);
   if (h) return h + "h " + m + "m";
   if (m) return m + "m";
   return secs + "s";
 }
+const hrs = (secs) => Math.round((secs / 3600) * 100) / 100;
+function hrsText(secs) {
+  const h = secs / 3600;
+  return h >= 100 ? Math.round(h).toLocaleString() + " h" : (Math.round(h * 10) / 10).toLocaleString() + " h";
+}
+function hourLabel(h) {
+  if (h === 0) return "12 AM";
+  if (h < 12) return h + " AM";
+  if (h === 12) return "12 PM";
+  return h - 12 + " PM";
+}
+const shortHour = (h) => (h === 0 ? "12a" : h < 12 ? h + "a" : h === 12 ? "12p" : h - 12 + "p");
+function dayLabel(d) { const [, m, dd] = d.split("-"); return dd + "/" + m; }
+const badge = (cls, text) => `<span class="inline-block rounded px-2 py-0.5 text-xs font-medium ${cls}">${esc(text)}</span>`;
 
-// ---- Leaderboard ----
-let lbData = { last_7_days: [], all_time: [] };
-let lbTab = "last_7_days";
-let chart;
+const tick = () => {
+  $("clock").textContent = clockFmt.format(new Date()) + " Cairo";
+  if (lastUpdate) $("updated").textContent = "Updated " + Math.max(0, Math.round((Date.now() - lastUpdate) / 1000)) + "s ago";
+};
+let lastUpdate = 0;
+tick(); setInterval(tick, 1000);
 
-function renderChart() {
-  const rows = lbData[lbTab] || [];
-  $("lbEmpty").classList.toggle("hidden", rows.length > 0);
-  $("lbChart").classList.toggle("hidden", rows.length === 0);
-  const labels = rows.map((r) => r.username);
-  const values = rows.map((r) => r.total_hours);
+// ---------- Charts ----------
+Chart.defaults.color = "#949ba4";
+Chart.defaults.borderColor = "#334155";
+Chart.defaults.animation = false;
+Chart.defaults.font.family = '"gg sans", "Noto Sans", "Segoe UI", system-ui, sans-serif';
+const charts = {};
 
-  if (!chart) {
-    chart = new Chart($("lbChart"), {
-      type: "bar",
-      data: { labels, datasets: [{ label: "Hours in voice", data: values, backgroundColor: "#5865F2", borderRadius: 4 }] },
-      options: {
-        indexAxis: "y",
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: false,
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => " " + c.parsed.x + " h" } } },
-        scales: {
-          x: { beginAtZero: true, grid: { color: "#334155" }, ticks: { color: "#949ba4" }, title: { display: true, text: "Hours", color: "#949ba4" } },
-          y: { grid: { display: false }, ticks: { color: "#dbdee1" } },
-        },
-      },
-    });
+function setEmpty(id, empty) {
+  const canvas = $(id);
+  canvas.classList.toggle("hidden", empty);
+  canvas.parentElement.querySelector(".empty").classList.toggle("hidden", !empty);
+}
+// Create once, then only swap the data, so refreshes never flicker.
+function upsert(id, config, isEmpty) {
+  setEmpty(id, isEmpty);
+  if (isEmpty) return;
+  if (charts[id]) {
+    charts[id].data = config.data;
+    charts[id].update("none");
   } else {
-    chart.data.labels = labels;
-    chart.data.datasets[0].data = values;
-    chart.update();
+    config.options = Object.assign({ responsive: true, maintainAspectRatio: false }, config.options);
+    charts[id] = new Chart($(id), config);
   }
 }
+const hoursTip = { callbacks: { label: (c) => " " + (c.parsed.x ?? c.parsed.y ?? c.parsed) + " h" } };
+const axisTitle = (text) => ({ display: true, text });
 
-function setTab(tab) {
-  lbTab = tab;
-  const on = "px-3 py-1 rounded-md bg-[#5865F2] text-white";
-  const off = "px-3 py-1 rounded-md text-[#949ba4] hover:text-white";
-  $("tabWeek").className = tab === "last_7_days" ? on : off;
-  $("tabAll").className = tab === "all_time" ? on : off;
-  renderChart();
+// ---------- Filters ----------
+function renderRangeButtons() {
+  $("rangeBtns").innerHTML = RANGES.map(([v, label]) =>
+    `<button data-range="${v}" class="px-3 py-1 rounded-md ${state.range === v ? "bg-[#5865F2] text-white" : "text-[#949ba4] hover:text-white"}">${label}</button>`
+  ).join("");
 }
-$("tabWeek").onclick = () => setTab("last_7_days");
-$("tabAll").onclick = () => setTab("all_time");
+$("rangeBtns").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-range]");
+  if (!b) return;
+  state.range = b.dataset.range;
+  state.sessLimit = 25;
+  applyFilters();
+});
+$("fUser").onchange = (e) => setUser(e.target.value);
+$("fChannel").onchange = (e) => { state.channel = e.target.value; state.sessLimit = 25; applyFilters(); };
+$("fClear").onclick = () => { state.user = ""; state.channel = ""; state.sessLimit = 25; applyFilters(); };
+$("logType").onchange = (e) => { state.logType = e.target.value; refreshLogs(); };
+$("refreshNow").onclick = () => { refreshLive(); refreshStats(); };
 
-// ---- Overview ----
+function setUser(id) {
+  state.user = id;
+  state.sessLimit = 25;
+  applyFilters();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+function applyFilters() {
+  $("fUser").value = state.user;
+  $("fChannel").value = state.channel;
+  $("fClear").classList.toggle("hidden", !state.user && !state.channel);
+  renderRangeButtons();
+  syncUrl();
+  refreshStats();
+  refreshLogs();
+}
+
+async function loadFilterOptions() {
+  try {
+    const f = await api("filters");
+    const keepUser = state.user, keepChan = state.channel;
+    $("fUser").innerHTML = `<option value="">All members</option>` + f.members.map((m) => `<option value="${esc(m.user_id)}">${esc(m.name)}</option>`).join("");
+    $("fChannel").innerHTML = `<option value="">All voice channels</option>` + f.channels.map((c) => `<option value="${esc(c.channel_id)}">${esc(c.name)}</option>`).join("");
+    $("fUser").value = keepUser;
+    $("fChannel").value = keepChan;
+    $("fClear").classList.toggle("hidden", !keepUser && !keepChan);
+  } catch (e) { /* the live refresh will surface connection problems */ }
+}
+
+// ---------- Live: overview ----------
 function renderOverview(o) {
   $("serverName").textContent = o.server_name;
   $("mVoice").textContent = o.in_voice_count;
@@ -196,13 +444,21 @@ function renderOverview(o) {
             <span class="text-xs text-[#949ba4]">${c.members.length} in channel</span>
           </div>
           <div class="flex flex-wrap gap-2">
-            ${c.members.map((m) => `<span class="rounded-full bg-[#0f172a] px-3 py-1 text-sm">${esc(m.username)}</span>`).join("")}
+            ${c.members.map((m) => `<button data-user="${esc(m.user_id)}" class="rounded-full bg-[#0f172a] hover:bg-[#334155] px-3 py-1 text-sm" title="Username: ${esc(m.username)}">${esc(m.name)}</button>`).join("")}
           </div>
         </div>`).join("")
     : `<p class="text-[#949ba4]">Nobody is in voice right now.</p>`;
-}
 
-// ---- Logs ----
+  $("onlineList").innerHTML = o.members_online.length
+    ? o.members_online.map((m) => `<button data-user="${esc(m.user_id)}" class="inline-flex items-center gap-2 rounded-full bg-[#0f172a] hover:bg-[#334155] px-3 py-1 text-sm"><span class="h-2 w-2 rounded-full" style="background:${STATUS[m.status].color}"></span>${esc(m.name)}</button>`).join("")
+    : `<p class="text-[#949ba4]">Everyone is offline.</p>`;
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-user]");
+  if (b) setUser(b.dataset.user);
+});
+
+// ---------- Live: activity log ----------
 function renderLogs(logs) {
   $("logEmpty").classList.toggle("hidden", logs.length > 0);
   $("logRows").innerHTML = logs.map((l) => {
@@ -219,34 +475,333 @@ function renderLogs(logs) {
       text = "left " + (l.channel_name || "a voice channel") + (l.duration_seconds != null ? " after " + dur(l.duration_seconds) : "");
     }
     return `<tr>
-      <td class="py-2 pr-4 whitespace-nowrap text-[#949ba4]" title="${esc(stampFmt.format(new Date(l.at)))} Cairo">${esc(ago(l.at))}</td>
-      <td class="py-2 pr-4 whitespace-nowrap text-white">${esc(l.username)}</td>
+      <td class="py-2 pr-4 whitespace-nowrap text-[#949ba4]" title="${esc(fullFmt.format(new Date(l.at)))} Cairo">${esc(ago(l.at))}</td>
+      <td class="py-2 pr-4 whitespace-nowrap text-white" title="Username: ${esc(l.username)}">${esc(l.name)}</td>
       <td class="py-2">${b} <span class="ml-2">${esc(text)}</span></td>
     </tr>`;
   }).join("");
 }
 
-// ---- Refresh loop ----
+// ---------- Analytics ----------
+function kpiCard(label, value, sub) {
+  return `<div class="rounded-xl bg-[#1e293b] p-4">
+    <p class="text-sm text-[#949ba4]">${esc(label)}</p>
+    <p class="mt-1 text-2xl font-bold text-white tabular-nums">${esc(value)}</p>
+    ${sub ? `<p class="text-xs text-[#949ba4] mt-1">${esc(sub)}</p>` : ""}
+  </div>`;
+}
+
+function renderKpis(s) {
+  const k = s.kpis;
+  $("kpis").innerHTML = [
+    kpiCard("Time in voice", hrsText(k.total_seconds), k.sessions + " sessions"),
+    kpiCard("Average session", dur(k.avg_session_seconds), "Median " + dur(k.median_session_seconds)),
+    kpiCard("Longest session", k.longest ? dur(k.longest.seconds) : "-", k.longest ? k.longest.name : ""),
+    kpiCard("Members who joined voice", k.unique_members, k.active_days + " active days"),
+    kpiCard("Most in voice at once", k.peak_concurrent.count || "-", k.peak_concurrent.at ? fullFmt.format(new Date(k.peak_concurrent.at)) : ""),
+    kpiCard("Time with someone else", k.together_pct == null ? "-" : k.together_pct + "%", "Share of voice time shared in a channel"),
+    kpiCard("Status changes", k.presence_changes.toLocaleString(), "Online, idle, busy, offline"),
+    kpiCard("Tracking window", dayLabel(s.meta.since.slice(0, 10)) + " to " + dayLabel(s.meta.until.slice(0, 10)), RANGE_TEXT[state.range]),
+  ].join("");
+}
+
+function renderInsights(s) {
+  const k = s.kpis, cards = [];
+  const add = (title, value, detail) => cards.push({ title, value, detail });
+  const total = k.total_seconds;
+
+  if (total > 0) {
+    const top = s.members[0];
+    if (top && !state.user) add("Most active in voice", top.name, hrsText(top.seconds) + " (" + Math.round((top.seconds / total) * 100) + "% of all voice time)");
+
+    const hMax = s.hourly.indexOf(Math.max(...s.hourly));
+    add("Busiest hour", hourLabel(hMax) + " to " + hourLabel((hMax + 1) % 24), hrsText(s.hourly[hMax]) + " in voice during that hour, Cairo time");
+
+    const dowTotals = s.heatmap.map((r) => r.reduce((a, b) => a + b, 0));
+    const dMax = dowTotals.indexOf(Math.max(...dowTotals));
+    add("Busiest weekday", DAYS_FULL[dMax], hrsText(dowTotals[dMax]) + " across the range");
+
+    if (s.channels[0] && !state.channel) add("Favorite channel", s.channels[0].name, Math.round((s.channels[0].seconds / total) * 100) + "% of voice time, " + s.channels[0].sessions + " sessions");
+
+    if (k.longest) add("Longest session", dur(k.longest.seconds), k.longest.name + " in " + k.longest.channel_name + ", " + fullFmt.format(new Date(k.longest.started_at)));
+
+    if (s.pairs[0]) add("Most time together", s.pairs[0].a.name + " and " + s.pairs[0].b.name, hrsText(s.pairs[0].seconds) + " in the same channel");
+
+    if (k.peak_concurrent.count > 1) add("Biggest crowd", k.peak_concurrent.count + " people at once", fullFmt.format(new Date(k.peak_concurrent.at)));
+
+    const late = s.hourly.slice(0, 6).reduce((a, b) => a + b, 0);
+    add("Night owl share", Math.round((late / total) * 100) + "% of voice time", "Happens between 12 AM and 6 AM Cairo time");
+
+    if (k.active_days) add("Average per active day", dur(total / k.active_days), k.active_days + " days with someone in voice");
+  }
+
+  const pm = s.presence.per_member[0];
+  if (pm) {
+    const active = pm.online + pm.idle + pm.dnd;
+    add(state.user ? "Time not offline" : "Online the most", state.user ? hrsText(active) : pm.name, state.user ? "Online " + hrsText(pm.online) + ", idle " + hrsText(pm.idle) + ", busy " + hrsText(pm.dnd) : hrsText(active) + " not offline (online " + hrsText(pm.online) + ")");
+  }
+  const ah = s.presence.active_hourly;
+  if (ah.some((v) => v > 0)) {
+    const h = ah.indexOf(Math.max(...ah));
+    add("Most people online around", hourLabel(h), "Cairo time, based on status changes");
+  }
+
+  $("rangeLabel").textContent = "Based on " + RANGE_TEXT[state.range] + (state.user ? ", one member" : "") + (state.channel ? ", one channel" : "") + ".";
+  $("insights").innerHTML = cards.length
+    ? cards.map((c) => `<div class="rounded-xl bg-[#1e293b] p-4"><p class="text-sm text-[#949ba4]">${esc(c.title)}</p><p class="mt-1 text-lg font-semibold text-white">${esc(c.value)}</p><p class="text-xs text-[#949ba4] mt-1">${esc(c.detail)}</p></div>`).join("")
+    : `<p class="text-[#949ba4]">Nothing to highlight yet. Insights appear once there is voice or status activity in this range.</p>`;
+}
+
+function renderHeatmap(heat) {
+  const max = Math.max(1, ...heat.flat());
+  const cols = "grid-template-columns: 2.5rem repeat(24, minmax(0.9rem, 1fr));";
+  let html = `<div class="min-w-[34rem]"><div class="grid gap-[2px] mb-1" style="${cols}"><span></span>`;
+  for (let h = 0; h < 24; h++) html += `<span class="text-[10px] text-center text-[#949ba4]">${h % 3 === 0 ? shortHour(h) : ""}</span>`;
+  html += "</div>";
+  heat.forEach((row, d) => {
+    html += `<div class="grid gap-[2px] mb-[2px]" style="${cols}"><span class="text-xs text-[#949ba4] self-center">${DAYS[d]}</span>`;
+    row.forEach((v, h) => {
+      const a = v ? 0.15 + 0.85 * (v / max) : 0.06;
+      html += `<span class="h-6 rounded-sm" style="background:rgba(88,101,242,${a.toFixed(2)})" title="${DAYS_FULL[d]} ${hourLabel(h)}: ${hrsText(v)}"></span>`;
+    });
+    html += "</div>";
+  });
+  $("heatmap").innerHTML = html + "</div>";
+}
+
+function renderPairs(pairs) {
+  const max = Math.max(1, ...pairs.map((p) => p.seconds));
+  $("pairs").innerHTML = pairs.length
+    ? pairs.map((p) => `<div>
+        <div class="flex justify-between text-sm mb-1"><span class="text-white">${esc(p.a.name)} and ${esc(p.b.name)}</span><span class="text-[#949ba4] tabular-nums">${hrsText(p.seconds)}</span></div>
+        <div class="h-2 rounded bg-[#0f172a]"><div class="h-2 rounded bg-[#5865F2]" style="width:${Math.max(3, (p.seconds / max) * 100)}%"></div></div>
+      </div>`).join("")
+    : `<p class="text-[#949ba4]">No overlapping voice time in this range.</p>`;
+}
+
+function renderMembers() {
+  if (!lastStats) return;
+  const { key, dir } = state.memberSort;
+  const q = state.memberSearch.trim().toLowerCase();
+  const rows = lastStats.members
+    .filter((m) => !q || m.name.toLowerCase().includes(q))
+    .sort((a, b) => {
+      const x = a[key], y = b[key];
+      if (typeof x === "string" || typeof y === "string") return dir * String(x ?? "").localeCompare(String(y ?? ""));
+      return dir * ((x ?? 0) - (y ?? 0));
+    });
+  $("memberEmpty").classList.toggle("hidden", rows.length > 0);
+  $("memberRows").innerHTML = rows.map((m) => `<tr class="hover:bg-[#0f172a]/60 cursor-pointer" data-user="${esc(m.user_id)}">
+    <td class="py-2 pr-4 text-white whitespace-nowrap">${esc(m.name)}</td>
+    <td class="py-2 pr-4 text-right tabular-nums">${hrsText(m.seconds)}</td>
+    <td class="py-2 pr-4 text-right tabular-nums">${m.sessions}</td>
+    <td class="py-2 pr-4 text-right tabular-nums">${dur(m.avg_session_seconds)}</td>
+    <td class="py-2 pr-4 text-right tabular-nums">${dur(m.longest_seconds)}</td>
+    <td class="py-2 pr-4 whitespace-nowrap">${esc(m.favorite_channel || "-")}</td>
+    <td class="py-2 pr-4 text-right tabular-nums">${m.active_days}</td>
+    <td class="py-2 whitespace-nowrap">${m.in_voice_now ? badge("bg-[#23a55a]/15 text-[#23a55a]", "In voice now") : `<span class="text-[#949ba4]" title="${esc(fullFmt.format(new Date(m.last_seen_at)))} Cairo">${esc(ago(m.last_seen_at))}</span>`}</td>
+  </tr>`).join("");
+  document.querySelectorAll("th[data-sort]").forEach((th) => {
+    const base = th.textContent.replace(/ [▲▼]$/, "");
+    th.textContent = th.dataset.sort === key ? base + (dir > 0 ? " ▲" : " ▼") : base;
+  });
+}
+document.querySelector("#memberRows").addEventListener("click", (e) => {
+  const tr = e.target.closest("tr[data-user]");
+  if (tr) setUser(tr.dataset.user);
+});
+document.querySelectorAll("th[data-sort]").forEach((th) => th.addEventListener("click", () => {
+  const k = th.dataset.sort;
+  state.memberSort = state.memberSort.key === k ? { key: k, dir: -state.memberSort.dir } : { key: k, dir: k === "name" || k === "favorite_channel" ? 1 : -1 };
+  renderMembers();
+}));
+$("memberSearch").oninput = (e) => { state.memberSearch = e.target.value; renderMembers(); };
+
+function renderCharts(s) {
+  const noVoice = s.kpis.sessions === 0;
+
+  upsert("cDaily", {
+    type: "bar",
+    data: {
+      labels: s.daily.map((d) => dayLabel(d.date)),
+      datasets: [
+        { type: "bar", label: "Hours in voice", data: s.daily.map((d) => hrs(d.voice_seconds)), backgroundColor: "#5865F2", borderRadius: 3, yAxisID: "y", order: 2 },
+        { type: "line", label: "Members who joined", data: s.daily.map((d) => d.users), borderColor: "#23a55a", backgroundColor: "#23a55a", tension: 0.3, pointRadius: s.daily.length > 60 ? 0 : 2, yAxisID: "y1", order: 1 },
+      ],
+    },
+    options: {
+      interaction: { mode: "index", intersect: false },
+      plugins: { legend: { labels: { color: "#dbdee1" } } },
+      scales: {
+        y: { beginAtZero: true, title: axisTitle("Hours"), grid: { color: "#334155" } },
+        y1: { beginAtZero: true, position: "right", title: axisTitle("Members"), grid: { drawOnChartArea: false }, ticks: { precision: 0 } },
+        x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true } },
+      },
+    },
+  }, noVoice);
+
+  upsert("cHourly", {
+    type: "bar",
+    data: { labels: s.hourly.map((_, h) => shortHour(h)), datasets: [{ label: "Hours in voice", data: s.hourly.map(hrs), backgroundColor: "#5865F2", borderRadius: 3 }] },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, title: axisTitle("Hours") }, x: { grid: { display: false } } } },
+  }, noVoice);
+
+  renderHeatmap(s.heatmap);
+
+  const lead = s.members.slice(0, 10);
+  upsert("cLeader", {
+    type: "bar",
+    data: { labels: lead.map((m) => m.name), datasets: [{ label: "Hours in voice", data: lead.map((m) => hrs(m.seconds)), backgroundColor: "#5865F2", borderRadius: 4 }] },
+    options: {
+      indexAxis: "y",
+      plugins: { legend: { display: false }, tooltip: hoursTip },
+      scales: { x: { beginAtZero: true, title: axisTitle("Hours") }, y: { grid: { display: false }, ticks: { color: "#dbdee1" } } },
+      onClick: (_e, els) => { if (els.length && lastStats) { const m = lastStats.members[els[0].index]; if (m) setUser(m.user_id); } },
+      onHover: (e, els) => { e.native.target.style.cursor = els.length ? "pointer" : "default"; },
+    },
+  }, noVoice);
+
+  upsert("cChannels", {
+    type: "doughnut",
+    data: { labels: s.channels.map((c) => c.name), datasets: [{ data: s.channels.map((c) => hrs(c.seconds)), backgroundColor: s.channels.map((_, i) => PALETTE[i % PALETTE.length]), borderColor: "#1e293b" }] },
+    options: { plugins: { legend: { position: "bottom", labels: { color: "#dbdee1" } }, tooltip: { callbacks: { label: (c) => " " + c.label + ": " + c.parsed + " h" } } } },
+  }, noVoice);
+
+  upsert("cHist", {
+    type: "bar",
+    data: { labels: s.histogram.map((h) => h.label), datasets: [{ label: "Sessions", data: s.histogram.map((h) => h.count), backgroundColor: "#00a8fc", borderRadius: 3 }] },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 }, title: axisTitle("Sessions") }, x: { grid: { display: false } } } },
+  }, noVoice);
+
+  renderPairs(s.pairs);
+
+  // Status
+  const p = s.presence;
+  const noStatus = s.kpis.presence_changes === 0;
+  const keys = ["online", "idle", "dnd", "offline"];
+  upsert("cStatus", {
+    type: "doughnut",
+    data: { labels: keys.map((k) => STATUS[k].label), datasets: [{ data: keys.map((k) => hrs(p.totals[k])), backgroundColor: keys.map((k) => STATUS[k].color), borderColor: "#1e293b" }] },
+    options: { plugins: { legend: { position: "bottom", labels: { color: "#dbdee1" } }, tooltip: { callbacks: { label: (c) => " " + c.label + ": " + c.parsed + " h" } } } },
+  }, noStatus);
+
+  const pm = p.per_member.slice(0, 10);
+  upsert("cStatusMembers", {
+    type: "bar",
+    data: {
+      labels: pm.map((m) => m.name),
+      datasets: ["online", "idle", "dnd"].map((k) => ({ label: STATUS[k].label, data: pm.map((m) => hrs(m[k])), backgroundColor: STATUS[k].color })),
+    },
+    options: {
+      indexAxis: "y",
+      plugins: { legend: { labels: { color: "#dbdee1" } } },
+      scales: { x: { stacked: true, beginAtZero: true, title: axisTitle("Hours") }, y: { stacked: true, grid: { display: false }, ticks: { color: "#dbdee1" } } },
+    },
+  }, noStatus);
+
+  upsert("cActiveHourly", {
+    type: "line",
+    data: { labels: p.active_hourly.map((_, h) => shortHour(h)), datasets: [{ label: "Hours not offline", data: p.active_hourly.map(hrs), borderColor: "#23a55a", backgroundColor: "rgba(35,165,90,.18)", fill: true, tension: 0.3, pointRadius: 2 }] },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, title: axisTitle("Hours") }, x: { grid: { display: false } } } },
+  }, noStatus);
+
+  upsert("cChanges", {
+    type: "bar",
+    data: { labels: p.daily_changes.map((d) => dayLabel(d.date)), datasets: [{ label: "Status changes", data: p.daily_changes.map((d) => d.count), backgroundColor: "#f0b232", borderRadius: 3 }] },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true } } } },
+  }, noStatus);
+}
+
+// ---------- Sessions table ----------
+function csvUrl() {
+  const q = new URLSearchParams({ range: state.range });
+  if (state.user) q.set("user", state.user);
+  if (state.channel) q.set("channel", state.channel);
+  if (KEY) q.set("key", KEY);
+  return "/api/sessions.csv?" + q.toString();
+}
+function renderSessions(data) {
+  $("csvLink").href = csvUrl();
+  $("sessEmpty").classList.toggle("hidden", data.rows.length > 0);
+  $("sessRows").innerHTML = data.rows.map((r) => `<tr>
+    <td class="py-2 pr-4 whitespace-nowrap text-white" title="Username: ${esc(r.username)}">${esc(r.name)}</td>
+    <td class="py-2 pr-4 whitespace-nowrap">${esc(r.channel_name)}</td>
+    <td class="py-2 pr-4 whitespace-nowrap text-[#949ba4]">${esc(stamp(r.joined_at))}</td>
+    <td class="py-2 pr-4 whitespace-nowrap">${r.open ? badge("bg-[#23a55a]/15 text-[#23a55a]", "In voice now") : `<span class="text-[#949ba4]">${esc(stamp(r.left_at))}</span>`}</td>
+    <td class="py-2 text-right tabular-nums">${dur(r.duration_seconds)}</td>
+  </tr>`).join("");
+  $("sessCount").textContent = data.rows.length ? "Showing " + data.rows.length + " of " + data.total.toLocaleString() : "";
+  $("sessMore").classList.toggle("hidden", data.rows.length >= data.total || state.sessLimit >= 200);
+}
+$("sessMore").onclick = () => { state.sessLimit = Math.min(200, state.sessLimit + 25); refreshSessions(); };
+
+// ---------- Refresh loops ----------
 function setConnected(ok) {
   $("errorBanner").classList.toggle("hidden", ok);
-  const pill = $("pill"), dot = $("pillDot");
-  pill.className = "inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-medium " +
-    (ok ? "bg-[#23a55a]/15 text-[#23a55a]" : "bg-[#f23f43]/15 text-[#f23f43]");
-  dot.className = "pulse h-2 w-2 rounded-full " + (ok ? "bg-[#23a55a]" : "bg-[#f23f43]");
+  $("pill").className = "inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-medium " + (ok ? "bg-[#23a55a]/15 text-[#23a55a]" : "bg-[#f23f43]/15 text-[#f23f43]");
+  $("pillDot").className = "pulse h-2 w-2 rounded-full " + (ok ? "bg-[#23a55a]" : "bg-[#f23f43]");
   $("pillText").textContent = ok ? "Online & Monitoring" : "Connection lost";
 }
 
-async function refresh() {
-  const results = await Promise.allSettled([api("overview"), api("voice-leaderboard"), api("recent-logs")]);
-  const [ov, lb, lg] = results;
-  if (ov.status === "fulfilled") renderOverview(ov.value);
-  if (lb.status === "fulfilled") { lbData = lb.value; renderChart(); }
-  if (lg.status === "fulfilled") renderLogs(lg.value.logs);
-  setConnected(ov.status === "fulfilled");
+let liveSeq = 0, statsSeq = 0, logSeq = 0, sessSeq = 0;
+
+async function refreshLive() {
+  const seq = ++liveSeq;
+  try {
+    const o = await api("overview");
+    if (seq !== liveSeq) return;
+    renderOverview(o);
+    setConnected(true);
+    lastUpdate = Date.now();
+    tick();
+  } catch (e) { setConnected(false); }
+  refreshLogs();
 }
 
-refresh();
-setInterval(refresh, 20000);
+async function refreshLogs() {
+  const seq = ++logSeq;
+  try {
+    const d = await api("recent-logs", { limit: 30, user: state.user, type: state.logType });
+    if (seq === logSeq) renderLogs(d.logs);
+  } catch (e) { /* connection banner is driven by the overview call */ }
+}
+
+async function refreshSessions() {
+  const seq = ++sessSeq;
+  try {
+    const d = await api("sessions", { range: state.range, user: state.user, channel: state.channel, limit: state.sessLimit });
+    if (seq === sessSeq) renderSessions(d);
+  } catch (e) { /* ignored, retried on next refresh */ }
+}
+
+async function refreshStats() {
+  const seq = ++statsSeq;
+  refreshSessions();
+  try {
+    const s = await api("stats", { range: state.range, user: state.user, channel: state.channel });
+    if (seq !== statsSeq) return;
+    lastStats = s;
+    $("truncBanner").classList.toggle("hidden", !s.meta.truncated);
+    renderKpis(s);
+    renderInsights(s);
+    renderCharts(s);
+    renderMembers();
+    lastUpdate = Date.now();
+    tick();
+  } catch (e) { /* keep showing the last good data */ }
+}
+
+// Live parts (who is online, voice channels, activity feed) refresh every 20s,
+// the heavier analytics every 60s. Both pause while the tab is hidden.
+setInterval(() => { if (!document.hidden) refreshLive(); }, 20000);
+setInterval(() => { if (!document.hidden) refreshStats(); }, 60000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshLive(); refreshStats(); } });
+
+renderRangeButtons();
+loadFilterOptions().then(() => { syncUrl(); });
+refreshLive();
+refreshStats();
+setInterval(loadFilterOptions, 10 * 60 * 1000);
 </script>
 </body>
 </html>

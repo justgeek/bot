@@ -1,9 +1,11 @@
--- Run this once in Supabase: SQL Editor -> New query -> paste -> Run.
+-- Run in Supabase: SQL Editor -> New query -> paste -> Run.
+-- Safe to run again on top of the previous version: it only adds what is missing.
 
 create table if not exists voice_sessions (
   id               bigint generated always as identity primary key,
   user_id          text        not null,
   username         text        not null,
+  display_name     text,
   channel_id       text        not null,
   channel_name     text,
   joined_at        timestamptz not null default now(),
@@ -12,25 +14,29 @@ create table if not exists voice_sessions (
 );
 
 create table if not exists presence_logs (
-  id         bigint generated always as identity primary key,
-  user_id    text        not null,
-  username   text        not null,
-  status     text        not null check (status in ('online', 'idle', 'dnd', 'offline')),
-  changed_at timestamptz not null default now()
+  id           bigint generated always as identity primary key,
+  user_id      text        not null,
+  username     text        not null,
+  display_name text,
+  status       text        not null check (status in ('online', 'idle', 'dnd', 'offline')),
+  changed_at   timestamptz not null default now()
 );
+
+-- Upgrade path for tables created by the first version
+alter table voice_sessions add column if not exists display_name text;
+alter table presence_logs  add column if not exists display_name text;
 
 create index if not exists voice_sessions_open_idx   on voice_sessions (user_id) where left_at is null;
 create index if not exists voice_sessions_joined_idx on voice_sessions (joined_at desc);
 create index if not exists voice_sessions_left_idx   on voice_sessions (left_at desc) where left_at is not null;
 create index if not exists presence_logs_changed_idx on presence_logs (changed_at desc);
 
--- The bot uses the service_role key, which bypasses RLS. Turning RLS on with no
--- policies means the public anon key cannot read or write these tables.
+-- The bot uses the service_role key (bypasses RLS). RLS on + no policies means
+-- the public anon key can't read or write these tables.
 alter table voice_sessions enable row level security;
 alter table presence_logs  enable row level security;
 
--- Closes any open session for a user, using the database clock:
--- duration_seconds = EXTRACT(EPOCH FROM (NOW() - joined_at))
+-- Closes any open session for a user using the database clock.
 create or replace function end_voice_session(p_user_id text)
 returns void
 language sql
@@ -42,15 +48,17 @@ as $$
      and left_at is null;
 $$;
 
--- Top voice users. p_days = null means all time. Open sessions count up to now(),
--- and sessions that straddle the window start are clipped to the window.
+-- Return type changed (added dname), so the old version must be dropped first.
+drop function if exists voice_leaderboard(integer, integer);
+
 create or replace function voice_leaderboard(p_days integer default null, p_limit integer default 10)
-returns table (uid text, uname text, secs bigint)
+returns table (uid text, uname text, dname text, secs bigint)
 language sql
 stable
 as $$
   select s.user_id as uid,
          (array_agg(s.username order by s.joined_at desc))[1] as uname,
+         (array_agg(coalesce(s.display_name, s.username) order by s.joined_at desc))[1] as dname,
          sum(extract(epoch from (
            coalesce(s.left_at, now()) -
            case when p_days is null then s.joined_at
