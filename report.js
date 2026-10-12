@@ -31,6 +31,16 @@ function computeReport(o) {
   const voice = type === "voice";
   const isSlackers = type === "slackers";
 
+  // Parse multi-select user filter
+  let userFilter = null;
+  if (Array.isArray(user)) {
+    const valid = user.filter(Boolean);
+    if (valid.length > 0) userFilter = new Set(valid);
+  } else if (typeof user === "string" && user.trim()) {
+    const valid = user.split(",").map((s) => s.trim()).filter(Boolean);
+    if (valid.length > 0) userFilter = new Set(valid);
+  }
+
   const names = new Map();
   for (const r of sessionRows) names.set(r.user_id, r.display_name || r.username);
   for (const r of presenceRows) names.set(r.user_id, r.display_name || r.username);
@@ -96,7 +106,7 @@ function computeReport(o) {
 
   if (voice || isSlackers) {
     for (const r of sessionRows) {
-      if (user && r.user_id !== user) continue;
+      if (userFilter && !userFilter.has(r.user_id)) continue;
       if (channel && r.channel_id !== channel) continue;
       if (!includeAfk && !channel && db.isAfkChannel(r.channel_id, r.channel_name, client)) continue;
 
@@ -116,7 +126,7 @@ function computeReport(o) {
     const qualifies = (s) => (mode === "active" ? s !== "offline" : s === mode);
     const byUser = new Map();
     for (const r of presenceRows) {
-      if (user && r.user_id !== user) continue;
+      if (userFilter && !userFilter.has(r.user_id)) continue;
       if (r.status !== "offline" && !STATUSES.includes(r.status)) continue;
       if (!byUser.has(r.user_id)) byUser.set(r.user_id, []);
       byUser.get(r.user_id).push({ id: Number(r.id) || 0, status: r.status, t: Date.parse(r.changed_at) });
@@ -156,9 +166,12 @@ function computeReport(o) {
     const graceMs = (parseInt(graceMinutes, 10) || 15) * 60000;
 
     const ids = new Set();
-    for (const R of recs.values()) if (R.seconds > 0) ids.add(R.uid);
-    if (roster) for (const id of rosterIds || []) ids.add(id);
-    if (user) ids.add(user);
+    if (userFilter) {
+      for (const uid of userFilter) ids.add(uid);
+    } else {
+      for (const R of recs.values()) if (R.seconds > 0) ids.add(R.uid);
+      if (roster) for (const id of rosterIds || []) ids.add(id);
+    }
 
     const slackerMembers = [];
     const slackerLog = [];
@@ -172,18 +185,15 @@ function computeReport(o) {
       let worstLate = null;
 
       for (const date of dates) {
-        if (date > today) continue; // Future day
+        if (date > today) continue;
 
         const R = recs.get(uid + "|" + date);
         const dayStartMs = z.startOfDate(date);
 
-        // Target arrival time on this gaming day
         let targetMs = dayStartMs;
         if (tHour < dayStart) {
-          // Time is after midnight (e.g. 01:00 AM on a day starting at 18:00)
           targetMs += ((24 - dayStart) + tHour) * 3600e3 + tMin * 60e3;
         } else {
-          // Time is between dayStart and midnight (e.g. 21:00 on a day starting at 18:00)
           targetMs += (tHour - dayStart) * 3600e3 + tMin * 60e3;
         }
 
@@ -191,7 +201,7 @@ function computeReport(o) {
 
         if (!attendedDay) {
           daysAbsent += 1;
-          totalPenaltyPoints += 3; // 3 penalties for no-show
+          totalPenaltyPoints += 3;
           slackerLog.push({
             date,
             user_id: uid,
@@ -222,7 +232,6 @@ function computeReport(o) {
             daysLate += 1;
             const lateMin = Math.round(diffMs / 60000);
             totalLateMinutes += lateMin;
-            // 1 penalty point per 15 mins late
             const points = Math.max(1, Math.ceil(lateMin / 15));
             totalPenaltyPoints += points;
 
@@ -263,7 +272,6 @@ function computeReport(o) {
       });
     }
 
-    // Rank highest slacker/penalties first
     slackerMembers.sort((a, b) => b.penalty_points - a.penalty_points || b.days_late - a.days_late || b.total_late_minutes - a.total_late_minutes);
     slackerMembers.forEach((m, idx) => (m.rank = idx + 1));
     slackerLog.sort((a, b) => b.date.localeCompare(a.date) || b.penalty_points - a.penalty_points);
@@ -281,7 +289,8 @@ function computeReport(o) {
         target_time: targetTime,
         grace_minutes: graceMinutes,
         generated_at: new Date(now).toISOString(),
-        user: user || null,
+        user: userFilter ? [...userFilter].join(",") : null,
+        user_count: userFilter ? userFilter.size : null,
         channel: channel || null,
       },
       summary: {
@@ -298,13 +307,16 @@ function computeReport(o) {
   }
 
   // =========================================================
-  // STANDARD ATTENDANCE REPORT
+  // ATTENDANCE REPORT
   // =========================================================
   const attended = (R) => !!R && R.seconds >= minSeconds && R.seconds > 0;
   const ids = new Set();
-  for (const R of recs.values()) if (R.seconds > 0) ids.add(R.uid);
-  if (roster) for (const id of rosterIds || []) ids.add(id);
-  if (user) ids.add(user);
+  if (userFilter) {
+    for (const uid of userFilter) ids.add(uid);
+  } else {
+    for (const R of recs.values()) if (R.seconds > 0) ids.add(R.uid);
+    if (roster) for (const id of rosterIds || []) ids.add(id);
+  }
 
   const minutesOf = (ms) => {
     const p = z.partsOf(ms);
@@ -424,7 +436,8 @@ function computeReport(o) {
       min_seconds: minSeconds,
       generated_at: new Date(now).toISOString(),
       channel: channel || null,
-      user: user || null,
+      user: userFilter ? [...userFilter].join(",") : null,
+      user_count: userFilter ? userFilter.size : null,
     },
     summary,
     members,

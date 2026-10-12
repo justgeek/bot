@@ -360,7 +360,16 @@ module.exports = function registerDashboard(app, client) {
       for (let d = from; d <= to && days <= MAX_REPORT_DAYS; d = z.addDays(d, 1)) days++;
       if (days > MAX_REPORT_DAYS) return res.status(400).json({ error: "range_too_long", max_days: MAX_REPORT_DAYS });
 
-      const user = ID_RE.test(req.query.user || "") ? req.query.user : "";
+      // Support multi-selected user IDs
+      const rawUser = req.query.user || req.query.users || "";
+      let userList = [];
+      if (Array.isArray(rawUser)) {
+        userList = rawUser.filter((id) => ID_RE.test(id));
+      } else if (typeof rawUser === "string" && rawUser.trim()) {
+        userList = rawUser.split(",").map((s) => s.trim()).filter((id) => ID_RE.test(id));
+      }
+      const userParam = userList.join(",");
+
       const rawChan = req.query.channel || "";
       let channel = "";
       let includeAfk = false;
@@ -377,7 +386,7 @@ module.exports = function registerDashboard(app, client) {
       const targetTime = req.query.targetTime || "21:00";
       const graceMinutes = parseInt(req.query.grace, 10) || 15;
 
-      const key = `report:${type}:${from}:${to}:${tz}:${dayStart}:${user}:${channel}:${includeAfk}:${minMinutes}:${mode}:${roster}:${targetTime}:${graceMinutes}`;
+      const key = `report:${type}:${from}:${to}:${tz}:${dayStart}:${userParam}:${channel}:${includeAfk}:${minMinutes}:${mode}:${roster}:${targetTime}:${graceMinutes}`;
       const out = await cached(key, 20000, async () => {
         const fromMs = z.startOfDate(from);
         const toMs = z.startOfDate(z.addDays(to, 1));
@@ -388,9 +397,11 @@ module.exports = function registerDashboard(app, client) {
         ]);
         const rosterIds = [];
         const guild = getGuild();
-        if (roster && !user && guild) guild.members.cache.forEach((m) => { if (!m.user.bot) rosterIds.push(m.id); });
+        if (roster && guild) guild.members.cache.forEach((m) => { if (!m.user.bot) rosterIds.push(m.id); });
+
         const result = computeReport({
-          type, sessionRows: s.rows, presenceRows: p.rows, from, to, tz, dayStart, user, channel, includeAfk,
+          type, sessionRows: s.rows, presenceRows: p.rows, from, to, tz, dayStart,
+          user: userList, channel, includeAfk,
           minSeconds: minMinutes * 60, mode, roster, rosterIds, now: Date.now(), liveName, liveStatus, client,
           targetTime, graceMinutes,
         });

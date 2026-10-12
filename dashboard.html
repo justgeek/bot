@@ -1743,11 +1743,34 @@
                 <input id="rGrace" type="number" min="0" max="120" value="15" class="field w-full mt-1">
               </label>
 
-              <label class="block text-sm muted">Member
-                <select id="rUser" class="field w-full mt-1">
-                  <option value="">All members</option>
-                </select>
-              </label>
+              <!-- Multi-Select Member Dropdown Component -->
+              <div class="block text-sm muted relative">
+                <span>Members (Multi-select)</span>
+                <button type="button" id="rUserBtn"
+                  class="field w-full mt-1 text-left flex items-center justify-between cursor-pointer"
+                  aria-haspopup="listbox" aria-expanded="false">
+                  <span id="rUserSummary" class="truncate text-sm text-[var(--text)]">All members</span>
+                  <svg class="w-4 h-4 ml-1 flex-none muted" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd"
+                      d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                      clip-rule="evenodd" />
+                  </svg>
+                </button>
+                <div id="rUserDropdown"
+                  class="hidden absolute left-0 right-0 top-full mt-1 z-30 card p-2 shadow-2xl space-y-2 border"
+                  style="background:var(--surface);">
+                  <div class="flex items-center justify-between gap-2 border-b pb-1.5 px-1 text-xs"
+                    style="border-color:var(--border);">
+                    <button type="button" id="rUserSelectAll" class="link text-xs">Select All</button>
+                    <span class="muted">|</span>
+                    <button type="button" id="rUserClearAll" class="link text-xs">Clear (All)</button>
+                  </div>
+                  <input type="text" id="rUserSearch" placeholder="Search members..."
+                    class="field w-full text-xs py-1 px-2" aria-label="Search members">
+                  <div id="rUserList" class="max-h-48 overflow-y-auto scroll-thin space-y-1 pr-1"></div>
+                </div>
+              </div>
+
               <label id="rChannelWrap" class="block text-sm muted">Voice channel
                 <select id="rChannel" class="field w-full mt-1">
                   <option value="">Active voice channels (excl. AFK)</option>
@@ -1918,7 +1941,6 @@
       ["overview", "Overview"], ["voice", "Voice"], ["status", "Status"], ["members", "Members"],
       ["sessions", "Sessions"], ["activity", "Activity"], ["reports", "Reports"], ["appearance", "Appearance"],
     ];
-    // Keeps top filter buttons visible on Reports tab as well
     const TAB_FILTERS = { overview: "rucs", voice: "ruc", status: "rus", members: "ruc", sessions: "ruc", activity: "rucs", reports: "s" };
     let currentTab = "overview";
 
@@ -2049,7 +2071,6 @@
     function dayLabel(d) { const [, m, dd] = d.split("-"); return dd + "/" + m; }
     const badge = (cls, text) => `<span class="badge ${cls}">${esc(text)}</span>`;
 
-    // Rotates 24-hour axis so it starts naturally at the gaming rollover hour (e.g. 6 PM)
     function getOrderedHours(startHour = DAY_START) {
       const order = [];
       for (let i = 0; i < 24; i++) {
@@ -2244,6 +2265,104 @@
       refreshLogs();
     }
 
+    // -------------------------------------------------------------
+    // MULTI-SELECT MEMBER DROPDOWN COMPONENT (FOR REPORTS)
+    // -------------------------------------------------------------
+    let reportMembersCache = [];
+
+    function setupReportMemberMultiSelect() {
+      const btn = $("rUserBtn");
+      const dropdown = $("rUserDropdown");
+      const searchInput = $("rUserSearch");
+      const selectAll = $("rUserSelectAll");
+      const clearAll = $("rUserClearAll");
+
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const open = !dropdown.classList.contains("hidden");
+        if (open) {
+          dropdown.classList.add("hidden");
+          btn.setAttribute("aria-expanded", "false");
+        } else {
+          dropdown.classList.remove("hidden");
+          btn.setAttribute("aria-expanded", "true");
+          searchInput.focus();
+        }
+      };
+
+      document.addEventListener("click", (e) => {
+        if (!dropdown.contains(e.target) && !btn.contains(e.target)) {
+          dropdown.classList.add("hidden");
+          btn.setAttribute("aria-expanded", "false");
+        }
+      });
+
+      searchInput.oninput = () => {
+        const q = searchInput.value.toLowerCase().trim();
+        document.querySelectorAll(".r-user-item").forEach((el) => {
+          const name = el.dataset.name.toLowerCase();
+          el.classList.toggle("hidden", q !== "" && !name.includes(q));
+        });
+      };
+
+      selectAll.onclick = () => {
+        document.querySelectorAll(".r-user-check").forEach((cb) => (cb.checked = true));
+        updateReportMemberSummary();
+      };
+
+      clearAll.onclick = () => {
+        document.querySelectorAll(".r-user-check").forEach((cb) => (cb.checked = false));
+        updateReportMemberSummary();
+      };
+
+      $("rUserList").addEventListener("change", (e) => {
+        if (e.target.classList.contains("r-user-check")) {
+          updateReportMemberSummary();
+        }
+      });
+    }
+
+    function updateReportMemberSummary() {
+      const checked = [...document.querySelectorAll(".r-user-check:checked")];
+      const summary = $("rUserSummary");
+      if (checked.length === 0 || checked.length === reportMembersCache.length) {
+        summary.textContent = "All members";
+      } else if (checked.length === 1) {
+        const uid = checked[0].value;
+        const p = reportMembersCache.find((m) => m.user_id === uid);
+        summary.textContent = p ? p.name : "1 member selected";
+      } else if (checked.length === 2) {
+        const n1 = reportMembersCache.find((m) => m.user_id === checked[0].value)?.name || "";
+        const n2 = reportMembersCache.find((m) => m.user_id === checked[1].value)?.name || "";
+        summary.textContent = `${n1}, ${n2}`;
+      } else {
+        summary.textContent = `${checked.length} members selected`;
+      }
+    }
+
+    function getSelectedReportUsers() {
+      const checked = [...document.querySelectorAll(".r-user-check:checked")];
+      if (checked.length === 0 || checked.length === reportMembersCache.length) {
+        return []; // Empty array means all members
+      }
+      return checked.map((cb) => cb.value);
+    }
+
+    function populateReportMemberMultiSelect(members) {
+      reportMembersCache = members;
+      const list = $("rUserList");
+      list.innerHTML = members
+        .map(
+          (m) => `
+    <label class="r-user-item flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-[var(--surface-2)] text-xs text-[var(--text)] transition-colors" data-name="${esc(m.name)}">
+      <input type="checkbox" value="${esc(m.user_id)}" class="rounded r-user-check cursor-pointer">
+      ${who(m.user_id, m.name, { plain: true })}
+    </label>`
+        )
+        .join("");
+      updateReportMemberSummary();
+    }
+
     async function loadFilterOptions() {
       try {
         const f = await api("filters");
@@ -2252,7 +2371,11 @@
           f.channels.map((c) => `<option value="${esc(c.channel_id)}">${esc(c.name)}${c.is_afk ? " [AFK]" : ""}</option>`).join("");
         $("fUser").value = state.user;
         $("fChannel").value = state.channel;
-        fillReportSelects(f);
+
+        // Fill reports channel selector and multi-select member dropdown
+        $("rChannel").innerHTML = `<option value="">Active voice channels (excl. AFK)</option><option value="__all__">All channels (incl. AFK)</option>` +
+          f.channels.map((c2) => `<option value="${esc(c2.channel_id)}">${esc(c2.name)}${c2.is_afk ? " [AFK]" : ""}</option>`).join("");
+        populateReportMemberMultiSelect(f.members);
         populateShareChannels(f.share_channels || []);
       } catch (e) { }
       loadPeople();
@@ -2289,8 +2412,10 @@
     function filterByWho(el) {
       const id = el.dataset.who;
       if (el.closest("#rOut")) {
-        ensureOption($("rUser"), id, el.querySelector(".who-name").textContent);
-        $("rUser").value = id;
+        document.querySelectorAll(".r-user-check").forEach((cb) => {
+          cb.checked = (cb.value === id);
+        });
+        updateReportMemberSummary();
         generateReport();
       } else setUser(id);
     }
@@ -2406,7 +2531,6 @@
         : `<p class="muted">Nothing to highlight yet.</p>`;
     }
 
-    // Heatmap starting at Gaming Day Rollover (e.g. 6 PM)
     function renderHeatmap(heat) {
       const orderedHours = getOrderedHours();
       const max = Math.max(1, ...heat.flat());
@@ -2508,7 +2632,6 @@
         },
       }, noVoice);
 
-      // Hourly chart rotated to start at chosen rollover hour (e.g. 6 PM)
       upsert("cHourly", {
         type: "bar",
         data: {
@@ -2868,14 +2991,6 @@
       }
     }
 
-    function fillReportSelects(f) {
-      const u = $("rUser").value, c = $("rChannel").value;
-      $("rUser").innerHTML = `<option value="">All members</option>` + f.members.map((m) => `<option value="${esc(m.user_id)}">${esc(m.name)}</option>`).join("");
-      $("rChannel").innerHTML = `<option value="">Active voice channels (excl. AFK)</option><option value="__all__">All channels (incl. AFK)</option>` +
-        f.channels.map((c2) => `<option value="${esc(c2.channel_id)}">${esc(c2.name)}${c2.is_afk ? " [AFK]" : ""}</option>`).join("");
-      $("rUser").value = u;
-      $("rChannel").value = c;
-    }
     function updateReportForm() {
       const t = $("rType").value, custom = $("rPeriod").value === "custom";
       const isSlackers = t === "slackers";
@@ -2914,12 +3029,14 @@
       if (period !== "custom") { $("rFrom").value = from; $("rTo").value = to; }
       if (from > to) { $("rStatus").textContent = "The start date must be before the end date."; return; }
       const type = $("rType").value;
+      const selectedUsers = getSelectedReportUsers();
+
       $("rStatus").textContent = "Generating...";
       $("rGo").disabled = true;
       try {
         lastReport = await api("report", {
           type, from, to,
-          user: $("rUser").value,
+          user: selectedUsers.join(","),
           channel: (type === "voice" || type === "slackers") ? $("rChannel").value : "",
           min: $("rMin").value || 0,
           mode: $("rMode").value,
@@ -2962,7 +3079,7 @@
       }
 
       const rule = m.type === "voice" ? "someone is in voice" : MODE_TEXT[m.mode][2];
-      const scope = [m.user ? "one member" : "", m.channel ? "one channel" : ""].filter(Boolean).join(", ");
+      const scope = [m.user_count ? `${m.user_count} selected member(s)` : (m.user ? "one member" : ""), m.channel ? "one channel" : ""].filter(Boolean).join(", ");
       const kpis = [
         kpiCard("Members who showed up", sm.members_attended + " of " + sm.members_listed, m.period_days + " day" + (m.period_days === 1 ? "" : "s") + " counted"),
         kpiCard(L.time + " (total)", hrsText(sm.total_seconds), sm.attended_member_days + " attended days in total"),
@@ -2996,9 +3113,9 @@
     </div>`;
     }
 
-    // Slacker / Penalty report rendering
     function renderSlackersReport(r, out) {
       const m = r.meta, sm = r.summary;
+      const scope = m.user_count ? `Comparing ${m.user_count} selected member(s)` : "All members";
       const kpis = [
         kpiCard("🚨 Slacker King", sm.chief_slacker ? sm.chief_slacker.name : "Nobody!", sm.chief_slacker ? `${sm.chief_slacker.penalty_points} penalty pts (${sm.chief_slacker.days_late} days late)` : "Everyone was on time!"),
         kpiCard("Total Penalty Points", sm.total_penalties.toLocaleString(), "1 pt per 15m delay, 3 pts for no-show"),
@@ -3041,7 +3158,7 @@
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 class="text-xl font-semibold text-red-500">⚠️ Slackers &amp; Late Penalty Report</h2>
-          <p class="text-sm muted mt-1">${esc(fmtDay(m.from, true))} to ${esc(fmtDay(m.to, true))}. Expected Arrival: <b>${m.target_time}</b> with <b>${m.grace_minutes}m</b> grace period.</p>
+          <p class="text-sm muted mt-1">${esc(fmtDay(m.from, true))} to ${esc(fmtDay(m.to, true))}. Expected Arrival: <b>${m.target_time}</b> with <b>${m.grace_minutes}m</b> grace period. ${scope}.</p>
           <p class="text-xs muted mt-1">Generated ${esc(fullFmt.format(new Date(m.generated_at)))}.</p>
         </div>
         <div class="flex flex-wrap gap-2 no-print">
@@ -3317,6 +3434,7 @@
     renderAppearance();
     renderTzControls();
     updateTzLabels();
+    setupReportMemberMultiSelect();
     wireReports();
     if (state.range === "custom") { ensureCustomDefaults(); $("cFrom").value = state.from; $("cTo").value = state.to; }
     if (state.status) $("fStatus").value = state.status;
