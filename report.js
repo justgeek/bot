@@ -1,13 +1,35 @@
-// report.js - attendance reports for voice channels and online status.
+// report.js - attendance and slacker/penalty reports for voice channels and online status.
 const { makeTz } = require("./tz");
 const db = require("./db");
 
 const STATUSES = ["online", "idle", "dnd"];
 
 function computeReport(o) {
-  const { type, sessionRows, presenceRows, from, to, user, channel, minSeconds, mode, roster, rosterIds, now, liveName, liveStatus, dayStart = 0, includeAfk = false, client = null } = o;
+  const {
+    type,
+    sessionRows,
+    presenceRows,
+    from,
+    to,
+    user,
+    channel,
+    minSeconds,
+    mode,
+    roster,
+    rosterIds,
+    now,
+    liveName,
+    liveStatus,
+    dayStart = 18,
+    includeAfk = false,
+    client = null,
+    targetTime = "21:00",
+    graceMinutes = 15,
+  } = o;
+
   const z = makeTz(o.tz, dayStart);
   const voice = type === "voice";
+  const isSlackers = type === "slackers";
 
   const names = new Map();
   for (const r of sessionRows) names.set(r.user_id, r.display_name || r.username);
@@ -26,7 +48,20 @@ function computeReport(o) {
     const key = uid + "|" + date;
     let r = recs.get(key);
     if (!r) {
-      r = { uid, date, seconds: 0, n: 0, first: Infinity, last: -Infinity, ci: false, co: false, op: false, lastEnd: null, ch: new Map(), st: { online: 0, idle: 0, dnd: 0 } };
+      r = {
+        uid,
+        date,
+        seconds: 0,
+        n: 0,
+        first: Infinity,
+        last: -Infinity,
+        ci: false,
+        co: false,
+        op: false,
+        lastEnd: null,
+        ch: new Map(),
+        st: { online: 0, idle: 0, dnd: 0 },
+      };
       recs.set(key, r);
     }
     return r;
@@ -59,7 +94,7 @@ function computeReport(o) {
     }
   }
 
-  if (voice) {
+  if (voice || isSlackers) {
     for (const r of sessionRows) {
       if (user && r.user_id !== user) continue;
       if (channel && r.channel_id !== channel) continue;
@@ -88,7 +123,6 @@ function computeReport(o) {
     }
 
     for (const [uid, arr] of byUser) {
-      // Sort by timestamp, tie-breaking with primary key ID
       arr.sort((a, b) => a.t - b.t || a.id - b.id);
       for (let i = 0; i < arr.length; i++) {
         const start = arr[i].t;
@@ -114,6 +148,158 @@ function computeReport(o) {
     }
   }
 
+  // =========================================================
+  // SLACKERS & PENALTY REPORT CALCULATION
+  // =========================================================
+  if (isSlackers) {
+    const [tHour, tMin] = (targetTime || "21:00").split(":").map(Number);
+    const graceMs = (parseInt(graceMinutes, 10) || 15) * 60000;
+
+    const ids = new Set();
+    for (const R of recs.values()) if (R.seconds > 0) ids.add(R.uid);
+    if (roster) for (const id of rosterIds || []) ids.add(id);
+    if (user) ids.add(user);
+
+    const slackerMembers = [];
+    const slackerLog = [];
+
+    for (const uid of ids) {
+      let daysLate = 0;
+      let daysOnTime = 0;
+      let daysAbsent = 0;
+      let totalLateMinutes = 0;
+      let totalPenaltyPoints = 0;
+      let worstLate = null;
+
+      for (const date of dates) {
+        if (date > today) continue; // Future day
+
+        const R = recs.get(uid + "|" + date);
+        const dayStartMs = z.startOfDate(date);
+
+        // Target arrival time on this gaming day
+        let targetMs = dayStartMs;
+        if (tHour < dayStart) {
+          // Time is after midnight (e.g. 01:00 AM on a day starting at 18:00)
+          targetMs += ((24 - dayStart) + tHour) * 3600e3 + tMin * 60e3;
+        } else {
+          // Time is between dayStart and midnight (e.g. 21:00 on a day starting at 18:00)
+          targetMs += (tHour - dayStart) * 3600e3 + tMin * 60e3;
+        }
+
+        const attendedDay = R && R.seconds >= (minSeconds || 300);
+
+        if (!attendedDay) {
+          daysAbsent += 1;
+          totalPenaltyPoints += 3; // 3 penalties for no-show
+          slackerLog.push({
+            date,
+            user_id: uid,
+            name: nameOf(uid),
+            target_time: targetMs,
+            actual_time: null,
+            status: "absent",
+            late_minutes: 0,
+            penalty_points: 3,
+          });
+        } else {
+          const firstJoin = R.first;
+          const diffMs = firstJoin - targetMs;
+
+          if (diffMs <= graceMs) {
+            daysOnTime += 1;
+            slackerLog.push({
+              date,
+              user_id: uid,
+              name: nameOf(uid),
+              target_time: targetMs,
+              actual_time: firstJoin,
+              status: "on_time",
+              late_minutes: 0,
+              penalty_points: 0,
+            });
+          } else {
+            daysLate += 1;
+            const lateMin = Math.round(diffMs / 60000);
+            totalLateMinutes += lateMin;
+            // 1 penalty point per 15 mins late
+            const points = Math.max(1, Math.ceil(lateMin / 15));
+            totalPenaltyPoints += points;
+
+            if (!worstLate || lateMin > worstLate.minutes) {
+              worstLate = { date, minutes: lateMin, actual_time: firstJoin };
+            }
+
+            slackerLog.push({
+              date,
+              user_id: uid,
+              name: nameOf(uid),
+              target_time: targetMs,
+              actual_time: firstJoin,
+              status: "late",
+              late_minutes: lateMin,
+              penalty_points: points,
+            });
+          }
+        }
+      }
+
+      const totalEvaluatedDays = daysLate + daysOnTime + daysAbsent;
+      const punctualityPct = totalEvaluatedDays > 0 ? Math.round((daysOnTime / totalEvaluatedDays) * 100) : 0;
+      const avgLateMin = daysLate > 0 ? Math.round(totalLateMinutes / daysLate) : 0;
+
+      slackerMembers.push({
+        user_id: uid,
+        name: nameOf(uid),
+        penalty_points: totalPenaltyPoints,
+        days_late: daysLate,
+        days_on_time: daysOnTime,
+        days_absent: daysAbsent,
+        total_days: totalEvaluatedDays,
+        punctuality_pct: punctualityPct,
+        avg_late_minutes: avgLateMin,
+        total_late_minutes: totalLateMinutes,
+        worst_late: worstLate,
+      });
+    }
+
+    // Rank highest slacker/penalties first
+    slackerMembers.sort((a, b) => b.penalty_points - a.penalty_points || b.days_late - a.days_late || b.total_late_minutes - a.total_late_minutes);
+    slackerMembers.forEach((m, idx) => (m.rank = idx + 1));
+    slackerLog.sort((a, b) => b.date.localeCompare(a.date) || b.penalty_points - a.penalty_points);
+
+    return {
+      meta: {
+        type: "slackers",
+        from,
+        to,
+        dates,
+        today,
+        period_days: elapsed.length,
+        tz: z.tz,
+        dayStart: z.dayStartHour,
+        target_time: targetTime,
+        grace_minutes: graceMinutes,
+        generated_at: new Date(now).toISOString(),
+        user: user || null,
+        channel: channel || null,
+      },
+      summary: {
+        total_penalties: slackerMembers.reduce((acc, m) => acc + m.penalty_points, 0),
+        chief_slacker: slackerMembers[0] && slackerMembers[0].penalty_points > 0 ? slackerMembers[0] : null,
+        total_late_occurrences: slackerMembers.reduce((acc, m) => acc + m.days_late, 0),
+        avg_punctuality: slackerMembers.length
+          ? Math.round(slackerMembers.reduce((acc, m) => acc + m.punctuality_pct, 0) / slackerMembers.length)
+          : 0,
+      },
+      members: slackerMembers,
+      log: slackerLog,
+    };
+  }
+
+  // =========================================================
+  // STANDARD ATTENDANCE REPORT
+  // =========================================================
   const attended = (R) => !!R && R.seconds >= minSeconds && R.seconds > 0;
   const ids = new Set();
   for (const R of recs.values()) if (R.seconds > 0) ids.add(R.uid);

@@ -349,8 +349,8 @@ module.exports = function registerDashboard(app, client) {
   app.get("/api/report", guard, async (req, res) => {
     try {
       const tz = validTz(req.query.tz) || DEFAULT_TZ;
-      const dayStart = Math.min(23, Math.max(0, parseInt(req.query.dayStart, 10) || 0));
-      const type = req.query.type === "presence" ? "presence" : "voice";
+      const dayStart = Math.min(23, Math.max(0, parseInt(req.query.dayStart, 10) || 18));
+      const type = ["presence", "slackers"].includes(req.query.type) ? req.query.type : "voice";
       const from = String(req.query.from || "");
       const to = String(req.query.to || "");
       if (!validDate(from) || !validDate(to) || from > to) return res.status(400).json({ error: "bad_dates" });
@@ -374,14 +374,16 @@ module.exports = function registerDashboard(app, client) {
       const minMinutes = Math.min(Math.max(parseInt(req.query.min, 10) || 0, 0), 600);
       const mode = ["active", "idle", "dnd"].includes(req.query.mode) ? req.query.mode : "online";
       const roster = req.query.roster !== "0";
+      const targetTime = req.query.targetTime || "21:00";
+      const graceMinutes = parseInt(req.query.grace, 10) || 15;
 
-      const key = `report:${type}:${from}:${to}:${tz}:${dayStart}:${user}:${channel}:${includeAfk}:${minMinutes}:${mode}:${roster}`;
+      const key = `report:${type}:${from}:${to}:${tz}:${dayStart}:${user}:${channel}:${includeAfk}:${minMinutes}:${mode}:${roster}:${targetTime}:${graceMinutes}`;
       const out = await cached(key, 20000, async () => {
         const fromMs = z.startOfDate(from);
         const toMs = z.startOfDate(z.addDays(to, 1));
         const none = { rows: [], truncated: false };
         const [s, p] = await Promise.all([
-          type === "voice" ? db.getSessionRows(new Date(fromMs).toISOString(), new Date(toMs).toISOString()) : none,
+          type === "voice" || type === "slackers" ? db.getSessionRows(new Date(fromMs).toISOString(), new Date(toMs).toISOString()) : none,
           type === "presence" ? db.getPresenceRows(new Date(fromMs - 14 * DAY).toISOString(), new Date(toMs).toISOString()) : none,
         ]);
         const rosterIds = [];
@@ -390,6 +392,7 @@ module.exports = function registerDashboard(app, client) {
         const result = computeReport({
           type, sessionRows: s.rows, presenceRows: p.rows, from, to, tz, dayStart, user, channel, includeAfk,
           minSeconds: minMinutes * 60, mode, roster, rosterIds, now: Date.now(), liveName, liveStatus, client,
+          targetTime, graceMinutes,
         });
         result.meta.truncated = s.truncated || p.truncated;
         return result;

@@ -190,24 +190,41 @@ async function getPresenceRows(sinceIso, untilIso) {
   }
 }
 
+// Computes true wall-clock channel occupancy (union of overlapping intervals)
+function unionIntervals(intervals) {
+  if (!intervals.length) return 0;
+  intervals.sort((a, b) => a[0] - b[0]);
+  let totalSecs = 0;
+  let curStart = intervals[0][0];
+  let curEnd = intervals[0][1];
+
+  for (let i = 1; i < intervals.length; i++) {
+    const [s, e] = intervals[i];
+    if (s <= curEnd) {
+      if (e > curEnd) curEnd = e;
+    } else {
+      totalSecs += Math.max(0, Math.round((curEnd - curStart) / 1000));
+      curStart = s;
+      curEnd = e;
+    }
+  }
+  totalSecs += Math.max(0, Math.round((curEnd - curStart) / 1000));
+  return totalSecs;
+}
+
 async function getTotalVoiceSeconds(excludeAfk = false, client = null) {
   if (!supabase) return 0;
   try {
-    if (excludeAfk) {
-      const { rows } = await getSessionRows(null, null);
-      let total = 0;
-      const now = Date.now();
-      for (const r of rows) {
-        if (isAfkChannel(r.channel_id, r.channel_name, client)) continue;
-        const start = Date.parse(r.joined_at);
-        const end = r.left_at ? Date.parse(r.left_at) : now;
-        if (end > start) total += Math.round((end - start) / 1000);
-      }
-      return total;
+    const { rows } = await getSessionRows(null, null);
+    const now = Date.now();
+    const intervals = [];
+    for (const r of rows) {
+      if (excludeAfk && isAfkChannel(r.channel_id, r.channel_name, client)) continue;
+      const start = Date.parse(r.joined_at);
+      const end = r.left_at ? Date.parse(r.left_at) : now;
+      if (end > start) intervals.push([start, end]);
     }
-    const { data, error } = await supabase.rpc("voice_total_seconds");
-    if (error) throw error;
-    return Number(data) || 0;
+    return unionIntervals(intervals);
   } catch (err) {
     console.error("[DB] getTotalVoiceSeconds failed:", err.message || err);
     return 0;

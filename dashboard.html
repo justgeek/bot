@@ -7,7 +7,6 @@
   <title>Banha Bot Dashboard</title>
   <link id="favicon" rel="icon" href="data:,">
   <script>
-    // Runs before first paint so a returning visitor never sees a flash of the wrong theme.
     (function () {
       var r = document.documentElement;
       var FONTS = {
@@ -34,7 +33,7 @@
         });
       }
       window.__FONTS = FONTS; window.__loadFonts = loadFonts;
-      function fg(hex) { var n = parseInt(hex.slice(1), 16); return (0.299 * (n >> 16) + 0.587 * (n >> 8 & 255) + 0.114 * (n & 255)) > 150 ? "#000" : "#fff"; }
+      function fg(hex) { var n = parseInt(hex.slice(1), 16); return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) > 150 ? "#000" : "#fff"; }
       try {
         var t = localStorage.getItem("banha-theme") || "dbd";
         if (t === "auto") t = matchMedia("(prefers-color-scheme: light)").matches ? "daylight" : "dbd";
@@ -52,7 +51,6 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <style>
-    /* =====================  THEME TOKENS  ===================== */
     [data-theme] {
       --radius: .75rem;
       --border-w: 1px;
@@ -518,7 +516,6 @@
       --th-spacing: .08em;
     }
 
-    /* =====================  BASE  ===================== */
     html {
       color-scheme: var(--scheme);
     }
@@ -862,7 +859,6 @@
       font-variant-numeric: tabular-nums;
     }
 
-    /* =====================  LAYOUT: sidebar + content  ===================== */
     .sidebar {
       position: fixed;
       top: 0;
@@ -1086,7 +1082,6 @@
       }
     }
 
-    /* =====================  THEME TILES  ===================== */
     .tile {
       background: var(--surface);
       color: var(--text);
@@ -1220,7 +1215,6 @@
       cursor: pointer;
     }
 
-    /* member names: Discord role colors + avatars */
     .who {
       display: inline-flex;
       align-items: center;
@@ -1267,7 +1261,6 @@
       text-decoration: underline;
     }
 
-    /* attendance sheet */
     .sheet {
       border-collapse: separate;
       border-spacing: 0;
@@ -1313,7 +1306,6 @@
       padding-left: .75rem;
     }
 
-    /* modal overlay */
     .modal-overlay {
       position: fixed;
       inset: 0;
@@ -1527,7 +1519,8 @@
           <div class="grid lg:grid-cols-2 gap-4 mt-4">
             <div class="card p-5">
               <h3 class="font-semibold">When people are in voice</h3>
-              <p class="text-xs muted mb-3">Total hours by hour of the day (<span class="tzname">your time</span>).</p>
+              <p class="text-xs muted mb-3">Total hours by hour of the day (<span class="tzname">your time</span>).
+                Starts at your chosen rollover hour.</p>
               <div class="relative h-64"><canvas id="cHourly"></canvas>
                 <p class="empty hidden absolute inset-0 flex items-center justify-center muted">No voice activity in
                   this range.</p>
@@ -1682,7 +1675,7 @@
           <div class="card p-5">
             <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
               <p class="text-sm muted">Status changes and voice joins and leaves in the selected range, newest first.
-                Filters above apply.</p>
+              </p>
               <select id="logType" aria-label="Activity type" class="field">
                 <option value="all">Status and voice</option>
                 <option value="presence">Status changes only</option>
@@ -1702,8 +1695,7 @@
                 <tbody id="logRows"></tbody>
               </table>
             </div>
-            <p id="logEmpty" class="hidden muted py-6 text-center">Nothing matches these filters. Activity shows up here
-              as members change status or join voice.</p>
+            <p id="logEmpty" class="hidden muted py-6 text-center">Nothing matches these filters.</p>
             <div class="flex items-center justify-between mt-3 text-sm">
               <span id="logCount" class="muted"></span>
               <button id="logMore" class="hidden btn-ghost">Show more</button>
@@ -1715,14 +1707,16 @@
         <section class="tab-panel space-y-5" data-tab-panel="reports">
           <div class="card p-5 no-print">
             <h2 class="text-lg font-semibold">Generate a report</h2>
-            <p class="text-sm muted mb-4">Attendance sheets for any period. Follows your timezone and gaming day
+            <p class="text-sm muted mb-4">Attendance and Slacker reports. Gaming days rotate automatically based on your
               rollover hour.</p>
             <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <label class="block text-sm muted">Report
                 <select id="rType" class="field w-full mt-1">
                   <option value="voice">Voice attendance</option>
                   <option value="presence">Online status attendance</option>
-                </select></label>
+                  <option value="slackers">⚠️ Slackers &amp; Late Penalty Report</option>
+                </select>
+              </label>
               <label class="block text-sm muted">Period
                 <select id="rPeriod" class="field w-full mt-1">
                   <option value="today">Today</option>
@@ -1734,31 +1728,46 @@
                   <option value="this_month">This month</option>
                   <option value="last_month">Last month</option>
                   <option value="custom">Custom dates</option>
-                </select></label>
+                </select>
+              </label>
               <label id="rFromWrap" class="hidden block text-sm muted">From <input id="rFrom" type="date"
                   class="field w-full mt-1"></label>
               <label id="rToWrap" class="hidden block text-sm muted">To <input id="rTo" type="date"
                   class="field w-full mt-1"></label>
+
+              <!-- Slacker specific controls -->
+              <label id="rTargetTimeWrap" class="hidden block text-sm muted">Target Arrival Time
+                <input id="rTargetTime" type="time" value="21:00" class="field w-full mt-1">
+              </label>
+              <label id="rGraceWrap" class="hidden block text-sm muted">Grace Period (Minutes)
+                <input id="rGrace" type="number" min="0" max="120" value="15" class="field w-full mt-1">
+              </label>
+
               <label class="block text-sm muted">Member
                 <select id="rUser" class="field w-full mt-1">
                   <option value="">All members</option>
-                </select></label>
+                </select>
+              </label>
               <label id="rChannelWrap" class="block text-sm muted">Voice channel
                 <select id="rChannel" class="field w-full mt-1">
                   <option value="">Active voice channels (excl. AFK)</option>
                   <option value="__all__">All channels (incl. AFK)</option>
-                </select></label>
+                </select>
+              </label>
               <label id="rModeWrap" class="hidden block text-sm muted">Counts as present when
                 <select id="rMode" class="field w-full mt-1">
                   <option value="online">Status is online</option>
                   <option value="idle">Status is idle</option>
                   <option value="dnd">Status is busy</option>
                   <option value="active">Online, idle or busy</option>
-                </select></label>
-              <label class="block text-sm muted">Present after at least (minutes)
-                <input id="rMin" type="number" min="0" max="600" value="5" class="field w-full mt-1"></label>
-              <label class="flex items-center gap-2 text-sm muted self-end pb-2"><input id="rRoster" type="checkbox"
-                  checked> Include members who never showed up</label>
+                </select>
+              </label>
+              <label id="rMinWrap" class="block text-sm muted">Present after at least (minutes)
+                <input id="rMin" type="number" min="0" max="600" value="5" class="field w-full mt-1">
+              </label>
+              <label id="rRosterWrap" class="flex items-center gap-2 text-sm muted self-end pb-2">
+                <input id="rRoster" type="checkbox" checked> Include members who never showed up
+              </label>
             </div>
             <div class="flex flex-wrap items-center gap-3 mt-4">
               <button id="rGo" class="btn">Generate report</button>
@@ -1857,7 +1866,6 @@
   </div>
 
   <script>
-    // ---------- Setup ----------
     const KEY = new URLSearchParams(location.search).get("key");
     const $ = (id) => document.getElementById(id);
     const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -1896,7 +1904,6 @@
       offline: { label: "Offline", cls: "b-offline" },
     };
 
-    // ---------- Tabs ----------
     const ICONS = {
       overview: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>',
       voice: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/>',
@@ -1911,7 +1918,8 @@
       ["overview", "Overview"], ["voice", "Voice"], ["status", "Status"], ["members", "Members"],
       ["sessions", "Sessions"], ["activity", "Activity"], ["reports", "Reports"], ["appearance", "Appearance"],
     ];
-    const TAB_FILTERS = { overview: "rucs", voice: "ruc", status: "rus", members: "ruc", sessions: "ruc", activity: "rucs" };
+    // Keeps top filter buttons visible on Reports tab as well
+    const TAB_FILTERS = { overview: "rucs", voice: "ruc", status: "rus", members: "ruc", sessions: "ruc", activity: "rucs", reports: "s" };
     let currentTab = "overview";
 
     $("nav").innerHTML = TABS.map(([id, label]) =>
@@ -1961,7 +1969,6 @@
       requestAnimationFrame(() => Object.values(charts).forEach((c) => c.resize()));
     };
 
-    // ---------- State ----------
     const params = new URLSearchParams(location.search);
     const state = {
       range: RANGES.some((r) => r[0] === params.get("range")) ? params.get("range") : "7d",
@@ -1989,7 +1996,6 @@
       history.replaceState(null, "", "?" + q.toString() + location.hash);
     }
 
-    // ---------- Formatting & Timezone ----------
     let TZ = "Africa/Cairo", DAY_START = 18, clockFmt, stampFmt, fullFmt, exactFmt, todFmt, csvStampFmt, dateKeyFmt;
     function deviceTz() { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "Africa/Cairo"; } catch (e) { return "Africa/Cairo"; } }
     const tzPref = () => store.get("banha-tz") || "auto";
@@ -2043,6 +2049,15 @@
     function dayLabel(d) { const [, m, dd] = d.split("-"); return dd + "/" + m; }
     const badge = (cls, text) => `<span class="badge ${cls}">${esc(text)}</span>`;
 
+    // Rotates 24-hour axis so it starts naturally at the gaming rollover hour (e.g. 6 PM)
+    function getOrderedHours(startHour = DAY_START) {
+      const order = [];
+      for (let i = 0; i < 24; i++) {
+        order.push((startHour + i) % 24);
+      }
+      return order;
+    }
+
     let lastUpdate = 0;
     const tick = () => {
       $("clock").textContent = clockFmt.format(new Date()) + " " + tzCity();
@@ -2050,7 +2065,6 @@
     };
     tick(); setInterval(tick, 1000);
 
-    // ---------- Themes ----------
     const THEMES = [
       { id: "discord", name: "Discord", group: "Dark" }, { id: "midnight", name: "Midnight", group: "Dark" },
       { id: "amoled", name: "Amoled black", group: "Dark" }, { id: "vampire", name: "Vampire", group: "Dark" },
@@ -2148,7 +2162,6 @@
       else if (/^#[0-9a-f]{6}$/i.test(cssv("--accent"))) $("accentPick").value = cssv("--accent");
     }
 
-    // ---------- Charts ----------
     Chart.defaults.animation = false;
     Chart.defaults.font.family = '"gg sans", "Noto Sans", "Segoe UI", system-ui, sans-serif';
     const charts = {};
@@ -2172,7 +2185,6 @@
     const hoursTip = { callbacks: { label: (c) => " " + (c.parsed.x ?? c.parsed.y ?? c.parsed) + " h" } };
     const axisTitle = (text) => ({ display: true, text });
 
-    // ---------- Filters ----------
     function renderRangeButtons() {
       $("rangeBtns").innerHTML = RANGES.map(([v, label]) =>
         `<button data-range="${v}" class="${state.range === v ? "active" : ""}">${label}</button>`).join("");
@@ -2210,7 +2222,6 @@
     $("logType").onchange = (e) => { state.logType = e.target.value; refreshLogs(); };
     $("refreshNow").onclick = () => { refreshLive(); refreshStats(); };
 
-    // Set member filter WITHOUT jumping/scrolling to the top of the page
     function setUser(id, goTab) {
       state.user = id;
       state.sessLimit = 25;
@@ -2247,7 +2258,6 @@
       loadPeople();
     }
 
-    // ---------- Live: overview ----------
     function renderOverview(o) {
       lastOverview = o;
       $("serverName").textContent = o.server_name;
@@ -2294,7 +2304,6 @@
       if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches("[data-who]")) { e.preventDefault(); filterByWho(e.target); }
     });
 
-    // ---------- Live: activity log (Reordered columns) ----------
     function renderLogs(logs) {
       lastLogs = logs;
       $("logEmpty").classList.toggle("hidden", logs.length > 0);
@@ -2321,7 +2330,6 @@
       $("logMore").classList.toggle("hidden", logs.length < state.logLimit || state.logLimit >= 300);
     }
 
-    // ---------- Analytics ----------
     function kpiCard(label, value, sub) {
       return `<div class="card p-4">
     <p class="text-sm muted">${esc(label)}</p>
@@ -2333,7 +2341,7 @@
     function renderKpis(s) {
       const k = s.kpis;
       $("kpis").innerHTML = [
-        kpiCard("Time in voice", hrsText(k.total_seconds), k.sessions + " sessions"),
+        kpiCard("Time in voice (active)", hrsText(k.total_seconds), k.sessions + " sessions" + (k.person_hours ? ` (${hrsText(k.person_hours)} total person-hours)` : "")),
         kpiCard("Average session", dur(k.avg_session_seconds), "Median " + dur(k.median_session_seconds)),
         kpiCard("Longest session", k.longest ? dur(k.longest.seconds) : "-", k.longest ? k.longest.name : ""),
         kpiCard("Members who joined voice", k.unique_members, k.active_days + " active days"),
@@ -2395,18 +2403,23 @@
       $("rangeLabel").textContent = "Based on " + rangeText() + (state.user ? ", one member" : "") + (state.channel ? ", one channel" : "") + ".";
       $("insights").innerHTML = cards.length
         ? cards.map((c) => `<div class="card p-4"><p class="text-sm muted">${esc(c.title)}</p><p class="mt-1 text-lg font-semibold hd">${c.html || esc(c.value)}</p><p class="text-xs muted mt-1">${esc(c.detail)}</p></div>`).join("")
-        : `<p class="muted">Nothing to highlight yet. Insights appear once there is voice or status activity in this range.</p>`;
+        : `<p class="muted">Nothing to highlight yet.</p>`;
     }
 
+    // Heatmap starting at Gaming Day Rollover (e.g. 6 PM)
     function renderHeatmap(heat) {
+      const orderedHours = getOrderedHours();
       const max = Math.max(1, ...heat.flat());
       const cols = "grid-template-columns: 2.5rem repeat(24, minmax(0.9rem, 1fr));";
       let html = `<div class="min-w-[34rem]"><div class="grid gap-[2px] mb-1" style="${cols}"><span></span>`;
-      for (let h = 0; h < 24; h++) html += `<span class="text-[10px] text-center muted">${h % 3 === 0 ? shortHour(h) : ""}</span>`;
+      orderedHours.forEach((h, idx) => {
+        html += `<span class="text-[10px] text-center muted">${idx % 3 === 0 ? shortHour(h) : ""}</span>`;
+      });
       html += "</div>";
       heat.forEach((row, d) => {
         html += `<div class="grid gap-[2px] mb-[2px]" style="${cols}"><span class="text-xs muted self-center">${DAYS[d]}</span>`;
-        row.forEach((v, h) => {
+        orderedHours.forEach((h) => {
+          const v = row[h];
           const pct = v ? Math.round(18 + 82 * (v / max)) : 0;
           html += `<span class="h-6" style="border-radius:3px;background:color-mix(in srgb, var(--accent) ${pct}%, var(--surface-2))" title="${DAYS_FULL[d]} ${hourLabel(h)}: ${hrsText(v)}"></span>`;
         });
@@ -2415,7 +2428,6 @@
       $("heatmap").innerHTML = html + "</div>";
     }
 
-    // "Who hangs out together" displaying unique concurrent groups
     function renderPairs(pairs) {
       const max = Math.max(1, ...pairs.map((p) => p.seconds));
       $("pairs").innerHTML = pairs.length
@@ -2474,6 +2486,7 @@
     function renderCharts(s) {
       const noVoice = s.kpis.sessions === 0;
       const legend = { labels: { color: T.text } };
+      const orderedHours = getOrderedHours(s.meta.dayStart ?? DAY_START);
 
       upsert("cDaily", {
         type: "bar",
@@ -2495,10 +2508,17 @@
         },
       }, noVoice);
 
+      // Hourly chart rotated to start at chosen rollover hour (e.g. 6 PM)
       upsert("cHourly", {
         type: "bar",
-        data: { labels: s.hourly.map((_, h) => shortHour(h)), datasets: [{ label: "Hours in voice", data: s.hourly.map(hrs), backgroundColor: T.accent, borderRadius: 3 }] },
-        options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, title: axisTitle("Hours"), grid: { color: T.grid } }, x: { grid: { display: false } } } },
+        data: {
+          labels: orderedHours.map((h) => shortHour(h)),
+          datasets: [{ label: "Hours in voice", data: orderedHours.map((h) => hrs(s.hourly[h])), backgroundColor: T.accent, borderRadius: 3 }],
+        },
+        options: {
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, title: axisTitle("Hours"), grid: { color: T.grid } }, x: { grid: { display: false } } },
+        },
       }, noVoice);
 
       renderHeatmap(s.heatmap);
@@ -2569,14 +2589,20 @@
       const hbs = p.hourly_by_status;
       upsert("cActiveHourly", {
         type: "bar",
-        data: { labels: hbs.online.map((_, h) => shortHour(h)), datasets: stKeys.map((k) => ({ label: STATUS[k].label, data: hbs[k].map(hrs), backgroundColor: T[k], borderRadius: 3 })) },
-        options: { plugins: { legend: sf ? { display: false } : legend }, scales: { y: { stacked: true, beginAtZero: true, title: axisTitle("Hours"), grid: { color: T.grid } }, x: { stacked: true, grid: { display: false } } } },
+        data: {
+          labels: orderedHours.map((h) => shortHour(h)),
+          datasets: stKeys.map((k) => ({ label: STATUS[k].label, data: orderedHours.map((h) => hrs(hbs[k][h])), backgroundColor: T[k], borderRadius: 3 })),
+        },
+        options: {
+          plugins: { legend: sf ? { display: false } : legend },
+          scales: { y: { stacked: true, beginAtZero: true, title: axisTitle("Hours"), grid: { color: T.grid } }, x: { stacked: true, grid: { display: false } } },
+        },
       }, noStatus);
 
       upsert("cChanges", {
         type: "bar",
         data: { labels: p.daily_changes.map((d) => dayLabel(d.date)), datasets: [{ label: sf ? "Changes to " + lbl : "Status changes", data: p.daily_changes.map((d) => d.count), backgroundColor: sf ? T[sf] : T.idle, borderRadius: 3 }] },
-        options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: T.grid } }, x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true } } } },
+        options: { plugins: { legend: false }, scales: { y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: T.grid } }, x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true } } } },
       }, noChanges);
     }
 
@@ -2586,7 +2612,6 @@
       if (charts[id]) charts[id].resize();
     }
 
-    // ---------- Sessions table ----------
     function csvUrl() {
       const q = new URLSearchParams({ range: state.range, tz: TZ, dayStart: DAY_START });
       if (state.range === "custom") { q.set("from", state.from); q.set("to", state.to); }
@@ -2612,7 +2637,6 @@
     }
     $("sessMore").onclick = () => { state.sessLimit = Math.min(200, state.sessLimit + 25); refreshSessions(); };
 
-    // ---------- Refresh loops ----------
     function setConnected(ok) {
       $("errorBanner").classList.toggle("hidden", ok);
       $("pill").className = "badge mt-2 inline-flex items-center gap-2 " + (ok ? "b-online" : "b-dnd");
@@ -2674,12 +2698,10 @@
     setInterval(() => { if (!document.hidden) refreshStats(); }, 60000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshLive(); refreshStats(); } });
 
-    // ---------- People & Clean Vector Outlines (Zero Glow) ----------
     let people = {}, lastOverview = null, lastLogs = null, lastSessions = null, lastReport = null, printing = false;
     const chartUsers = {};
     const hexOk = (h) => /^#[0-9a-f]{6}$/i.test(h || "");
 
-    // Accurately detect genuine black / dark charcoal vs rich colored tones like blue or purple
     function isNearBlack(hex) {
       if (!hexOk(hex)) return false;
       const n = parseInt(hex.slice(1), 16);
@@ -2700,7 +2722,6 @@
       const rawColor = p && p.color ? p.color : null;
       const isDarkTheme = cssv("--scheme") === "dark";
 
-      // Razor-sharp 0.5px vector stroke outline applied ONLY on genuine background conflicts (zero glow/blur)
       let outlineStyle = "";
       if (rawColor) {
         if (isDarkTheme && isNearBlack(rawColor)) {
@@ -2750,7 +2771,6 @@
       if (lastReport) renderReport();
     }
 
-    // ---------- Server icon ----------
     function letterFavicon(ch) {
       const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='${T.accent || "#dc143c"}'/><text x='32' y='45' font-size='36' font-family='Arial,sans-serif' font-weight='700' text-anchor='middle' fill='${T.accentFg || "#ffffff"}'>${ch}</text></svg>`;
       return "data:image/svg+xml," + encodeURIComponent(svg);
@@ -2773,7 +2793,6 @@
     }
     $("srvIcon").addEventListener("error", () => { $("srvIcon").classList.add("hidden"); $("srvLetter").classList.remove("hidden"); });
 
-    // ---------- Time zone & Day Rollover ----------
     const WEEK_STARTS = [["mon", "Monday", 0], ["sat", "Saturday", 5], ["sun", "Sunday", 6]];
     function renderTzControls() {
       let zones = [];
@@ -2816,7 +2835,6 @@
       if (lastReport) generateReport();
     }
 
-    // ---------- Reports ----------
     let reportsInit = false, repView = "leaderboard", repLogLimit = 100;
     const pad2 = (n) => String(n).padStart(2, "0");
     const weekStartIdx = () => (WEEK_STARTS.find((w) => w[0] === (store.get("banha-weekstart") || "mon")) || WEEK_STARTS[0])[2];
@@ -2860,10 +2878,17 @@
     }
     function updateReportForm() {
       const t = $("rType").value, custom = $("rPeriod").value === "custom";
-      $("rChannelWrap").classList.toggle("hidden", t !== "voice");
+      const isSlackers = t === "slackers";
+
+      $("rChannelWrap").classList.toggle("hidden", t !== "voice" && !isSlackers);
       $("rModeWrap").classList.toggle("hidden", t !== "presence");
       $("rFromWrap").classList.toggle("hidden", !custom);
       $("rToWrap").classList.toggle("hidden", !custom);
+
+      $("rTargetTimeWrap").classList.toggle("hidden", !isSlackers);
+      $("rGraceWrap").classList.toggle("hidden", !isSlackers);
+      $("rMinWrap").classList.toggle("hidden", isSlackers);
+      $("rRosterWrap").classList.toggle("hidden", isSlackers);
     }
     function wireReports() {
       $("rType").onchange = updateReportForm;
@@ -2895,10 +2920,12 @@
         lastReport = await api("report", {
           type, from, to,
           user: $("rUser").value,
-          channel: type === "voice" ? $("rChannel").value : "",
+          channel: (type === "voice" || type === "slackers") ? $("rChannel").value : "",
           min: $("rMin").value || 0,
           mode: $("rMode").value,
           roster: $("rRoster").checked ? "1" : "0",
+          targetTime: $("rTargetTime") ? $("rTargetTime").value : "21:00",
+          grace: $("rGrace") ? $("rGrace").value : "15",
         });
         repLogLimit = 100;
         renderReport();
@@ -2916,6 +2943,9 @@
       active: ["Activity attendance", "Active time", "they are online, idle or busy"],
     };
     function reportLabels(m) {
+      if (m.type === "slackers") {
+        return { title: "⚠️ Slackers & Late Penalty", time: "Late minutes", spells: "Late Days", first: "Target time", early: "Actual", late: "Delay", firstCol: "Target Time", lastCol: "First Joined", here: "in voice now", unit: "late event" };
+      }
       return m.type === "voice"
         ? { title: "Voice attendance", time: "Voice time", spells: "Sessions", first: "Usual first join", early: "Earliest join", late: "Latest leave", firstCol: "First join", lastCol: "Last leave", here: "in voice now", unit: "session" }
         : { title: MODE_TEXT[m.mode][0], time: MODE_TEXT[m.mode][1], spells: "Spells", first: "Usual first online", early: "Earliest online", late: "Latest sign-off", firstCol: "First online", lastCol: "Last online", here: "online now", unit: "spell" };
@@ -2925,6 +2955,12 @@
       const r = lastReport, out = $("rOut");
       if (!r) { out.innerHTML = ""; return; }
       const m = r.meta, sm = r.summary, L = reportLabels(m);
+
+      if (m.type === "slackers") {
+        renderSlackersReport(r, out);
+        return;
+      }
+
       const rule = m.type === "voice" ? "someone is in voice" : MODE_TEXT[m.mode][2];
       const scope = [m.user ? "one member" : "", m.channel ? "one channel" : ""].filter(Boolean).join(", ");
       const kpis = [
@@ -2942,9 +2978,10 @@
         <div>
           <h2 class="text-xl font-semibold">${esc(L.title)} report</h2>
           <p class="text-sm muted mt-1">${esc(fmtDay(m.from, true))} to ${esc(fmtDay(m.to, true))}, ${esc(m.tz.replace(/_/g, " "))}. A day counts when ${esc(rule)} for at least ${Math.round(m.min_seconds / 60)} minute${m.min_seconds === 60 ? "" : "s"}.${scope ? " Showing " + esc(scope) + "." : ""}</p>
-          <p class="text-xs muted mt-1">Generated ${esc(fullFmt.format(new Date(m.generated_at)))}.${m.type === "presence" ? " Status periods are measured from each member's recorded changes." : ""}</p>
+          <p class="text-xs muted mt-1">Generated ${esc(fullFmt.format(new Date(m.generated_at)))}.</p>
         </div>
         <div class="flex flex-wrap gap-2 no-print">
+          <button class="btn-ghost" data-act="share-report">📢 Share report to Discord</button>
           <button class="btn-ghost" data-act="csv-lb">Leaderboard CSV</button>
           <button class="btn-ghost" data-act="csv-sheet">Sheet CSV</button>
           <button class="btn-ghost" data-act="csv-log">Day-by-day CSV</button>
@@ -2956,6 +2993,78 @@
     <div class="card p-5 mt-4">
       <div class="seg mb-4 no-print">${views.map(([v, label]) => `<button data-view="${v}" class="${repView === v ? "active" : ""}">${label}</button>`).join("")}</div>
       ${body}
+    </div>`;
+    }
+
+    // Slacker / Penalty report rendering
+    function renderSlackersReport(r, out) {
+      const m = r.meta, sm = r.summary;
+      const kpis = [
+        kpiCard("🚨 Slacker King", sm.chief_slacker ? sm.chief_slacker.name : "Nobody!", sm.chief_slacker ? `${sm.chief_slacker.penalty_points} penalty pts (${sm.chief_slacker.days_late} days late)` : "Everyone was on time!"),
+        kpiCard("Total Penalty Points", sm.total_penalties.toLocaleString(), "1 pt per 15m delay, 3 pts for no-show"),
+        kpiCard("Total Late Arrivals", sm.total_late_occurrences.toLocaleString(), "Times someone missed the target time"),
+        kpiCard("Average Punctuality", sm.avg_punctuality + "%", `Target: ${m.target_time} (Grace: ${m.grace_minutes}m)`),
+      ].join("");
+
+      const rows = r.members.map((x) => {
+        const isLateKing = x.rank === 1 && x.penalty_points > 0;
+        const badgeHtml = isLateKing ? `<span class="badge b-dnd font-bold">#1 SLACKER</span>` : `#${x.rank}`;
+        return `<tr>
+      <td class="num">${badgeHtml}</td>
+      <td class="whitespace-nowrap">${who(x.user_id, x.name)}</td>
+      <td class="r num font-bold text-red-500">${x.penalty_points} pts</td>
+      <td class="r num text-amber-400 font-semibold">${x.days_late} / ${x.total_days}</td>
+      <td class="r num text-green-400">${x.days_on_time}</td>
+      <td class="r num muted">${x.days_absent}</td>
+      <td class="r num">${x.punctuality_pct}%</td>
+      <td class="r num">${x.avg_late_minutes ? `+${x.avg_late_minutes}m` : "-"}</td>
+      <td class="whitespace-nowrap">${x.worst_late ? `+${x.worst_late.minutes}m (${fmtDay(x.worst_late.date)})` : "-"}</td>
+    </tr>`;
+      }).join("");
+
+      const logRows = r.log.slice(0, repLogLimit).map((l) => {
+        let stBadge = badge("b-online", "On Time");
+        if (l.status === "late") stBadge = `<span class="badge b-dnd font-bold">Late by ${l.late_minutes}m</span>`;
+        if (l.status === "absent") stBadge = `<span class="badge b-offline">No-Show / Absent</span>`;
+        return `<tr>
+      <td class="whitespace-nowrap muted">${esc(fmtDay(l.date))}</td>
+      <td class="whitespace-nowrap">${who(l.user_id, l.name)}</td>
+      <td class="num">${esc(tod(l.target_time))}</td>
+      <td class="num">${l.actual_time ? esc(tod(l.actual_time)) : '<span class="muted">-</span>'}</td>
+      <td>${stBadge}</td>
+      <td class="r num font-bold ${l.penalty_points > 0 ? 'text-red-400' : 'text-green-400'}">${l.penalty_points > 0 ? `+${l.penalty_points} pts` : '0'}</td>
+    </tr>`;
+      }).join("");
+
+      out.innerHTML = `
+    <div class="card p-5">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 class="text-xl font-semibold text-red-500">⚠️ Slackers &amp; Late Penalty Report</h2>
+          <p class="text-sm muted mt-1">${esc(fmtDay(m.from, true))} to ${esc(fmtDay(m.to, true))}. Expected Arrival: <b>${m.target_time}</b> with <b>${m.grace_minutes}m</b> grace period.</p>
+          <p class="text-xs muted mt-1">Generated ${esc(fullFmt.format(new Date(m.generated_at)))}.</p>
+        </div>
+        <div class="flex flex-wrap gap-2 no-print">
+          <button class="btn-ghost" data-act="share-report">📢 Share report to Discord</button>
+          <button class="btn-ghost" data-act="csv-slackers-lb">Download Slackers CSV</button>
+          <button class="btn" data-act="print">Print or save as PDF</button>
+        </div>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-4">${kpis}</div>
+    <div class="card p-5 mt-4">
+      <h3 class="font-bold text-lg mb-2">Tardiness Leaderboard</h3>
+      <div class="overflow-x-auto scroll-thin"><table class="t">
+        <thead><tr><th>#</th><th>Member</th><th class="r">Penalties</th><th class="r">Days Late</th><th class="r">On Time</th><th class="r">Absent</th><th class="r">Punctuality</th><th class="r">Avg Delay</th><th>Worst Delay</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </div>
+    <div class="card p-5 mt-4">
+      <h3 class="font-bold text-lg mb-2">Daily Penalty Log</h3>
+      <div class="overflow-x-auto scroll-thin"><table class="t">
+        <thead><tr><th>Date</th><th>Member</th><th>Target Time</th><th>Actual Join</th><th>Status</th><th class="r">Penalty Points</th></tr></thead>
+        <tbody>${logRows}</tbody>
+      </table></div>
     </div>`;
     }
 
@@ -2982,8 +3091,7 @@
       }).join("");
       return `<div class="overflow-x-auto scroll-thin"><table class="t">
     <thead><tr><th>#</th><th>Member</th><th>Days present</th><th>Attendance</th><th class="r">${L.time}</th><th class="r">Avg per day</th><th class="r">${L.spells}</th><th>${L.first}</th><th>${L.early}</th><th>${L.late}</th><th class="r">Best streak</th><th class="r">Streak now</th></tr></thead>
-    <tbody>${rows}</tbody></table></div>
-    <p class="text-xs muted mt-3">Ranked by days present, then by time. Rollover settings group evening sessions into a single gaming day.</p>`;
+    <tbody>${rows}</tbody></table></div>`;
     }
 
     function sheetHtml(r, L) {
@@ -3007,7 +3115,7 @@
             L.firstCol + " " + tod(c.f),
             L.lastCol + " " + (c.op ? "still here" : tod(c.l)),
             c.n + " " + L.unit + (c.n === 1 ? "" : "s") + ", " + dur(c.s) + " in total",
-            present ? "" : "Below the minimum, so not counted as present",
+            present ? "" : "Below minimum",
           ].filter(Boolean).join("\n");
           return `<td class="cell ${present ? "" : "low"}" style="${style}" title="${esc(tip)}">${compact(c.s)}</td>`;
         }).join("");
@@ -3015,8 +3123,7 @@
       }).join("");
       return `<div class="overflow-x-auto scroll-thin"><table class="sheet">
     <thead><tr><th class="stick">Member</th>${head}<th class="r">Days</th><th class="r">Total</th></tr></thead>
-    <tbody>${rows}</tbody></table></div>
-    <p class="text-xs muted mt-3">Colored cells are days counted as present, shaded by time.</p>`;
+    <tbody>${rows}</tbody></table></div>`;
     }
 
     function logHtml(r, L) {
@@ -3052,7 +3159,15 @@
     }
     function exportReport(kind) {
       const r = lastReport; if (!r) return;
-      const m = r.meta, L = reportLabels(m), tag = (m.type === "voice" ? "voice" : "online") + "-attendance_" + m.from + "_to_" + m.to;
+      const m = r.meta, L = reportLabels(m);
+      if (kind === "slackers-lb") {
+        downloadCsv(`slackers_report_${m.from}_to_${m.to}.csv`, [
+          ["rank", "member", "penalty_points", "days_late", "days_on_time", "days_absent", "punctuality_pct", "avg_late_minutes", "total_late_minutes"],
+          ...r.members.map((x) => [x.rank, x.name, x.penalty_points, x.days_late, x.days_on_time, x.days_absent, x.punctuality_pct, x.avg_late_minutes, x.total_late_minutes]),
+        ]);
+        return;
+      }
+      const tag = (m.type === "voice" ? "voice" : "online") + "-attendance_" + m.from + "_to_" + m.to;
       const minTxt = (v) => (v == null ? "" : pad2(Math.floor(v / 60)) + ":" + pad2(v % 60));
       if (kind === "lb") {
         downloadCsv(tag + "_leaderboard.csv", [
@@ -3080,10 +3195,14 @@
       const act = a.dataset.act;
       if (act === "more") { repLogLimit += 200; renderReport(); }
       else if (act === "print") window.print();
+      else if (act === "share-report") triggerShareFromReport();
       else if (act.startsWith("csv-")) exportReport(act.slice(4));
     }
 
-    // ---------- Discord Sharing ----------
+    function triggerShareFromReport() {
+      openShareModal();
+    }
+
     function populateShareChannels(channels) {
       const sel = $("shareChannel");
       if (!channels || !channels.length) {
@@ -3118,7 +3237,7 @@
       let imageData = null;
       if ($("shareIncludeImage").checked) {
         try {
-          const targetEl = document.querySelector(".tab-panel.active") || $("mainCaptureArea");
+          const targetEl = currentTab === "reports" && $("rOut")?.children.length ? $("rOut") : (document.querySelector(".tab-panel.active") || $("mainCaptureArea"));
           const canvas = await html2canvas(targetEl, {
             scale: 1.5,
             useCORS: true,
@@ -3133,11 +3252,26 @@
 
       showShareStatus("Sending to Discord...", true, "text-blue-400");
       try {
-        const title = `${$("tabTitle").textContent} Snapshot`;
-        const summary = `📊 **Filter Scope:** ${rangeText()}\n` +
+        let title = `${$("tabTitle").textContent} Snapshot`;
+        let summary = `📊 **Filter Scope:** ${rangeText()}\n` +
           (state.user ? `👤 **Member:** ${$("fUser").selectedOptions[0]?.text || state.user}\n` : "") +
           (state.channel ? `🎙️ **Channel:** ${$("fChannel").selectedOptions[0]?.text || state.channel}\n` : "") +
           (state.status ? `🟢 **Status:** ${state.status.toUpperCase()}\n` : "");
+
+        if (currentTab === "reports" && lastReport) {
+          const rm = lastReport.meta, rsm = lastReport.summary;
+          if (rm.type === "slackers") {
+            title = `⚠️ Slackers & Late Penalty Report (${rm.from} to ${rm.to})`;
+            summary = `🎯 **Expected Arrival:** ${rm.target_time} (Grace: ${rm.grace_minutes}m)\n` +
+              `👑 **Chief Slacker:** ${rsm.chief_slacker ? rsm.chief_slacker.name : "None!"} (${rsm.chief_slacker?.penalty_points || 0} pts)\n` +
+              `🚨 **Total Penalties:** ${rsm.total_penalties} | **Late Occurrences:** ${rsm.total_late_occurrences}`;
+          } else {
+            title = `📋 ${rm.type === "voice" ? "Voice" : "Online"} Attendance Report (${rm.from} to ${rm.to})`;
+            summary = `👥 **Attended:** ${rsm.members_attended} of ${rsm.members_listed} members\n` +
+              `⏱️ **Total Time:** ${hrsText(rsm.total_seconds)} (Avg: ${rsm.avg_attendance_pct}%)\n` +
+              `🏆 **Best Attendance:** ${rsm.best ? rsm.best.name : "-"}`;
+          }
+        }
 
         const payload = {
           channelId,
@@ -3160,9 +3294,7 @@
           return;
         }
 
-        if (!res.ok) {
-          throw new Error(`Failed with status ${res.status}`);
-        }
+        if (!res.ok) throw new Error(`Failed with status ${res.status}`);
 
         const data = await res.json();
         showShareStatus(`✅ Posted successfully to #${data.channelName || "channel"}!`, true, "text-green-400");
@@ -3181,7 +3313,6 @@
       el.classList.remove("hidden");
     }
 
-    // ---------- Start ----------
     readTheme();
     renderAppearance();
     renderTzControls();
