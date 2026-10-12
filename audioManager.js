@@ -15,15 +15,54 @@ const state = {
   connectionSubscription: null
 };
 
-async function textToSpeech(text) {
-  // const voiceId = '21m00Tcm4TlvDq8ikWAM';
-  // const voiceId = 'EXAVITQu4vr4xnSDxMaL';//sarah
-  // const voiceId = '21m00Tcm4TlvDq8ikWAM';//jessica
-  // const voiceId = 'vFedMyIZJ59tTsx3LZjA';//Malevolent
-  // const voiceId = 'FZZ34QV5WgZK5N73m5cU';//testdisc
-  // voiceid UR972wNGq3zluze0LoIp haytham
-  // ghizlane u0TsaWvt0v8migutHM3M
+// In-memory mic speaking trackers
+const activeSpeakers = new Map(); // userId -> start timestamp (ms)
+const sessionSpeakingTally = new Map(); // userId -> accumulated speaking duration (ms)
 
+function attachSpeakingTracker(conn) {
+  if (!conn || !conn.receiver || !conn.receiver.speaking) return;
+
+  conn.receiver.speaking.removeAllListeners('start');
+  conn.receiver.speaking.removeAllListeners('end');
+
+  // Triggered when member opens mic (green circle appears)
+  conn.receiver.speaking.on('start', (userId) => {
+    activeSpeakers.set(userId, Date.now());
+  });
+
+  // Triggered when member stops speaking
+  conn.receiver.speaking.on('end', (userId) => {
+    const started = activeSpeakers.get(userId);
+    if (started) {
+      const elapsedMs = Math.max(0, Date.now() - started);
+      activeSpeakers.delete(userId);
+      const currentTotal = sessionSpeakingTally.get(userId) || 0;
+      sessionSpeakingTally.set(userId, currentTotal + elapsedMs);
+    }
+  });
+}
+
+function flushSpeakingSeconds(userId) {
+  let totalMs = sessionSpeakingTally.get(userId) || 0;
+  const started = activeSpeakers.get(userId);
+  if (started) {
+    totalMs += Math.max(0, Date.now() - started);
+    activeSpeakers.delete(userId);
+  }
+  sessionSpeakingTally.delete(userId);
+  return Math.round(totalMs / 1000);
+}
+
+function getLiveSpeakingSeconds(userId) {
+  let totalMs = sessionSpeakingTally.get(userId) || 0;
+  const started = activeSpeakers.get(userId);
+  if (started) {
+    totalMs += Math.max(0, Date.now() - started);
+  }
+  return Math.round(totalMs / 1000);
+}
+
+async function textToSpeech(text) {
   const isArabic = /^[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u0660-\u0669\u066A-\u066F\u06D4\u060C\u061B\u061F\s]+$/.test(text);
   const voiceId = isArabic ? process.env.ELEVENLABS_VOICE_ID_ARABIC : process.env.ELEVENLABS_VOICE_ID;
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
@@ -43,11 +82,9 @@ async function textToSpeech(text) {
       responseType: 'arraybuffer'
     });
 
-    // Optimization: Add unique timestamp to avoid race conditions overriding each other's audio files
     const outputPath = `output_${Date.now()}_${Math.floor(Math.random() * 1000)}.mp3`;
     fs.writeFileSync(outputPath, response.data);
     console.log(`Audio saved to ${outputPath}`);
-
     return outputPath;
   } catch (error) {
     console.error('Error:', error.response?.data || error.message);
@@ -88,7 +125,6 @@ const joinBanhaVoiceChannel = async (client, channelToJoin) => {
     console.error('Connection Error:', error);
   });
 
-  // Advanced debugging for internal networking state
   state.connection.on('debug', (message) => {
     console.log(`[Voice Debug] ${message}`);
   });
@@ -96,9 +132,11 @@ const joinBanhaVoiceChannel = async (client, channelToJoin) => {
   try {
     await entersState(state.connection, VoiceConnectionStatus.Ready, 20000);
     console.log(`Bot joined voice channel: ${channelToJoin}`);
+    // Start tracking speaking timestamps
+    attachSpeakingTracker(state.connection);
   } catch (err) {
     console.error("Voice connection failed to become ready:", err);
-    try { state.connection.destroy(); } catch {}
+    try { state.connection.destroy(); } catch { }
     state.connection = null;
     return null;
   }
@@ -107,7 +145,7 @@ const joinBanhaVoiceChannel = async (client, channelToJoin) => {
     state.player = createAudioPlayer();
     state.player.on('error', (e) => console.error('AudioPlayer error:', e));
     state.player.on('stateChange', (oldState, newState) => {
-      try { console.log(`AudioPlayer state: ${oldState.status} -> ${newState.status}`); } catch {}
+      try { console.log(`AudioPlayer state: ${oldState.status} -> ${newState.status}`); } catch { }
     });
   }
 
@@ -159,5 +197,8 @@ module.exports = {
   joinBanhaVoiceChannel,
   ensureVoiceReady,
   playVoice,
-  leaveEmptyVoiceChannel
+  leaveEmptyVoiceChannel,
+  attachSpeakingTracker,
+  flushSpeakingSeconds,
+  getLiveSpeakingSeconds
 };

@@ -16,7 +16,7 @@ const HIST_BUCKETS = [
 
 const STATUSES = ["online", "idle", "dnd", "offline"];
 
-function computeStats({ sessionRows, presenceRows, now, since, user, channel, liveName, liveStatus, tz, status, dayStart = 0, includeAfk = false, client = null }) {
+function computeStats({ sessionRows, presenceRows, now, since, user, channel, liveName, liveStatus, tz, status, dayStart = 18, includeAfk = false, client = null }) {
   const z = makeTz(tz, dayStart);
   const eachHourSlice = z.eachHourSlice;
   const dateKey = z.dateOf;
@@ -33,14 +33,19 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
 
   // ---- sessions clipped to the window ----
   const win = [];
+  const rawIntervals = [];
+
   for (const r of sessionRows) {
-    // Exclude AFK channel if not explicitly requested
     if (!includeAfk && !channel && db.isAfkChannel(r.channel_id, r.channel_name, client)) continue;
     const start = Date.parse(r.joined_at);
     const end = r.left_at ? Date.parse(r.left_at) : now;
     const cs = Math.max(start, since == null ? start : since);
     const ce = Math.min(end, now);
     if (!(ce > cs)) continue;
+
+    const speakingSecs = Number(r.speaking_seconds) || 0;
+    rawIntervals.push([cs, ce]);
+
     win.push({
       userId: r.user_id,
       channelId: r.channel_id,
@@ -48,6 +53,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
       cs,
       ce,
       secs: (ce - cs) / 1000,
+      speakingSecs,
       open: !r.left_at,
     });
   }
@@ -76,10 +82,11 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
   for (const s of scoped) {
     let m = memberMap.get(s.userId);
     if (!m) {
-      m = { seconds: 0, sessions: 0, longest: 0, days: new Set(), chans: new Map(), first: s.cs, last: s.ce, open: false };
+      m = { seconds: 0, speaking_seconds: 0, sessions: 0, longest: 0, days: new Set(), chans: new Map(), first: s.cs, last: s.ce, open: false };
       memberMap.set(s.userId, m);
     }
     m.seconds += s.secs;
+    m.speaking_seconds += s.speakingSecs;
     m.sessions += 1;
     m.longest = Math.max(m.longest, s.secs);
     m.first = Math.min(m.first, s.cs);
@@ -160,7 +167,6 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
           if (ids.length >= 2) personTogether += dt * ids.length;
         }
 
-        // Only log unique groups of 2 or more members
         if (ids.length >= 2) {
           const sortedIds = ids.slice().sort();
           const key = sortedIds.join("|");
@@ -208,14 +214,19 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
     }
   }
 
-  // ---- KPIs ----
-  const totalSeconds = scoped.reduce((n, s) => n + s.secs, 0);
+  // Real wall-clock voice channel occupancy (union of intervals) vs total person hours
+  const scopedIntervals = scoped.map((s) => [s.cs, s.ce]);
+  const totalOccupancySeconds = user ? scoped.reduce((n, s) => n + s.secs, 0) : db.unionIntervals(scopedIntervals);
+  const personHoursTotal = scoped.reduce((n, s) => n + s.secs, 0);
+  const totalSpeakingSeconds = scoped.reduce((n, s) => n + s.speakingSecs, 0);
+
   const sorted = scoped.map((s) => s.secs).sort((a, b) => a - b);
   const median = sorted.length
     ? sorted.length % 2
       ? sorted[(sorted.length - 1) / 2]
       : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
     : 0;
+
   const longestSessions = [...scoped]
     .sort((a, b) => b.secs - a.secs)
     .slice(0, 10)
@@ -225,6 +236,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
       channel_name: chanOf(s.channelId),
       started_at: new Date(s.cs).toISOString(),
       seconds: Math.round(s.secs),
+      speaking_seconds: Math.round(s.speakingSecs),
       open: s.open,
     }));
 
@@ -239,10 +251,13 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
       let fav = null;
       let favSecs = -1;
       for (const [cid, secs] of m.chans) if (secs > favSecs) ((fav = cid), (favSecs = secs));
+      const talkRatio = m.seconds > 0 ? Math.round((m.speaking_seconds / m.seconds) * 1000) / 10 : 0;
       return {
         user_id: id,
         name: nameOf(id),
         seconds: Math.round(m.seconds),
+        speaking_seconds: Math.round(m.speaking_seconds),
+        talk_ratio_pct: talkRatio,
         sessions: m.sessions,
         avg_session_seconds: Math.round(m.seconds / m.sessions),
         longest_seconds: Math.round(m.longest),
@@ -260,7 +275,6 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
     .sort((a, b) => b.seconds - a.seconds);
 
   // ---- status (presence) analytics ----
-  // Preserve database ID to guarantee chronological order during same-second events
   const prs = presenceRows
     .filter((r) => !user || r.user_id === user)
     .map((r) => ({
@@ -282,10 +296,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
   const perMember = [];
 
   for (const [uid, arr] of byUser) {
-    // Sort primarily by timestamp, then by database auto-increment ID
     arr.sort((a, b) => a.t - b.t || a.id - b.id);
-
-    // Remove redundant consecutive same-status events
     const cleanArr = [];
     for (const item of arr) {
       if (cleanArr.length > 0 && cleanArr[cleanArr.length - 1].status === item.status && cleanArr[cleanArr.length - 1].t === item.t) {
@@ -299,15 +310,9 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
       const start = cleanArr[i].t;
       let end = i + 1 < cleanArr.length ? cleanArr[i + 1].t : now;
 
-      // If user went online and offline in the same second, duration is 0
       if (end <= start) continue;
-
-      // If user is currently confirmed offline, do not project an old online state to `now`
       if (i + 1 >= cleanArr.length && cleanArr[i].status !== "offline" && liveStatus) {
-        const curStatus = liveStatus(uid);
-        if (curStatus === "offline") {
-          end = start; // cap at 0 duration
-        }
+        if (liveStatus(uid) === "offline") end = start;
       }
 
       if (!(end > start)) continue;
@@ -351,9 +356,12 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
       truncated: false,
     },
     kpis: {
-      total_seconds: round(totalSeconds),
+      total_seconds: round(totalOccupancySeconds),
+      person_hours: round(personHoursTotal),
+      total_speaking_seconds: round(totalSpeakingSeconds),
+      avg_speaking_pct: personHoursTotal > 0 ? Math.round((totalSpeakingSeconds / personHoursTotal) * 1000) / 10 : 0,
       sessions: scoped.length,
-      avg_session_seconds: scoped.length ? round(totalSeconds / scoped.length) : 0,
+      avg_session_seconds: scoped.length ? round(personHoursTotal / scoped.length) : 0,
       median_session_seconds: round(median),
       longest: longestSessions[0] || null,
       unique_members: memberMap.size,

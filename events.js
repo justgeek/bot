@@ -10,8 +10,7 @@ const { memes, memesFolder, otherFolder } = require("./memes");
 const audio = require("./audioManager");
 const { handleAICommand } = require("./aiHandler");
 const { clearHistory } = require("./history");
-const { getRelevantEmojis, isValidDiscordEmoji } = require('./ai.js'); // Your existing logic file
-
+const { getRelevantEmojis } = require('./ai.js');
 const { buildMemeMenus } = require("./menuBuilder");
 const db = require("./db");
 
@@ -28,15 +27,12 @@ module.exports = (client) => {
     client.user.setStatus('invisible');
     sendToChannel(client, IDs.channelStatus, 'Sup!\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t("**!commands**" for stuff)');
 
-    // Optional: print dependency report once for debugging audio env
     try { console.log(generateDependencyReport()); } catch { }
 
     if (audio.shouldJoinVoiceChannel(client, IDs.voice3)) {
       audio.joinBanhaVoiceChannel(client, IDs.voice3);
     }
 
-    // Load all members + presences so the dashboard counts are complete, then
-    // sync the database with who is actually in voice after a (re)start.
     const guild = client.guilds.cache.get(IDs.guild);
     const membersLoaded = guild
       ? guild.members.fetch({ withPresences: true }).catch((e) => console.warn("Member fetch warning:", e.message))
@@ -47,19 +43,14 @@ module.exports = (client) => {
   client.on("messageCreate", async (msg) => {
     if (msg.author.bot) return;
 
-    // --- Direct Messages ---
-    // (DMs have no msg.guild / msg.member, which the guild logic below
-    // relies on, so they're handled completely separately here.)
     if (!msg.guild) {
       if (msg.author.id === IDs.Moonscarlet) {
         const dmMessage = msg.content.toLowerCase();
-
         if (dmMessage === "!!clear" || dmMessage === "!!reset") {
           clearHistory(msg);
           msg.reply("🧹 Cleared the AI conversation history for this DM.");
           return;
         }
-
         if (dmMessage.startsWith("!!")) {
           const userPrompt = msg.content.substring(msg.content.toLowerCase().indexOf("!!") + 2).trim();
           await handleAICommand(msg, userPrompt);
@@ -67,22 +58,15 @@ module.exports = (client) => {
         return;
       }
 
-      // Anyone else DMing the bot: reply to them with the AI directly (no
-      // "!!" needed), and keep moonscarlet in the loop with both what was
-      // said and what the bot replied.
       let moonscarlet;
       try {
         moonscarlet = await client.users.fetch(IDs.Moonscarlet);
         let forward = `📩 **DM from ${msg.author.username}** (\`${msg.author.id}\`):\n${msg.content || "*(no text)*"}`;
-
         if (msg.attachments.size > 0) {
           const urls = [...msg.attachments.values()].map((a) => a.url).join("\n");
           forward += `\n📎 Attachments:\n${urls}`;
         }
-
-        // Stay safely under Discord's 2000 char message limit.
         if (forward.length > 1900) forward = forward.slice(0, 1900) + "… (truncated)";
-
         await moonscarlet.send(forward);
       } catch (err) {
         console.error("Error forwarding DM to moonscarlet:", err);
@@ -107,15 +91,6 @@ module.exports = (client) => {
     if (msg.author.username + "#" + msg.author.discriminator == "Malevolent#0025") return;
 
     const displayName = getAuthorDisplayName(msg);
-    const idtest = '329004546900885515';
-
-    if (msg.author.username + "#" + msg.author.discriminator == "exorcismus#7611" && !message.startsWith("!")) {
-      // (Preserving all comments perfectly as requested)
-      // if (msg.author.username + '#' + msg.author.discriminator == 'Moonscarlet#4105') {
-      // msg.react(msg.guild.emojis.cache.get('515873f6898e0b26daf51921c65a43f7'))//BRUH
-      // msg.react(':regional_indicator_a:')
-      // msg.react(msg.guild.emojis.cache.get("1018204796689322014")); //BRUH
-    }
 
     const reactTo = ['ASD'];
     if ((reactTo.includes(msg.author.username) && !message.startsWith("!")) || message.startsWith("_")) {
@@ -135,25 +110,12 @@ module.exports = (client) => {
       }
     }
 
-    if (msg.author.username == 'ibrahimsp' && !message.startsWith("!")) {
-      // if (msg.author.username == 'moonscarlet' && !message.startsWith("!")) {
-      // if (!message.startsWith("!")) {
-      // msg.react(msg.guild.emojis.cache.get('515873f6898e0b26daf51921c65a43f7'))//BRUH
-      // msg.react(':regional_indicator_a:')
-      // msg.react('🤷‍♂️');
-      // msg.react('🤷');
-      // msg.react(msg.guild.emojis.cache.get("1018204796689322014")); //BRUH
-    }
-
     if (message === "!commands" || message === "!help") {
       const commands = [
-        // '**!round**: Prints the current CHC round number',
-        '`!youtube` or `!playlist`: print YouTube "Our Games" playlist link.',
-        // "**!games**: list possible games to play.",
-        // "**!randomgame**: choose a random game to play.",
-        '`!random <names (comma separated)>`: shuffle provided players(`!random player1,player2,player3`).',
+        '`!youtube` or `!playlist`: print YouTube playlist link.',
+        '`!random <names (comma separated)>`: shuffle provided players.',
         "`!randomall`: create random teams of all players in your current voice channel.",
-        '`!randomall <voice channel members row numbers to exclude (comma separated)>` (to exclude 3rd and 5th `!randomall 3,5`).',
+        '`!randomall <row numbers to exclude>` (e.g. `!randomall 3,5`).',
         "`!<anything>`: Text-To-Speech.",
         "`!!<anything>`: AI response.",
         "`!!clear`: clear the AI conversation history for this channel.",
@@ -163,8 +125,6 @@ module.exports = (client) => {
       ];
       msg.channel.send("> **COMMANDS:**\n> " + commands.join("\n> "));
     } else if (message === "!memes") {
-      // const memesKeys = "> ```" + Object.keys(memes).map((e) => e.toUpperCase()).join(", ") + "```";
-      // msg.reply(memesKeys);
       const messages = buildMemeMenus();
       for (const payload of messages) {
         await msg.channel.send(payload);
@@ -188,19 +148,12 @@ module.exports = (client) => {
       msg.delete();
     } else if (message.startsWith("!random ")) {
       message = message.replace("!random ", "").replaceAll(" ", "");
-      console.log("message: %s", message);
       let players = message.split(",");
-      console.log("players: %s", players);
-
       if (players.length == 1) {
         msg.reply(players.shift() + " can queue alone!");
       } else {
         players = _lodash.shuffle(players);
-        console.log("shuffled players: %s", players);
         let teams = `> **${players.length} players:**`, teamNumber = 1;
-
-        [1, 2, 3, 4]; // Original line preserved
-        // Optimization: Refactored i+2 loop visually into a safer while loop with identical output
         while (players.length > 0) {
           if (players.length > 1) {
             teams += `\n> **Team ${teamNumber}:** ${players.shift()} - ${players.shift()}`;
@@ -209,84 +162,45 @@ module.exports = (client) => {
           }
           teamNumber++;
         }
-        console.log("Teams: %s", teams);
         msg.reply(teams);
       }
-      console.log("-----------------------------------------------------------------------");
     } else if (message.startsWith("!randomall")) {
       const voiceChannel = msg.member?.voice?.channel;
-
       if (!voiceChannel) {
         msg.reply("> You're not in a voice channel!");
-        console.log("-----------------------------------------------------------------------");
       } else {
-        const currentVoiceChannelName = voiceChannel.name;
-        console.log("Current Voice Channel: " + currentVoiceChannelName);
-
         try {
-          // Fetch all guild members safely so display names and voice states are completely up to date
           await msg.guild.members.fetch().catch((e) => console.warn("Guild members fetch warning:", e));
-
           let players = [];
           voiceChannel.members.forEach((mem) => {
             let memberNickname = mem.displayName;
             let memberId = mem.user.id;
-
-            if (isCraigMember(mem)) {
-              renameCraigToMokhber(mem, "!randomall check");
-            }
-
-            // Exclude bots from being playable participants
+            if (isCraigMember(mem)) renameCraigToMokhber(mem, "!randomall check");
             if (!mem.user.bot && mem.user.id !== client.user.id) {
-              players.push({
-                displayName: memberNickname,
-                mention: `<@${memberId}>`,
-                id: memberId,
-              });
+              players.push({ displayName: memberNickname, mention: `<@${memberId}>`, id: memberId });
             }
           });
 
-          // Sort players to match Discord's voice channel member display order (case-insensitive alphabetical, natural numeric)
-          players.sort((a, b) => {
-            return (
-              a.displayName.localeCompare(b.displayName, undefined, { numeric: true, sensitivity: "base" }) ||
-              a.displayName.localeCompare(b.displayName, undefined, { numeric: true })
-            );
-          });
-
-          console.log("Sorted Players (Voice Channel Order):", players.map((p, i) => `${i + 1}. ${p.displayName}`));
+          players.sort((a, b) => a.displayName.localeCompare(b.displayName, undefined, { numeric: true }));
 
           let excludedPlayers = [];
-
-          // Parse exclusions if provided (e.g. "!randomall 3,5" or "!randomall 3, 5" or "!randomall 3 5")
           const argsStr = message.slice("!randomall".length).trim();
           if (argsStr.length > 0) {
-            // Replace any English, Arabic, Persian, or fullwidth commas and semicolons with spaces, then split by whitespace
             const tokens = argsStr.replace(/[,،，٫;]+/g, " ").split(/\s+/).filter(Boolean);
             const excludedIndices = new Set();
-
             for (const token of tokens) {
               const rowNum = parseInt(token, 10);
               if (!isNaN(rowNum) && rowNum >= 1 && rowNum <= players.length) {
                 excludedIndices.add(rowNum - 1);
               } else {
-                // Also support excluding directly by display name (case-insensitive)
-                const foundIdx = players.findIndex(
-                  (p) => p.displayName.toLowerCase() === token.toLowerCase()
-                );
-                if (foundIdx !== -1) {
-                  excludedIndices.add(foundIdx);
-                }
+                const foundIdx = players.findIndex((p) => p.displayName.toLowerCase() === token.toLowerCase());
+                if (foundIdx !== -1) excludedIndices.add(foundIdx);
               }
             }
-
             const remainingPlayers = [];
             players.forEach((player, idx) => {
-              if (excludedIndices.has(idx)) {
-                excludedPlayers.push(player);
-              } else {
-                remainingPlayers.push(player);
-              }
+              if (excludedIndices.has(idx)) excludedPlayers.push(player);
+              else remainingPlayers.push(player);
             });
             players = remainingPlayers;
           }
@@ -295,22 +209,16 @@ module.exports = (client) => {
             msg.reply("no players no games!");
           } else if (players.length === 1) {
             let replyText = "";
-            if (excludedPlayers.length > 0) {
-              replyText += `> **Excluded:** ${excludedPlayers.map((p) => p.displayName).join(", ")}\n`;
-            }
+            if (excludedPlayers.length > 0) replyText += `> **Excluded:** ${excludedPlayers.map((p) => p.displayName).join(", ")}\n`;
             const solo = players.shift();
             replyText += "lol " + (solo?.mention || solo?.displayName) + " go queue alone KEKW";
             msg.reply(replyText);
           } else {
             players = _lodash.shuffle(players);
-            console.log("shuffled players:", players.map((p) => p.displayName));
             let teams = "";
-            if (excludedPlayers.length > 0) {
-              teams += `> **Excluded:** ${excludedPlayers.map((p) => p.displayName).join(", ")}\n`;
-            }
+            if (excludedPlayers.length > 0) teams += `> **Excluded:** ${excludedPlayers.map((p) => p.displayName).join(", ")}\n`;
             teams += `> **${players.length} players:**`;
             let teamNumber = 1;
-
             while (players.length > 0) {
               if (players.length > 1) {
                 const p1 = players.shift();
@@ -322,7 +230,6 @@ module.exports = (client) => {
               }
               teamNumber++;
             }
-            console.log("Teams:\n%s", teams);
             msg.reply(teams);
           }
         } catch (err) {
@@ -330,12 +237,10 @@ module.exports = (client) => {
           msg.reply(`An error occurred while creating teams: ${err.message || err}`);
         }
       }
-      console.log("-----------------------------------------------------------------------");
     } else if (message.startsWith("!joinme")) {
       try {
         let vc = msg.member.voice.channel.id;
         if (vc) {
-          console.log("voiceCurrent: %s", vc);
           await audio.joinBanhaVoiceChannel(client, vc);
           msg.delete();
         }
@@ -343,12 +248,9 @@ module.exports = (client) => {
     } else if (message === "!!clear" || message === "!!reset") {
       clearHistory(msg);
       msg.delete();
-      // msg.reply("🧹 Cleared the AI conversation history for this channel.");
       return;
     } else if (message.startsWith("!!")) {
       const userPrompt = msg.content.substring(msg.content.toLowerCase().indexOf("!!") + 2).trim();
-      // } else if (message.startsWith("$$")) {
-      //   const userPrompt = msg.content.substring(msg.content.toLowerCase().indexOf("$$") + 2).trim();
       await handleAICommand(msg, userPrompt);
       return;
     } else if (message.startsWith("!restartbot")) {
@@ -357,36 +259,19 @@ module.exports = (client) => {
       process.exit(1);
     } else if (message.startsWith("!")) {
       message = message.replace("!", "").trim();
-      // } else if (message.startsWith("$")) {
-      // message = message.replace("$", "").trim();
-
       let lang = "ja";
-      // const langRegex = /<([a-zA-Z-]+)>/;
-      // const langMatch = message.match(langRegex);
-
-      // if (langMatch) {
-      //   lang = langMatch[1];
-      //   message = message.replace(langMatch[0], "").trim();
-      // }
-
       try {
         const audioPath = await audio.textToSpeech(message);
         const resource = createAudioResource(audioPath);
-
         await audio.ensureVoiceReady(client, msg);
         audio.playVoice(resource);
-
         setTimeout(() => {
-          fs.unlink(audioPath, (err) => {
-            if (err) console.error('Error deleting audio file:', err);
-          });
+          fs.unlink(audioPath, (err) => { if (err) console.error('Error deleting audio file:', err); });
         }, 5000);
-
       } catch (error) {
         console.error('ElevenLabs TTS failed, falling back to default TTS:', error);
         const stream = discordTTS.getVoiceStream(message, { lang: lang });
         const resource = createAudioResource(stream);
-
         await audio.ensureVoiceReady(client, msg);
         audio.playVoice(resource);
       }
@@ -398,8 +283,7 @@ module.exports = (client) => {
   });
 
   client.on("messageDelete", (msg) => {
-    if (msg.author?.bot) return; // don't log the bot's own message deletions
-
+    if (msg.author?.bot) return;
     const message = msg.content.toLowerCase();
     if (message.startsWith("!") || message == "!commands" || message == "!playlist") return;
     const deleted = `${now()}\t **${msg.author.username}:** ${msg.content}`;
@@ -408,35 +292,25 @@ module.exports = (client) => {
   });
 
   client.on("messageUpdate", (oldMessage, newMessage) => {
-    if (newMessage.author?.bot) return; // don't log the bot's own edits (e.g. meme menu refreshes)
+    if (newMessage.author?.bot) return;
     if (oldMessage == newMessage) return;
-
     const edited = `${now()}\t **${newMessage.author.username}:**\n${oldMessage.content}\n>\n${newMessage.content}`;
     console.log("edited:", edited);
     sendToChannel(client, IDs.channelDel, edited);
-    console.log("-----------------------------------------------------------------------");
   });
 
   client.on("presenceUpdate", (before, after) => {
     const userID = after.userId;
     const user = client.users.cache.get(userID);
-
     const statusBefore = !before ? " " : before.status;
     const statusAfter = !after ? " " : after.status;
 
-    const msg = now() + "\t**" + user.username + ":\t**" + statusBefore + "\t>\t" + statusAfter;
-
-    const nowdatetime = new Date();
-    const utc = nowdatetime.getTime() + nowdatetime.getTimezoneOffset() * 60000;
-    const egyptTime = new Date(utc + 3600000 * 2);
-    const currentHour = egyptTime.getHours();
-
     if (statusBefore != statusAfter) {
+      const msg = now() + "\t**" + user.username + ":\t**" + statusBefore + "\t>\t" + statusAfter;
       console.log(msg);
       sendToChannel(client, IDs.channelStatus, msg);
     }
 
-    // --- Database logging: status changes only (never games/Spotify/activities) ---
     const dbStatusBefore = before?.status || "offline";
     const dbStatusAfter = after?.status || "offline";
     if (dbStatusBefore !== dbStatusAfter && !user?.bot) {
@@ -465,7 +339,6 @@ module.exports = (client) => {
           case Discord.ActivityType.Competing: action = "🏆 Competing in"; break;
           case Discord.ActivityType.Custom: action = "💬 Custom Status:"; break;
         }
-
         const details = activity.details ? ` | ${activity.details}` : "";
         const stateStr = activity.state ? ` | ${activity.state}` : "";
         const msg2 = now() + "\t**" + user.username + ":\t**" + action + " " + activity.name + details + stateStr;
@@ -473,47 +346,34 @@ module.exports = (client) => {
         sendToChannel(client, IDs.channelActivity, msg2);
       }
     });
-
-    if (userID == IDs.Moonscarlet && (statusBefore == "offline" || statusBefore == "") && statusAfter == "online") {
-    } else if (
-      userID == IDs.LORD &&
-      (currentHour >= 15 || currentHour <= 2) &&
-      (statusBefore == "offline" || statusBefore == " ") &&
-      (statusAfter == "online" || statusAfter == "idle")
-    ) {
-    } else if (
-      userID == IDs.ZEKUS &&
-      (currentHour == 23 || currentHour == 0) &&
-      (statusBefore == "offline" || statusBefore == " ") &&
-      (statusAfter == "online")
-    ) {
-    }
   });
 
   client.on("voiceStateUpdate", async (before, after) => {
     if (after.id == client.user.id) return;
 
-    // --- Database logging: voice sessions ---
-    // Only react to actual channel changes (mute/deafen/stream toggles fire this
-    // event too, with the same channel). Bots such as Craig are not logged.
+    // --- Database logging: voice sessions with mic speaking tracking ---
     if (before.channelId !== after.channelId && !after.member?.user?.bot) {
       const dbUserId = after.id;
       const dbUsername = after.member?.user?.username || dbUserId;
-      if (before.channelId) db.endVoiceSession(dbUserId);
+
+      if (before.channelId) {
+        // Retrieve and flush the member's speaking seconds for this session
+        const speakingSecs = audio.flushSpeakingSeconds ? audio.flushSpeakingSeconds(dbUserId) : 0;
+        db.endVoiceSession(dbUserId, speakingSecs);
+      }
       if (after.channelId && db.isTrackedChannel(after.channelId)) {
         db.startVoiceSession(dbUserId, dbUsername, after.channelId, after.channel?.name, after.member?.displayName);
       }
     }
 
     let chatMsg = " ";
-
     const person = after.member.user.username;
     let personTTS = PeopleTTS[person] ? PeopleTTS[person] : person;
 
     if ((before.channelId && !after.channelId) || (before.channelId && after.channelId && before.channelId != after.channelId)) {
       chatMsg = now() + " **" + person + "** left **" + client.channels.cache.get(before.channelId).name + "**";
       console.log(chatMsg);
-      if (before.channelId != IDs.voice2 && after.channelId != IDs.voice2) { //don't announce if secret voice channel
+      if (before.channelId != IDs.voice2 && after.channelId != IDs.voice2) {
         sendToChannel(client, IDs.channelVoice, chatMsg);
       }
 
@@ -530,13 +390,9 @@ module.exports = (client) => {
       if (!member && after.guild) {
         member = await after.guild.members.fetch(after.id).catch(() => null);
       }
-      // Debug: log what we know about whoever joined
-      console.log(`[voiceStateUpdate JOIN] id=${after.id} username=${member?.user?.username} tag=${member?.user?.tag} bot=${member?.user?.bot} nickname=${JSON.stringify(member?.nickname)} displayName=${JSON.stringify(member?.displayName)} isCraig=${member ? isCraigMember(member) : 'no member'}`);
       if (member && isCraigMember(member)) {
-        console.log(`[Craig] 🎙️ Craig detected joining voice channel (${member.user?.tag || member.id}). Scheduling rename to مخبر in 3s...`);
         setTimeout(async () => {
-          const freshMember = await after.guild.members.fetch(after.id).catch((e) => { console.error('[Craig] fetch error:', e.message); return null; });
-          console.log(`[Craig] 3s elapsed. freshMember nickname=${JSON.stringify(freshMember?.nickname)}, displayName=${JSON.stringify(freshMember?.displayName)}`);
+          const freshMember = await after.guild.members.fetch(after.id).catch(() => null);
           await renameCraigToMokhber(freshMember, "after join delay");
         }, 500);
       }
@@ -557,17 +413,16 @@ module.exports = (client) => {
         }
       }
 
-      if (after.id == 272937604339466240) return; //craig
+      if (after.id == 272937604339466240) return;
       chatMsg = now() + " **" + person + "** joined **" + client.channels.cache.get(after.channelId).name + "**";
       console.log(chatMsg);
-      if (before.channelId != IDs.voice2 && after.channelId != IDs.voice2) { //don't announce if secret voice channel
+      if (before.channelId != IDs.voice2 && after.channelId != IDs.voice2) {
         sendToChannel(client, IDs.channelVoice, chatMsg);
       }
     }
   });
 
   client.on("guildMemberUpdate", async (oldMember, newMember) => {
-    // Only attempt rename if Craig is in voice and its nickname is not strictly "مخبر"
     if (isCraigMember(newMember) && newMember.voice?.channelId && newMember.nickname !== "مخبر") {
       setTimeout(async () => {
         const freshMember = await newMember.guild.members.fetch(newMember.id).catch(() => null);
@@ -580,13 +435,11 @@ module.exports = (client) => {
 
   client.on("guildMemberAdd", (member) => {
     const chatMsg = member.user.username + " has joined the server.";
-    console.log(chatMsg);
     sendToChannel(client, IDs.channelMain, chatMsg);
   });
 
   client.on("guildMemberRemove", (member) => {
     const chatMsg = member.user.username + " has left the server.";
-    console.log(chatMsg);
     sendToChannel(client, IDs.channelMain, chatMsg);
   });
 
@@ -601,10 +454,8 @@ module.exports = (client) => {
           return;
         }
 
-        // Reset the menu's "selected" checkmark
         await interaction.update({ components: interaction.message.components });
 
-        // Require the clicker to be in a voice channel
         const voiceChannel = interaction.member.voice.channel;
         if (!voiceChannel) {
           await interaction.followUp({

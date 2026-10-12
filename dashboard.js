@@ -17,7 +17,6 @@ const RANGES = { "24h": 1, "7d": 7, "30d": 30, "90d": 90, "365d": 365, all: null
 const ID_RE = /^\d{5,25}$/;
 const STATUS_ORDER = { online: 0, idle: 1, dnd: 2 };
 
-// 3-minute rate limiting for Discord report sharing
 let lastShareTimestamp = 0;
 const SHARE_COOLDOWN_MS = 3 * 60 * 1000;
 
@@ -53,7 +52,7 @@ module.exports = function registerDashboard(app, client) {
 
   function parseFilters(req) {
     const tz = validTz(req.query.tz) || DEFAULT_TZ;
-    const dayStart = Math.min(23, Math.max(0, parseInt(req.query.dayStart, 10) || 0));
+    const dayStart = Math.min(23, Math.max(0, parseInt(req.query.dayStart, 10) || 18));
     let range = Object.prototype.hasOwnProperty.call(RANGES, req.query.range) ? req.query.range : "7d";
     let fromMs = null;
     let toMs = null;
@@ -183,7 +182,7 @@ module.exports = function registerDashboard(app, client) {
     }
   });
 
-  // Channels & members for filter dropdowns
+  // Channels & members for filter dropdowns with live Discord channel names
   app.get("/api/filters", guard, (req, res) => {
     const guild = getGuild();
     const members = [];
@@ -202,7 +201,6 @@ module.exports = function registerDashboard(app, client) {
     members.sort((a, b) => a.name.localeCompare(b.name));
     channels.sort((a, b) => a.pos - b.pos);
 
-    // Dynamically pull live channel names from Discord
     const dynamicShareChannels = (allowedShareChannels || []).map((ch) => {
       const liveChan = client.channels.cache.get(ch.id);
       return {
@@ -277,6 +275,7 @@ module.exports = function registerDashboard(app, client) {
           joined_at: r.joined_at,
           left_at: r.left_at,
           duration_seconds: Math.max(0, Math.round((end - start) / 1000)),
+          speaking_seconds: Number(r.speaking_seconds) || 0,
           open: !r.left_at,
         };
       });
@@ -308,10 +307,10 @@ module.exports = function registerDashboard(app, client) {
         if (/^[=+\-@]/.test(s)) s = "'" + s;
         return `"${s.replace(/"/g, '""')}"`;
       };
-      const lines = [`member,username,user_id,channel,joined_local (${filters.tz}),left_local (${filters.tz}),joined_at_utc,left_at_utc,duration_seconds`];
+      const lines = [`member,username,user_id,channel,joined_local (${filters.tz}),left_local (${filters.tz}),joined_at_utc,left_at_utc,duration_seconds,speaking_seconds`];
       for (const r of rows) {
         lines.push(
-          [r.name, r.username, r.user_id, r.channel_name, fmtLocal(r.joined_at), fmtLocal(r.left_at), r.joined_at, r.left_at || "", r.duration_seconds]
+          [r.name, r.username, r.user_id, r.channel_name, fmtLocal(r.joined_at), fmtLocal(r.left_at), r.joined_at, r.left_at || "", r.duration_seconds, r.speaking_seconds]
             .map(cell)
             .join(",")
         );
@@ -325,7 +324,6 @@ module.exports = function registerDashboard(app, client) {
     }
   });
 
-  // Role color + avatar with support for MemberColorOverrides
   app.get("/api/people", guard, (req, res) => {
     const guild = getGuild();
     const people = {};
@@ -346,7 +344,7 @@ module.exports = function registerDashboard(app, client) {
     res.json({ people });
   });
 
-  // ---------- Attendance reports ----------
+  // ---------- Attendance & Slacker Reports ----------
   const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
   const validDate = (s) => {
     if (!DATE_RE.test(s)) return false;
@@ -370,7 +368,6 @@ module.exports = function registerDashboard(app, client) {
       for (let d = from; d <= to && days <= MAX_REPORT_DAYS; d = z.addDays(d, 1)) days++;
       if (days > MAX_REPORT_DAYS) return res.status(400).json({ error: "range_too_long", max_days: MAX_REPORT_DAYS });
 
-      // Support multi-selected user IDs
       const rawUser = req.query.user || req.query.users || "";
       let userList = [];
       if (Array.isArray(rawUser)) {
@@ -512,7 +509,6 @@ module.exports = function registerDashboard(app, client) {
         content: `📊 **${title || "Report Snapshot"}** • ${cleanUrl}`,
         embeds: [embed],
         files: files,
-        // Removed SuppressEmbeds flag so embeds and images are visible
       });
 
       lastShareTimestamp = Date.now();

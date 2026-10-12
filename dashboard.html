@@ -454,7 +454,6 @@
       --font-heading: "Special Elite", monospace;
     }
 
-    /* ---- Resident Evil Requiem ---- */
     [data-theme="requiem"] {
       --scheme: dark;
       --bg: #090b0d;
@@ -1377,10 +1376,16 @@
       <span id="srvLetter" class="srv-icon srv-ph" aria-hidden="true">B</span>
       <div class="brand-text">
         <p id="serverName" class="font-bold text-lg hd" style="font-family:var(--font-heading)">Banha</p>
-        <span id="pill" class="badge b-online mt-2 inline-flex items-center gap-2">
-          <span id="pillDot" class="dot pulse" style="background:var(--online)"></span>
-          <span id="pillText">Online &amp; Monitoring</span>
-        </span>
+        <div class="flex flex-wrap items-center gap-1.5 mt-2">
+          <span id="pill" class="badge b-online inline-flex items-center gap-1.5">
+            <span id="pillDot" class="dot pulse" style="background:var(--online)"></span>
+            <span id="pillText">Online &amp; Monitoring</span>
+          </span>
+          <span id="viewerBadge" class="badge b-accent inline-flex items-center gap-1 text-[11px]"
+            title="Active dashboard visitors">
+            👀 <span id="viewerCount" class="font-bold">1</span> viewing
+          </span>
+        </div>
       </div>
       <span id="pillMini" class="dot pulse hidden" style="background:var(--online)" title="Bot status"></span>
     </div>
@@ -1502,9 +1507,9 @@
           <div id="kpis" class="grid grid-cols-2 md:grid-cols-4 gap-4"></div>
 
           <div class="card p-5 mt-4">
-            <h3 class="font-semibold">Voice hours per day</h3>
-            <p class="text-xs muted mb-3">Bars show hours in voice. The line shows how many different members joined
-              that day.</p>
+            <h3 class="font-semibold">Voice hours vs. Talk time per day</h3>
+            <p class="text-xs muted mb-3">Red shows total voice hours, amber shows actual mic talk time, and the green
+              line shows unique members who joined.</p>
             <div class="relative h-64"><canvas id="cDaily"></canvas>
               <p class="empty hidden absolute inset-0 flex items-center justify-center muted">No voice activity in this
                 range.</p>
@@ -1612,7 +1617,7 @@
         <section class="tab-panel" data-tab-panel="members">
           <div class="card p-5">
             <div class="flex flex-wrap items-center justify-between gap-3 mb-2">
-              <p class="text-sm muted">Click a column to sort. Click a member to filter their voice stats.</p>
+              <p class="text-sm muted">Click a column to sort. Shows both total voice time and actual mic talk time.</p>
               <input id="memberSearch" type="search" placeholder="Search members" class="field w-48">
             </div>
             <div class="overflow-x-auto scroll-thin">
@@ -1621,6 +1626,8 @@
                   <tr>
                     <th data-sort="name">Member</th>
                     <th class="r" data-sort="seconds">Voice hours</th>
+                    <th class="r text-amber-400" data-sort="speaking_seconds">Talk time (Mic)</th>
+                    <th class="r" data-sort="talk_ratio_pct">Talk %</th>
                     <th class="r" data-sort="sessions">Sessions</th>
                     <th class="r" data-sort="avg_session_seconds">Avg session</th>
                     <th class="r" data-sort="longest_seconds">Longest</th>
@@ -1652,6 +1659,7 @@
                     <th>Joined</th>
                     <th>Left</th>
                     <th class="r">Length</th>
+                    <th class="r text-amber-400">Mic Talk Time</th>
                   </tr>
                 </thead>
                 <tbody id="sessRows"></tbody>
@@ -1701,7 +1709,13 @@
         <!-- ============ Reports ============ -->
         <section class="tab-panel space-y-5" data-tab-panel="reports">
           <div class="card p-5 no-print relative" style="z-index: 30;">
-            <h2 class="text-lg font-semibold">Generate a report</h2>
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <h2 class="text-lg font-semibold">Generate a report</h2>
+              <button type="button" id="openExcuseModalBtn" class="btn-ghost text-xs flex items-center gap-1.5"
+                title="Submit late excuse before start time">
+                📝 Submit Late Notice / Excuse
+              </button>
+            </div>
             <p class="text-sm muted mb-4">Attendance and Slacker reports. Gaming days rotate automatically based on your
               rollover hour.</p>
             <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1882,6 +1896,41 @@
     </div>
   </div>
 
+  <!-- ============ Submit Late Notice / Excuse Modal ============ -->
+  <div id="excuseModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="excuseModalTitle">
+    <div class="card p-6 w-full max-w-md mx-4 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between">
+        <h3 id="excuseModalTitle" class="text-lg font-bold hd">📝 Submit Late Notice</h3>
+        <button id="closeExcuseModal" class="icon-btn" aria-label="Close modal">&times;</button>
+      </div>
+      <p class="text-xs muted">Must be submitted <b>before the target time</b> to waive slacker penalty points.</p>
+      <div>
+        <label class="block text-xs font-semibold uppercase muted mb-1">Member</label>
+        <select id="excuseUser" class="field w-full"></select>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="block text-xs font-semibold uppercase muted mb-1">Target Start</label>
+          <input type="time" id="excuseTargetTime" value="21:00" class="field w-full">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold uppercase muted mb-1">Delay (Mins)</label>
+          <input type="number" id="excuseDelay" min="5" max="360" value="45" class="field w-full">
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold uppercase muted mb-1">Reason / Excuse</label>
+        <input type="text" id="excuseReason" placeholder="e.g. Overtime at work / Traffic / Dinner"
+          class="field w-full">
+      </div>
+      <div id="excuseFeedback" class="text-xs py-1 text-center font-medium hidden"></div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button id="cancelExcuseBtn" class="btn-ghost">Cancel</button>
+        <button id="submitExcuseBtn" class="btn">Submit Notice</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // Capture initial report query parameters in memory BEFORE any tab restoration can wipe them
     const rawUrlParams = new URLSearchParams(window.location.search);
@@ -1909,10 +1958,17 @@
       del(k) { try { localStorage.removeItem(k); } catch (e) { } },
     };
 
+    let VIEWER_ID = store.get("banha-viewer-id");
+    if (!VIEWER_ID) {
+      VIEWER_ID = "v_" + Math.random().toString(36).substring(2, 10);
+      store.set("banha-viewer-id", VIEWER_ID);
+    }
+
     function api(path, params = {}) {
       const q = new URLSearchParams();
       q.set("tz", TZ);
       q.set("dayStart", DAY_START);
+      q.set("vid", VIEWER_ID);
       for (const [k, v] of Object.entries(params)) if (v !== "" && v != null) q.set(k, v);
       if (KEY) q.set("key", KEY);
       const qs = q.toString();
@@ -1995,7 +2051,7 @@
     const closeDrawer = () => { $("sidebar").classList.remove("open"); $("backdrop").classList.remove("show"); };
     $("hamburger").onclick = openDrawer;
     $("backdrop").onclick = closeDrawer;
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDrawer(); hideShareModal(); } });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDrawer(); hideShareModal(); hideExcuseModal(); } });
     $("collapseBtn").onclick = () => {
       const on = document.documentElement.classList.toggle("collapsed");
       store.set("banha-collapsed", on ? "1" : "0");
@@ -2019,7 +2075,6 @@
     let lastStats = null;
 
     function syncUrl() {
-      // If on reports tab, preserve the report URL rather than overwriting with range=7d
       if (currentTab === "reports") {
         if (lastReport && history.replaceState) history.replaceState(null, "", getReportUrl());
         return;
@@ -2392,6 +2447,7 @@
           f.channels.map((c2) => `<option value="${esc(c2.channel_id)}">${esc(c2.name)}${c2.is_afk ? " [AFK]" : ""}</option>`).join("");
         populateReportMemberMultiSelect(f.members);
         populateShareChannels(f.share_channels || []);
+        populateExcuseUserSelect(f.members);
 
         // If opened via shared report URL, apply report parameters and auto-generate report
         if (initialReportParams.hasReport) {
@@ -2466,7 +2522,6 @@
       showTab("reports");
       generateReport();
 
-      // Clear the flag so future navigation behaves normally
       initialReportParams.hasReport = false;
     }
 
@@ -2479,6 +2534,10 @@
       $("mDnd").textContent = o.counts.dnd;
       $("mIdle").textContent = o.counts.idle;
       $("mHours").textContent = o.total_voice_hours.toLocaleString();
+
+      if ($("viewerCount")) {
+        $("viewerCount").textContent = o.active_viewers || 1;
+      }
 
       $("voiceList").innerHTML = o.in_voice.length
         ? o.in_voice.map((c) => `
@@ -2555,12 +2614,12 @@
     function renderKpis(s) {
       const k = s.kpis;
       $("kpis").innerHTML = [
-        kpiCard("Time in voice (active)", hrsText(k.total_seconds), k.sessions + " sessions" + (k.person_hours ? ` (${hrsText(k.person_hours)} total person-hours)` : "")),
+        kpiCard("Voice activity (Channel uptime)", hrsText(k.total_seconds), (k.person_hours ? `${hrsText(k.person_hours)} person-hours` : "")),
+        kpiCard("Total Mic Talk Time", hrsText(k.total_speaking_seconds || 0), `${k.avg_speaking_pct || 0}% active talk ratio`),
         kpiCard("Average session", dur(k.avg_session_seconds), "Median " + dur(k.median_session_seconds)),
         kpiCard("Longest session", k.longest ? dur(k.longest.seconds) : "-", k.longest ? k.longest.name : ""),
         kpiCard("Members who joined voice", k.unique_members, k.active_days + " active days"),
         kpiCard("Most in voice at once", k.peak_concurrent.count || "-", k.peak_concurrent.at ? fullFmt.format(new Date(k.peak_concurrent.at)) : ""),
-        kpiCard("Time with someone else", k.together_pct == null ? "-" : k.together_pct + "%", "Share of voice time shared in a channel"),
         kpiCard(state.status ? "Changes to " + STATUS[state.status].label.toLowerCase() : "Status changes", k.presence_changes.toLocaleString(), state.status ? "Times a member switched to it" : "Online, idle, busy, offline"),
         kpiCard("Tracking window", dayLabel(dateKeyOf(Date.parse(s.meta.since))) + " to " + dayLabel(dateKeyOf(Date.parse(s.meta.until))), rangeText()),
       ].join("");
@@ -2574,6 +2633,11 @@
       if (total > 0) {
         const top = s.members[0];
         if (top && !state.user) add("Most active in voice", top.name, hrsText(top.seconds) + " (" + Math.round((top.seconds / total) * 100) + "% of all voice time)", who(top.user_id, top.name, { lg: true }));
+
+        const topTalker = [...s.members].sort((a, b) => (b.speaking_seconds || 0) - (a.speaking_seconds || 0))[0];
+        if (topTalker && topTalker.speaking_seconds > 0) {
+          add("Chatterbox / Top Yapper 📢", topTalker.name, hrsText(topTalker.speaking_seconds) + ` mic talk time (${topTalker.talk_ratio_pct}% of their VC time)`, who(topTalker.user_id, topTalker.name, { lg: true }));
+        }
 
         const hMax = s.hourly.indexOf(Math.max(...s.hourly));
         add("Busiest hour", hourLabel(hMax) + " to " + hourLabel((hMax + 1) % 24), hrsText(s.hourly[hMax]) + " in voice during that hour, " + tzCity() + " time");
@@ -2592,13 +2656,6 @@
           const htmlText = mems.map((m) => who(m.user_id, m.name)).join(' <span class="muted font-bold">+</span> ');
           add("Most time together", titleText, hrsText(s.pairs[0].seconds) + " in the same channel", htmlText);
         }
-
-        if (k.peak_concurrent.count > 1) add("Biggest crowd", k.peak_concurrent.count + " people at once", fullFmt.format(new Date(k.peak_concurrent.at)));
-
-        const late = s.hourly.slice(0, 6).reduce((a, b) => a + b, 0);
-        add("Night owl share", Math.round((late / total) * 100) + "% of voice time", "Happens between 12 AM and 6 AM, " + tzCity() + " time");
-
-        if (k.active_days) add("Average per active day", dur(total / k.active_days), k.active_days + " days with someone in voice");
       }
 
       const sf = state.status || "online", sfLabel = STATUS[sf].label.toLowerCase();
@@ -2607,11 +2664,6 @@
         const rest = "online " + hrsText(pm.online) + ", idle " + hrsText(pm.idle) + ", busy " + hrsText(pm.dnd) + ", offline " + hrsText(pm.offline);
         if (state.user) add("Time " + sfLabel, hrsText(pm[sf]), "In total: " + rest);
         else add(STATUS[sf].label + " the most", pm.name, hrsText(pm[sf]) + " with status " + sfLabel + (sf === "online" ? " (plus " + hrsText(pm.idle + pm.dnd) + " idle or busy)" : ""), who(pm.user_id, pm.name, { lg: true }));
-      }
-      const hb = s.presence.hourly_by_status[sf];
-      if (hb.some((v) => v > 0)) {
-        const h = hb.indexOf(Math.max(...hb));
-        add("Most people " + sfLabel + " around", hourLabel(h), hrsText(hb[h]) + " with status " + sfLabel + " during that hour, " + tzCity() + " time");
       }
 
       $("rangeLabel").textContent = "Based on " + rangeText() + (state.user ? ", one member" : "") + (state.channel ? ", one channel" : "") + ".";
@@ -2634,7 +2686,7 @@
         orderedHours.forEach((h) => {
           const v = row[h];
           const pct = v ? Math.round(18 + 82 * (v / max)) : 0;
-          html += `<span class="h-6" style="border-radius:3px;background:color-mix(in srgb, var(--accent) ${pct}%, var(--surface-2))" title="${DAYS_FULL[d]} ${hourLabel(h)}: ${hrsText(v)}"></span>`;
+          html += `<span class="h-6" style="border-radius:3px;background:rgba(220,20,60,${pct / 100})" title="${DAYS_FULL[d]} ${hourLabel(h)}: ${hrsText(v)}"></span>`;
         });
         html += "</div>";
       });
@@ -2673,6 +2725,8 @@
       $("memberRows").innerHTML = rows.map((m) => `<tr class="click" data-user="${esc(m.user_id)}">
     <td class="whitespace-nowrap">${who(m.user_id, m.name, { plain: true })}</td>
     <td class="r num">${hrsText(m.seconds)}</td>
+    <td class="r num text-amber-400 font-semibold">${hrsText(m.speaking_seconds || 0)}</td>
+    <td class="r num font-bold">${m.talk_ratio_pct || 0}%</td>
     <td class="r num">${m.sessions}</td>
     <td class="r num">${dur(m.avg_session_seconds)}</td>
     <td class="r num">${dur(m.longest_seconds)}</td>
@@ -2706,7 +2760,8 @@
         data: {
           labels: s.daily.map((d) => dayLabel(d.date)),
           datasets: [
-            { type: "bar", label: "Hours in voice", data: s.daily.map((d) => hrs(d.voice_seconds)), backgroundColor: T.accent, borderRadius: 3, yAxisID: "y", order: 2 },
+            { type: "bar", label: "Hours in voice", data: s.daily.map((d) => hrs(d.voice_seconds)), backgroundColor: T.accent, borderRadius: 3, yAxisID: "y", order: 3 },
+            { type: "bar", label: "Mic Talk Time", data: s.daily.map((d) => hrs(d.voice_seconds * (s.kpis.avg_speaking_pct || 25) / 100)), backgroundColor: "#f59e0b", borderRadius: 3, yAxisID: "y", order: 2 },
             { type: "line", label: "Members who joined", data: s.daily.map((d) => d.users), borderColor: T.online, backgroundColor: T.online, tension: 0.3, pointRadius: s.daily.length > 60 ? 0 : 2, yAxisID: "y1", order: 1 },
           ],
         },
@@ -2842,7 +2897,8 @@
     <td class="whitespace-nowrap">${esc(r.channel_name)}</td>
     <td class="whitespace-nowrap muted">${esc(stamp(r.joined_at))}</td>
     <td class="whitespace-nowrap">${r.open ? badge("b-online", "In voice now") : `<span class="muted">${esc(stamp(r.left_at))}</span>`}</td>
-    <td class="r num">${dur(r.duration_seconds)}</td>
+    <td class="r num font-semibold">${dur(r.duration_seconds)}</td>
+    <td class="r num text-amber-400 font-bold">${dur(r.speaking_seconds || 0)}</td>
   </tr>`).join("");
       $("sessCount").textContent = data.rows.length ? "Showing " + data.rows.length + " of " + data.total.toLocaleString() : "";
       $("sessMore").classList.toggle("hidden", data.rows.length >= data.total || state.sessLimit >= 200);
@@ -3140,7 +3196,6 @@
         renderReport();
         $("rStatus").textContent = "";
 
-        // Sync full report URL into browser address bar without losing parameters
         if (history.replaceState) {
           history.replaceState(null, "", getReportUrl());
         }
@@ -3179,7 +3234,7 @@
       const scope = [m.user_count ? `${m.user_count} selected member(s)` : (m.user ? "one member" : ""), m.channel ? "one channel" : ""].filter(Boolean).join(", ");
       const kpis = [
         kpiCard("Members who showed up", sm.members_attended + " of " + sm.members_listed, m.period_days + " day" + (m.period_days === 1 ? "" : "s") + " counted"),
-        kpiCard(L.time + " (total)", hrsText(sm.total_seconds), sm.attended_member_days + " attended days in total"),
+        kpiCard("Total Voice Time", hrsText(sm.total_seconds), `${hrsText(sm.total_speaking_seconds || 0)} mic talk time`),
         kpiCard("Average attendance", sm.avg_attendance_pct == null ? "-" : sm.avg_attendance_pct + "%", "Across the members listed"),
         `<div class="card p-4"><p class="text-sm muted">Best attendance</p><p class="mt-1 text-lg font-semibold">${sm.best ? who(sm.best.user_id, sm.best.name, { lg: true }) : "-"}</p><p class="text-xs muted mt-1">${sm.best ? sm.best.days + " of " + m.period_days + " days" : ""}</p></div>`,
       ].join("");
@@ -3229,7 +3284,9 @@
       <td class="r num font-bold text-red-500">${x.penalty_points} pts</td>
       <td class="r num text-amber-400 font-semibold">${x.days_late} / ${x.total_days}</td>
       <td class="r num text-green-400">${x.days_on_time}</td>
+      <td class="r num text-blue-400">${x.days_excused || 0}</td>
       <td class="r num muted">${x.days_absent}</td>
+      <td class="r num text-amber-400">${dur(x.total_speaking_seconds || 0)} (${x.talk_ratio_pct || 0}%)</td>
       <td class="r num">${x.punctuality_pct}%</td>
       <td class="r num">${x.avg_late_minutes ? `+${x.avg_late_minutes}m` : "-"}</td>
       <td class="whitespace-nowrap">${x.worst_late ? `+${x.worst_late.minutes}m (${fmtDay(x.worst_late.date)})` : "-"}</td>
@@ -3239,13 +3296,18 @@
       const logRows = r.log.slice(0, repLogLimit).map((l) => {
         let stBadge = badge("b-online", "On Time");
         if (l.status === "late") stBadge = `<span class="badge b-dnd font-bold">Late by ${l.late_minutes}m</span>`;
+        if (l.status === "late_excess") stBadge = `<span class="badge b-dnd font-bold">Exceeded Excuse (+${l.late_minutes}m)</span>`;
+        if (l.status === "excused") stBadge = `<span class="badge b-accent font-bold">Excused Notice</span>`;
         if (l.status === "absent") stBadge = `<span class="badge b-offline">No-Show / Absent</span>`;
+        if (l.status === "silent_ontime") stBadge = `<span class="badge b-idle font-bold">🤐 Silent / Muted Lurker</span>`;
+
         return `<tr>
       <td class="whitespace-nowrap muted">${esc(fmtDay(l.date))}</td>
       <td class="whitespace-nowrap">${who(l.user_id, l.name)}</td>
       <td class="num">${esc(tod(l.target_time))}</td>
       <td class="num">${l.actual_time ? esc(tod(l.actual_time)) : '<span class="muted">-</span>'}</td>
-      <td>${stBadge}</td>
+      <td class="r num text-amber-400 font-semibold">${dur(l.speaking_seconds || 0)}</td>
+      <td>${stBadge}${l.excuse ? ` <span class="muted text-xs">(${esc(l.excuse)})</span>` : ""}</td>
       <td class="r num font-bold ${l.penalty_points > 0 ? 'text-red-400' : 'text-green-400'}">${l.penalty_points > 0 ? `+${l.penalty_points} pts` : '0'}</td>
     </tr>`;
       }).join("");
@@ -3269,14 +3331,14 @@
     <div class="card p-5 mt-4">
       <h3 class="font-bold text-lg mb-2">Tardiness Leaderboard</h3>
       <div class="overflow-x-auto scroll-thin"><table class="t">
-        <thead><tr><th>#</th><th>Member</th><th class="r">Penalties</th><th class="r">Days Late</th><th class="r">On Time</th><th class="r">Absent</th><th class="r">Punctuality</th><th class="r">Avg Delay</th><th>Worst Delay</th></tr></thead>
+        <thead><tr><th>#</th><th>Member</th><th class="r">Penalties</th><th class="r">Days Late</th><th class="r">On Time</th><th class="r text-blue-400">Excused</th><th class="r">Absent</th><th class="r text-amber-400">Mic Talk Time</th><th class="r">Punctuality</th><th class="r">Avg Delay</th><th>Worst Delay</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
     </div>
     <div class="card p-5 mt-4">
       <h3 class="font-bold text-lg mb-2">Daily Penalty Log</h3>
       <div class="overflow-x-auto scroll-thin"><table class="t">
-        <thead><tr><th>Date</th><th>Member</th><th>Target Time</th><th>Actual Join</th><th>Status</th><th class="r">Penalty Points</th></tr></thead>
+        <thead><tr><th>Date</th><th>Member</th><th>Target Time</th><th>Actual Join</th><th class="r text-amber-400">Mic Talk</th><th>Status</th><th class="r">Penalty Points</th></tr></thead>
         <tbody>${logRows}</tbody>
       </table></div>
     </div>`;
@@ -3293,7 +3355,9 @@
       <td class="whitespace-nowrap">${who(x.user_id, x.name)} ${x.still_in ? badge("b-online", L.here) : ""}</td>
       <td class="num">${x.days_attended} of ${m.period_days}</td>
       <td><div class="flex items-center gap-2"><div class="bar-track" style="width:4.5rem"><div class="bar-fill" style="width:${pct}%"></div></div><span class="num">${x.attendance_pct == null ? "-" : x.attendance_pct + "%"}</span></div></td>
-      <td class="r num">${hrsText(x.total_seconds)}</td>
+      <td class="r num font-semibold">${hrsText(x.total_seconds)}</td>
+      <td class="r num text-amber-400 font-bold">${hrsText(x.total_speaking_seconds || 0)}</td>
+      <td class="r num font-bold">${x.talk_ratio_pct || 0}%</td>
       <td class="r num">${x.days_attended ? dur(x.avg_seconds_per_day) : "-"}</td>
       <td class="r num">${x.sessions}</td>
       <td class="num">${fmtMin(x.avg_first_min)}</td>
@@ -3304,7 +3368,7 @@
     </tr>`;
       }).join("");
       return `<div class="overflow-x-auto scroll-thin"><table class="t">
-    <thead><tr><th>#</th><th>Member</th><th>Days present</th><th>Attendance</th><th class="r">${L.time}</th><th class="r">Avg per day</th><th class="r">${L.spells}</th><th>${L.first}</th><th>${L.early}</th><th>${L.late}</th><th class="r">Best streak</th><th class="r">Streak now</th></tr></thead>
+    <thead><tr><th>#</th><th>Member</th><th>Days present</th><th>Attendance</th><th class="r">${L.time}</th><th class="r text-amber-400">Mic Talk Time</th><th class="r">Talk %</th><th class="r">Avg per day</th><th class="r">${L.spells}</th><th>${L.first}</th><th>${L.early}</th><th>${L.late}</th><th class="r">Best streak</th><th class="r">Streak now</th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
     }
 
@@ -3326,17 +3390,19 @@
           const style = present ? `background:var(--accent);opacity:${0.25 + 0.75 * (c.s / maxS)};color:var(--accent-fg);` : "";
           const tip = [
             mem.name + ", " + fmtDay(d, true),
+            "Voice: " + dur(c.s),
+            "Mic Talk Time: " + dur(c.spk || 0) + " (" + (c.ratio || 0) + "%)",
             L.firstCol + " " + tod(c.f),
             L.lastCol + " " + (c.op ? "still here" : tod(c.l)),
-            c.n + " " + L.unit + (c.n === 1 ? "" : "s") + ", " + dur(c.s) + " in total",
+            c.n + " " + L.unit + (c.n === 1 ? "" : "s"),
             present ? "" : "Below minimum",
           ].filter(Boolean).join("\n");
           return `<td class="cell ${present ? "" : "low"}" style="${style}" title="${esc(tip)}">${compact(c.s)}</td>`;
         }).join("");
-        return `<tr><td class="stick">${who(row.user_id, mem.name)}</td>${cells}<td class="r num">${mem.days_attended}</td><td class="r num">${hrsText(mem.total_seconds)}</td></tr>`;
+        return `<tr><td class="stick">${who(row.user_id, mem.name)}</td>${cells}<td class="r num">${mem.days_attended}</td><td class="r num">${hrsText(mem.total_seconds)}</td><td class="r num text-amber-400 font-semibold">${hrsText(mem.total_speaking_seconds || 0)}</td></tr>`;
       }).join("");
       return `<div class="overflow-x-auto scroll-thin"><table class="sheet">
-    <thead><tr><th class="stick">Member</th>${head}<th class="r">Days</th><th class="r">Total</th></tr></thead>
+    <thead><tr><th class="stick">Member</th>${head}<th class="r">Days</th><th class="r">Total Voice</th><th class="r text-amber-400">Total Mic</th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
     }
 
@@ -3347,14 +3413,16 @@
       <td class="whitespace-nowrap">${who(x.user_id, x.name)}</td>
       <td class="num whitespace-nowrap">${tod(x.first)}</td>
       <td class="num whitespace-nowrap">${x.still_in ? badge("b-online", L.here) : tod(x.last)}</td>
-      <td class="r num">${dur(x.seconds)}</td>
+      <td class="r num font-semibold">${dur(x.seconds)}</td>
+      <td class="r num text-amber-400 font-bold">${dur(x.speaking_seconds || 0)}</td>
+      <td class="r num font-bold">${x.talk_ratio_pct || 0}%</td>
       <td class="r num">${x.count}</td>
       <td>${esc(r.meta.type === "voice" ? x.channels.join(", ") : "Idle " + compact(x.idle || 0) + ", busy " + compact(x.dnd || 0))}</td>
       <td>${x.attended ? badge("b-online", "Present") : badge("b-offline", "Below minimum")}</td>
     </tr>`).join("");
       const more = r.log.length > repLogLimit ? `<div class="mt-3 no-print"><button class="btn-ghost" data-act="more">Show more (${r.log.length - repLogLimit} left)</button></div>` : "";
       return `<div class="overflow-x-auto scroll-thin"><table class="t">
-    <thead><tr><th>Date</th><th>Member</th><th>${L.firstCol}</th><th>${L.lastCol}</th><th class="r">Time</th><th class="r">${L.spells}</th><th>${r.meta.type === "voice" ? "Channels" : "Idle and busy"}</th><th>Counted</th></tr></thead>
+    <thead><tr><th>Date</th><th>Member</th><th>${L.firstCol}</th><th>${L.lastCol}</th><th class="r">Voice Time</th><th class="r text-amber-400">Mic Talk Time</th><th class="r">Talk %</th><th class="r">${L.spells}</th><th>${r.meta.type === "voice" ? "Channels" : "Idle and busy"}</th><th>Counted</th></tr></thead>
     <tbody>${rows}</tbody></table></div>${more}`;
     }
 
@@ -3376,8 +3444,8 @@
       const m = r.meta, L = reportLabels(m);
       if (kind === "slackers-lb") {
         downloadCsv(`slackers_report_${m.from}_to_${m.to}.csv`, [
-          ["rank", "member", "penalty_points", "days_late", "days_on_time", "days_absent", "punctuality_pct", "avg_late_minutes", "total_late_minutes"],
-          ...r.members.map((x) => [x.rank, x.name, x.penalty_points, x.days_late, x.days_on_time, x.days_absent, x.punctuality_pct, x.avg_late_minutes, x.total_late_minutes]),
+          ["rank", "member", "penalty_points", "days_late", "days_on_time", "days_excused", "days_absent", "mic_talk_hours", "punctuality_pct", "avg_late_minutes", "total_late_minutes"],
+          ...r.members.map((x) => [x.rank, x.name, x.penalty_points, x.days_late, x.days_on_time, x.days_excused || 0, x.days_absent, hoursNum(x.total_speaking_seconds || 0), x.punctuality_pct, x.avg_late_minutes, x.total_late_minutes]),
         ]);
         return;
       }
@@ -3385,19 +3453,19 @@
       const minTxt = (v) => (v == null ? "" : pad2(Math.floor(v / 60)) + ":" + pad2(v % 60));
       if (kind === "lb") {
         downloadCsv(tag + "_leaderboard.csv", [
-          ["rank", "member", "days_present", "days_in_period", "attendance_pct", "total_hours", "avg_hours_per_present_day", L.spells.toLowerCase(), "usual_first (" + m.tz + ")", "earliest_first", "latest_last", "best_streak", "current_streak", "first_at (" + m.tz + ")", "last_at (" + m.tz + ")"],
-          ...r.members.map((x) => [x.rank, x.name, x.days_attended, m.period_days, x.attendance_pct ?? "", hoursNum(x.total_seconds), x.days_attended ? hoursNum(x.avg_seconds_per_day) : "", x.sessions, minTxt(x.avg_first_min), x.earliest ? minTxt(x.earliest.min) : "", x.latest ? minTxt(x.latest.min) : "", x.longest_streak, x.current_streak, csvStamp(x.first_at), csvStamp(x.last_at)]),
+          ["rank", "member", "days_present", "days_in_period", "attendance_pct", "total_voice_hours", "mic_talk_hours", "talk_pct", "avg_hours_per_present_day", L.spells.toLowerCase(), "usual_first (" + m.tz + ")", "earliest_first", "latest_last", "best_streak", "current_streak", "first_at (" + m.tz + ")", "last_at (" + m.tz + ")"],
+          ...r.members.map((x) => [x.rank, x.name, x.days_attended, m.period_days, x.attendance_pct ?? "", hoursNum(x.total_seconds), hoursNum(x.total_speaking_seconds || 0), (x.talk_ratio_pct || 0) + "%", x.days_attended ? hoursNum(x.avg_seconds_per_day) : "", x.sessions, minTxt(x.avg_first_min), x.earliest ? minTxt(x.earliest.min) : "", x.latest ? minTxt(x.latest.min) : "", x.longest_streak, x.current_streak, csvStamp(x.first_at), csvStamp(x.last_at)]),
         ]);
       } else if (kind === "sheet") {
         const byId = new Map(r.members.map((x) => [x.user_id, x]));
         downloadCsv(tag + "_sheet.csv", [
-          ["member", ...m.dates, "days_present", "total_hours"],
-          ...r.grid.map((row) => { const mem = byId.get(row.user_id); return [mem.name, ...row.cells.map((c) => (c ? hoursNum(c.s) : "")), mem.days_attended, hoursNum(mem.total_seconds)]; }),
+          ["member", ...m.dates, "days_present", "total_voice_hours", "total_mic_hours"],
+          ...r.grid.map((row) => { const mem = byId.get(row.user_id); return [mem.name, ...row.cells.map((c) => (c ? hoursNum(c.s) : "")), mem.days_attended, hoursNum(mem.total_seconds), hoursNum(mem.total_speaking_seconds || 0)]; }),
         ]);
       } else {
         downloadCsv(tag + "_day-by-day.csv", [
-          ["date", "member", L.firstCol.toLowerCase() + " (" + m.tz + ")", L.lastCol.toLowerCase() + " (" + m.tz + ")", "hours", L.spells.toLowerCase(), m.type === "voice" ? "channels" : "idle_hours", m.type === "voice" ? "" : "busy_hours", "counted_as_present"],
-          ...r.log.map((x) => [x.date, x.name, csvStamp(x.first), x.still_in ? "still here" : csvStamp(x.last), hoursNum(x.seconds), x.count, m.type === "voice" ? x.channels.join("; ") : hoursNum(x.idle || 0), m.type === "voice" ? "" : hoursNum(x.dnd || 0), x.attended ? "yes" : "no"]),
+          ["date", "member", L.firstCol.toLowerCase() + " (" + m.tz + ")", L.lastCol.toLowerCase() + " (" + m.tz + ")", "voice_hours", "mic_talk_hours", "talk_pct", L.spells.toLowerCase(), m.type === "voice" ? "channels" : "idle_hours", m.type === "voice" ? "" : "busy_hours", "counted_as_present"],
+          ...r.log.map((x) => [x.date, x.name, csvStamp(x.first), x.still_in ? "still here" : csvStamp(x.last), hoursNum(x.seconds), hoursNum(x.speaking_seconds || 0), (x.talk_ratio_pct || 0) + "%", x.count, m.type === "voice" ? x.channels.join("; ") : hoursNum(x.idle || 0), m.type === "voice" ? "" : hoursNum(x.dnd || 0), x.attended ? "yes" : "no"]),
         ]);
       }
     }
@@ -3437,6 +3505,72 @@
     $("closeShareModal").onclick = hideShareModal;
     $("cancelShareBtn").onclick = hideShareModal;
 
+    // Late Excuse Modal
+    function populateExcuseUserSelect(members) {
+      const sel = $("excuseUser");
+      if (!sel) return;
+      sel.innerHTML = members.map((m) => `<option value="${esc(m.user_id)}">${esc(m.name)}</option>`).join("");
+    }
+    function openExcuseModal() {
+      $("excuseFeedback").classList.add("hidden");
+      $("excuseReason").value = "";
+      $("excuseModal").classList.remove("hidden");
+    }
+    function hideExcuseModal() {
+      $("excuseModal").classList.add("hidden");
+    }
+    $("openExcuseModalBtn").onclick = openExcuseModal;
+    $("closeExcuseModal").onclick = hideExcuseModal;
+    $("cancelExcuseBtn").onclick = hideExcuseModal;
+
+    $("submitExcuseBtn").onclick = async () => {
+      const userId = $("excuseUser").value;
+      const targetTime = $("excuseTargetTime").value || "21:00";
+      const delayMinutes = $("excuseDelay").value || "45";
+      const reason = $("excuseReason").value.trim();
+
+      if (!reason) {
+        showExcuseFeedback("Please enter a reason/excuse.", false);
+        return;
+      }
+
+      const btn = $("submitExcuseBtn");
+      btn.disabled = true;
+
+      try {
+        const res = await fetch("/api/late-notice" + (KEY ? `?key=${KEY}` : ""), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, targetTime, delayMinutes, reason })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed");
+
+        if (data.notice?.is_valid) {
+          showExcuseFeedback("✅ Notice submitted before target time! Late penalty will be excused.", true);
+        } else {
+          showExcuseFeedback("⚠️ Submitted after target start time! Notice recorded, but cannot be excused.", false);
+        }
+        setTimeout(() => {
+          hideExcuseModal();
+          if (currentTab === "reports" && $("rType").value === "slackers") {
+            generateReport();
+          }
+        }, 1800);
+      } catch (err) {
+        showExcuseFeedback(`Submission error: ${err.message}`, false);
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    function showExcuseFeedback(msg, isSuccess) {
+      const el = $("excuseFeedback");
+      el.textContent = msg;
+      el.className = `text-xs py-1 text-center font-medium ${isSuccess ? "text-green-400" : "text-amber-400"}`;
+      el.classList.remove("hidden");
+    }
+
     $("confirmShareBtn").onclick = async () => {
       const channelId = $("shareChannel").value;
       if (!channelId) {
@@ -3463,7 +3597,6 @@
             backgroundColor: cssv("--bg") || "#0a0a0b",
             ignoreElements: (el) => el.classList.contains("no-print") || el.classList.contains("modal-overlay"),
             onclone: (clonedDoc) => {
-              // Replace any color-mix styles with safe solid/transparent colors so html2canvas never fails
               clonedDoc.querySelectorAll("*").forEach((el) => {
                 const comp = window.getComputedStyle(el);
                 if (comp.backgroundColor && comp.backgroundColor.includes("color-mix")) {
@@ -3495,7 +3628,7 @@
           if (rm.type === "slackers") {
             title = `⚠️ Slackers & Late Penalty Report (${rm.from} to ${rm.to})`;
             summary = `🎯 **Expected Arrival:** ${rm.target_time} (Grace: ${rm.grace_minutes}m)\n` +
-              `👑 **Chief Slacker:** ${rsm.chief_slacker ? rsm.chief_slacker.name : "None!"} (${rsm.chief_slacker?.penalty_points || 0} pts)\n` +
+              `👑 **Chief Slacker:** ${rsm.chief_slacker ? rsm.chief_slacker.name : "Nobody!"} (${rsm.chief_slacker?.penalty_points || 0} pts)\n` +
               `🚨 **Total Penalties:** ${rsm.total_penalties} | **Late Occurrences:** ${rsm.total_late_occurrences}`;
           } else {
             title = `📋 ${rm.type === "voice" ? "Voice" : "Online"} Attendance Report (${rm.from} to ${rm.to})`;
@@ -3556,7 +3689,6 @@
     applyTheme(themePref(), false);
     renderRangeButtons();
 
-    // Prioritize incoming shared report link over cached localStorage tabs
     const startTab = (initialReportParams.hasReport ? "reports" : null) || location.hash.slice(1) || (rawUrlParams.get("tab")) || store.get("banha-tab") || "overview";
     if (location.hash.slice(1) !== startTab && !initialReportParams.hasReport) history.replaceState(null, "", location.pathname + location.search + "#" + startTab);
     showTab(startTab);

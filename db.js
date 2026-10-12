@@ -46,6 +46,28 @@ function serialize(key, task) {
   return next;
 }
 
+// Computes true wall-clock channel occupancy (union of overlapping intervals)
+function unionIntervals(intervals) {
+  if (!intervals.length) return 0;
+  intervals.sort((a, b) => a[0] - b[0]);
+  let totalSecs = 0;
+  let curStart = intervals[0][0];
+  let curEnd = intervals[0][1];
+
+  for (let i = 1; i < intervals.length; i++) {
+    const [s, e] = intervals[i];
+    if (s <= curEnd) {
+      if (e > curEnd) curEnd = e;
+    } else {
+      totalSecs += Math.max(0, Math.round((curEnd - curStart) / 1000));
+      curStart = s;
+      curEnd = e;
+    }
+  }
+  totalSecs += Math.max(0, Math.round((curEnd - curStart) / 1000));
+  return totalSecs;
+}
+
 // ---------- Writes ----------
 async function logPresence(userId, username, status, displayName) {
   if (!supabase) return;
@@ -62,11 +84,24 @@ async function logPresence(userId, username, status, displayName) {
   }
 }
 
-async function _endVoiceSession(userId) {
+async function _endVoiceSession(userId, speakingSeconds = 0) {
   if (!supabase) return;
   try {
-    const { error } = await supabase.rpc("end_voice_session", { p_user_id: String(userId) });
-    if (error) throw error;
+    const { error } = await supabase.rpc("end_voice_session", {
+      p_user_id: String(userId),
+      p_speaking_seconds: parseInt(speakingSeconds, 10) || 0
+    });
+    if (error) {
+      // Direct update fallback in case RPC update has not run yet
+      await supabase
+        .from("voice_sessions")
+        .update({
+          left_at: new Date().toISOString(),
+          speaking_seconds: parseInt(speakingSeconds, 10) || 0,
+        })
+        .eq("user_id", String(userId))
+        .is("left_at", null);
+    }
   } catch (err) {
     console.error("[DB] endVoiceSession failed:", err.message || err);
   }
@@ -75,7 +110,7 @@ async function _endVoiceSession(userId) {
 async function _startVoiceSession(userId, username, channelId, channelName, displayName) {
   if (!supabase) return;
   try {
-    await _endVoiceSession(userId);
+    await _endVoiceSession(userId, 0);
     const { error } = await supabase.from("voice_sessions").insert({
       user_id: String(userId),
       username,
@@ -83,6 +118,7 @@ async function _startVoiceSession(userId, username, channelId, channelName, disp
       channel_id: String(channelId),
       channel_name: channelName || null,
       left_at: null,
+      speaking_seconds: 0,
     });
     if (error) throw error;
   } catch (err) {
@@ -90,8 +126,8 @@ async function _startVoiceSession(userId, username, channelId, channelName, disp
   }
 }
 
-const endVoiceSession = (userId) =>
-  serialize(String(userId), () => _endVoiceSession(userId));
+const endVoiceSession = (userId, speakingSeconds = 0) =>
+  serialize(String(userId), () => _endVoiceSession(userId, speakingSeconds));
 
 const startVoiceSession = (userId, username, channelId, channelName, displayName) =>
   serialize(String(userId), () =>
@@ -126,7 +162,7 @@ async function reconcileVoiceSessions(client) {
     for (const row of open || []) {
       const now = current.get(row.user_id);
       if (now && now.channelId === row.channel_id) stillValid.add(row.user_id);
-      else await endVoiceSession(row.user_id);
+      else await endVoiceSession(row.user_id, 0);
     }
 
     for (const [userId, info] of current) {
@@ -160,7 +196,7 @@ async function getSessionRows(sinceIso, untilIso) {
     return await fetchAll(() => {
       let q = supabase
         .from("voice_sessions")
-        .select("id, user_id, username, display_name, channel_id, channel_name, joined_at, left_at")
+        .select("id, user_id, username, display_name, channel_id, channel_name, joined_at, left_at, duration_seconds, speaking_seconds")
         .order("id", { ascending: true });
       if (sinceIso) q = q.or(`left_at.is.null,left_at.gte.${sinceIso}`);
       if (untilIso) q = q.lte("joined_at", untilIso);
@@ -188,28 +224,6 @@ async function getPresenceRows(sinceIso, untilIso) {
     console.error("[DB] getPresenceRows failed:", err.message || err);
     return { rows: [], truncated: false };
   }
-}
-
-// Computes true wall-clock channel occupancy (union of overlapping intervals)
-function unionIntervals(intervals) {
-  if (!intervals.length) return 0;
-  intervals.sort((a, b) => a[0] - b[0]);
-  let totalSecs = 0;
-  let curStart = intervals[0][0];
-  let curEnd = intervals[0][1];
-
-  for (let i = 1; i < intervals.length; i++) {
-    const [s, e] = intervals[i];
-    if (s <= curEnd) {
-      if (e > curEnd) curEnd = e;
-    } else {
-      totalSecs += Math.max(0, Math.round((curEnd - curStart) / 1000));
-      curStart = s;
-      curEnd = e;
-    }
-  }
-  totalSecs += Math.max(0, Math.round((curEnd - curStart) / 1000));
-  return totalSecs;
 }
 
 async function getTotalVoiceSeconds(excludeAfk = false, client = null) {
@@ -299,7 +313,7 @@ async function getRecentLogs(limit = 30, opts = {}) {
       ? (() => {
         let q = supabase
           .from("voice_sessions")
-          .select("id, user_id, username, display_name, channel_name, left_at, duration_seconds")
+          .select("id, user_id, username, display_name, channel_name, left_at, duration_seconds, speaking_seconds")
           .not("left_at", "is", null)
           .order("left_at", { ascending: false })
           .limit(limit);
@@ -315,7 +329,7 @@ async function getRecentLogs(limit = 30, opts = {}) {
     const events = [
       ...presence.data.map((r) => ({ id: r.id, type: "presence", user_id: r.user_id, username: r.username, display_name: r.display_name, status: r.status, at: r.changed_at })),
       ...joins.data.map((r) => ({ id: r.id, type: "voice_join", user_id: r.user_id, username: r.username, display_name: r.display_name, channel_name: r.channel_name, at: r.joined_at })),
-      ...leaves.data.map((r) => ({ id: r.id, type: "voice_leave", user_id: r.user_id, username: r.username, display_name: r.display_name, channel_name: r.channel_name, duration_seconds: r.duration_seconds, at: r.left_at })),
+      ...leaves.data.map((r) => ({ id: r.id, type: "voice_leave", user_id: r.user_id, username: r.username, display_name: r.display_name, channel_name: r.channel_name, duration_seconds: r.duration_seconds, speaking_seconds: r.speaking_seconds, at: r.left_at })),
     ];
 
     events.sort((a, b) => new Date(b.at) - new Date(a.at) || (Number(b.id) || 0) - (Number(a.id) || 0));
@@ -329,6 +343,7 @@ async function getRecentLogs(limit = 30, opts = {}) {
 module.exports = {
   isTrackedChannel,
   isAfkChannel,
+  unionIntervals,
   logPresence,
   startVoiceSession,
   endVoiceSession,
