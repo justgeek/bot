@@ -13,7 +13,7 @@ const ffmpeg = require("ffmpeg");
 
 // Create Discord Client
 const client = new Discord.Client({
-  intents: [
+  intents:[
     Discord.GatewayIntentBits.Guilds,
     Discord.GatewayIntentBits.GuildMessages,
     Discord.GatewayIntentBits.MessageContent,

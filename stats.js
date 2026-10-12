@@ -1,47 +1,8 @@
 // stats.js - turns raw voice sessions + status logs into dashboard analytics.
 // Pure functions (no Discord/Supabase), so they are easy to test.
-const TZ = "Africa/Cairo";
+const { makeTz } = require("./tz");
 const HOUR = 3600e3;
 const DAY = 86400e3;
-
-const partsFmt = new Intl.DateTimeFormat("en-GB", {
-  timeZone: TZ,
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  weekday: "short",
-  hourCycle: "h23",
-});
-const WEEKDAY = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
-
-// Egypt's UTC offset is always a whole number of hours, so UTC hour boundaries
-// are also Cairo hour boundaries. Each hour maps to a Cairo {hour, dow, date}.
-const binCache = new Map();
-function binOf(hourStartMs) {
-  let b = binCache.get(hourStartMs);
-  if (!b) {
-    const p = {};
-    for (const x of partsFmt.formatToParts(hourStartMs)) p[x.type] = x.value;
-    b = { hour: Number(p.hour), dow: WEEKDAY[p.weekday], date: `${p.year}-${p.month}-${p.day}` };
-    if (binCache.size > 200000) binCache.clear();
-    binCache.set(hourStartMs, b);
-  }
-  return b;
-}
-const hourStart = (ms) => Math.floor(ms / HOUR) * HOUR;
-const dateKey = (ms) => binOf(hourStart(ms)).date;
-
-// Calls cb(bin, seconds) for every hour-sized slice between start and end.
-function eachHourSlice(start, end, cb) {
-  let t = start;
-  while (t < end) {
-    const hs = hourStart(t);
-    const next = Math.min(hs + HOUR, end);
-    cb(binOf(hs), (next - t) / 1000);
-    t = next;
-  }
-}
 
 const HIST_BUCKETS = [
   { label: "Under 5 min", max: 5 * 60 },
@@ -55,7 +16,10 @@ const HIST_BUCKETS = [
 
 const STATUSES = ["online", "idle", "dnd", "offline"];
 
-function computeStats({ sessionRows, presenceRows, now, since, user, channel, liveName }) {
+function computeStats({ sessionRows, presenceRows, now, since, user, channel, liveName, tz, status }) {
+  const z = makeTz(tz);
+  const eachHourSlice = z.eachHourSlice;
+  const dateKey = z.dateOf;
   // ---- names (latest known display name, preferring the live server nickname) ----
   const names = new Map();
   const chanNames = new Map();
@@ -299,7 +263,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
   }
 
   const totals = { online: 0, idle: 0, dnd: 0, offline: 0 };
-  const activeHourly = new Array(24).fill(0);
+  const hourlyBy = Object.fromEntries(STATUSES.map((k) => [k, new Array(24).fill(0)]));
   const perMember = [];
   for (const [uid, arr] of byUser) {
     arr.sort((a, b) => a.t - b.t);
@@ -311,23 +275,26 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
       const secs = (end - start) / 1000;
       row[arr[i].status] += secs;
       totals[arr[i].status] += secs;
-      if (arr[i].status !== "offline") {
-        eachHourSlice(start, end, (b, sec) => {
-          activeHourly[b.hour] += sec;
-        });
-      }
+      const target = hourlyBy[arr[i].status];
+      eachHourSlice(start, end, (b, sec) => {
+        target[b.hour] += sec;
+      });
     }
     for (const k of STATUSES) row[k] = Math.round(row[k]);
     perMember.push(row);
   }
-  perMember.sort((a, b) => b.online + b.idle + b.dnd - (a.online + a.idle + a.dnd));
+  // "Online" means status online. Idle and busy are tracked separately, not counted as online.
+  const rankBy = STATUSES.includes(status) ? status : "online";
+  perMember.sort((a, b) => b[rankBy] - a[rankBy] || b.online - a.online);
 
   const changesMap = new Map();
   const changesByStatus = { online: 0, idle: 0, dnd: 0, offline: 0 };
-  for (const r of prs) {
+  // With a status filter, "changes" means changes TO that status.
+  const prsShown = STATUSES.includes(status) ? prs.filter((r) => r.status === status) : prs;
+  for (const r of prs) changesByStatus[r.status] += 1;
+  for (const r of prsShown) {
     const k = dateKey(r.t);
     changesMap.set(k, (changesMap.get(k) || 0) + 1);
-    changesByStatus[r.status] += 1;
   }
 
   const round = (n) => Math.round(n);
@@ -337,6 +304,8 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
       until: new Date(now).toISOString(),
       user: user || null,
       channel: channel || null,
+      tz: z.tz,
+      status: STATUSES.includes(status) ? status : null,
       sessions_loaded: sessionRows.length,
       presence_loaded: presenceRows.length,
       truncated: false,
@@ -351,7 +320,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
       active_days: new Set([...dailyMap.keys()]).size,
       peak_concurrent: peak,
       together_pct: personTotal > 0 ? Math.round((personTogether / personTotal) * 1000) / 10 : null,
-      presence_changes: prs.length,
+      presence_changes: prsShown.length,
     },
     daily,
     hourly: hourly.map(round),
@@ -364,11 +333,11 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
     presence: {
       totals: Object.fromEntries(STATUSES.map((k) => [k, round(totals[k])])),
       per_member: perMember.slice(0, 25),
-      active_hourly: activeHourly.map(round),
+      hourly_by_status: Object.fromEntries(STATUSES.map((k) => [k, hourlyBy[k].map(round)])),
       daily_changes: days.map((date) => ({ date, count: changesMap.get(date) || 0 })),
       changes_by_status: changesByStatus,
     },
   };
 }
 
-module.exports = { computeStats, TZ };
+module.exports = { computeStats };

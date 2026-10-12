@@ -158,7 +158,7 @@ async function fetchAll(makeQuery) {
 }
 
 // All sessions overlapping the window that starts at sinceIso (null = everything).
-async function getSessionRows(sinceIso) {
+async function getSessionRows(sinceIso, untilIso) {
   if (!supabase) return { rows: [], truncated: false };
   try {
     return await fetchAll(() => {
@@ -167,6 +167,7 @@ async function getSessionRows(sinceIso) {
         .select("id, user_id, username, display_name, channel_id, channel_name, joined_at, left_at")
         .order("id", { ascending: true });
       if (sinceIso) q = q.or(`left_at.is.null,left_at.gte.${sinceIso}`);
+      if (untilIso) q = q.lte("joined_at", untilIso);
       return q;
     });
   } catch (err) {
@@ -175,7 +176,7 @@ async function getSessionRows(sinceIso) {
   }
 }
 
-async function getPresenceRows(sinceIso) {
+async function getPresenceRows(sinceIso, untilIso) {
   if (!supabase) return { rows: [], truncated: false };
   try {
     return await fetchAll(() => {
@@ -184,6 +185,7 @@ async function getPresenceRows(sinceIso) {
         .select("id, user_id, username, display_name, status, changed_at")
         .order("id", { ascending: true });
       if (sinceIso) q = q.gte("changed_at", sinceIso);
+      if (untilIso) q = q.lte("changed_at", untilIso);
       return q;
     });
   } catch (err) {
@@ -229,14 +231,23 @@ async function getVoiceLeaderboard(days = null, limit = 10) {
   }
 }
 
-// opts: { userId, kind: 'all' | 'presence' | 'voice' }
+// opts: { userId, channelId, status, kind: 'all' | 'presence' | 'voice', sinceIso, untilIso }
 async function getRecentLogs(limit = 30, opts = {}) {
   if (!supabase) return [];
-  const { userId, kind = "all" } = opts;
+  const { userId, channelId, status, sinceIso, untilIso } = opts;
+  let kind = opts.kind || "all";
   try {
-    const wantPresence = kind === "all" || kind === "presence";
-    const wantVoice = kind === "all" || kind === "voice";
+    // A status filter only makes sense for status changes; a channel filter only for voice events.
+    let wantPresence = kind === "all" || kind === "presence";
+    let wantVoice = kind === "all" || kind === "voice";
+    if (status) wantVoice = false;
+    if (channelId) wantPresence = false;
     const none = Promise.resolve({ data: [], error: null });
+    const window = (q, col) => {
+      if (sinceIso) q = q.gte(col, sinceIso);
+      if (untilIso) q = q.lte(col, untilIso);
+      return q;
+    };
 
     const presenceQ = wantPresence
       ? (() => {
@@ -246,7 +257,8 @@ async function getRecentLogs(limit = 30, opts = {}) {
             .order("changed_at", { ascending: false })
             .limit(limit);
           if (userId) q = q.eq("user_id", userId);
-          return q;
+          if (status) q = q.eq("status", status);
+          return window(q, "changed_at");
         })()
       : none;
     const joinsQ = wantVoice
@@ -257,7 +269,8 @@ async function getRecentLogs(limit = 30, opts = {}) {
             .order("joined_at", { ascending: false })
             .limit(limit);
           if (userId) q = q.eq("user_id", userId);
-          return q;
+          if (channelId) q = q.eq("channel_id", channelId);
+          return window(q, "joined_at");
         })()
       : none;
     const leavesQ = wantVoice
@@ -269,7 +282,8 @@ async function getRecentLogs(limit = 30, opts = {}) {
             .order("left_at", { ascending: false })
             .limit(limit);
           if (userId) q = q.eq("user_id", userId);
-          return q;
+          if (channelId) q = q.eq("channel_id", channelId);
+          return window(q, "left_at");
         })()
       : none;
 
@@ -277,31 +291,9 @@ async function getRecentLogs(limit = 30, opts = {}) {
     for (const r of [presence, joins, leaves]) if (r.error) throw r.error;
 
     const events = [
-      ...presence.data.map((r) => ({
-        type: "presence",
-        user_id: r.user_id,
-        username: r.username,
-        display_name: r.display_name,
-        status: r.status,
-        at: r.changed_at,
-      })),
-      ...joins.data.map((r) => ({
-        type: "voice_join",
-        user_id: r.user_id,
-        username: r.username,
-        display_name: r.display_name,
-        channel_name: r.channel_name,
-        at: r.joined_at,
-      })),
-      ...leaves.data.map((r) => ({
-        type: "voice_leave",
-        user_id: r.user_id,
-        username: r.username,
-        display_name: r.display_name,
-        channel_name: r.channel_name,
-        duration_seconds: r.duration_seconds,
-        at: r.left_at,
-      })),
+      ...presence.data.map((r) => ({ type: "presence", user_id: r.user_id, username: r.username, display_name: r.display_name, status: r.status, at: r.changed_at })),
+      ...joins.data.map((r) => ({ type: "voice_join", user_id: r.user_id, username: r.username, display_name: r.display_name, channel_name: r.channel_name, at: r.joined_at })),
+      ...leaves.data.map((r) => ({ type: "voice_leave", user_id: r.user_id, username: r.username, display_name: r.display_name, channel_name: r.channel_name, duration_seconds: r.duration_seconds, at: r.left_at })),
     ];
 
     events.sort((a, b) => new Date(b.at) - new Date(a.at));

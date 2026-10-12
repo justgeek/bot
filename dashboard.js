@@ -2,6 +2,8 @@
 const path = require("path");
 const db = require("./db");
 const { computeStats } = require("./stats");
+const { computeReport } = require("./report");
+const { makeTz, validTz, DEFAULT_TZ } = require("./tz");
 const { IDs } = require("./config");
 
 const DAY = 86400e3;
@@ -43,23 +45,43 @@ module.exports = function registerDashboard(app, client) {
   }
 
   function parseFilters(req) {
-    const range = RANGES[req.query.range] !== undefined ? req.query.range : "7d";
+    const tz = validTz(req.query.tz) || DEFAULT_TZ; // each viewer's own timezone
+    let range = Object.prototype.hasOwnProperty.call(RANGES, req.query.range) ? req.query.range : "7d";
+    let fromMs = null;
+    let toMs = null;
+    if (req.query.range === "custom") {
+      // custom window: local date-times like 2026-10-11T20:30, read on the viewer's clock
+      const z = makeTz(tz);
+      fromMs = z.localToMs(req.query.from);
+      toMs = z.localToMs(req.query.to);
+      const good = Number.isFinite(fromMs) && Number.isFinite(toMs) && fromMs < toMs && toMs - fromMs <= 400 * DAY;
+      range = good ? "custom" : "7d";
+      if (!good) fromMs = toMs = null;
+    }
     const user = ID_RE.test(req.query.user || "") ? req.query.user : "";
     const channel = ID_RE.test(req.query.channel || "") ? req.query.channel : "";
-    return { range, user, channel };
+    const status = ["online", "idle", "dnd", "offline"].includes(req.query.status) ? req.query.status : "";
+    return { range, user, channel, tz, status, fromMs, toMs };
   }
 
-  function loadRange(range) {
-    return cached(`range:${range}`, 30000, async () => {
-      const days = RANGES[range];
-      const since = days ? Date.now() - days * DAY : null;
-      const sinceIso = since ? new Date(since).toISOString() : null;
-      const [s, p] = await Promise.all([db.getSessionRows(sinceIso), db.getPresenceRows(sinceIso)]);
+  // The [since, until] window (ms) a set of filters describes; null = open ended.
+  function windowOf({ range, fromMs, toMs }) {
+    if (range === "custom") return { since: fromMs, until: toMs };
+    const days = RANGES[range];
+    return { since: days ? Date.now() - days * DAY : null, until: null };
+  }
+
+  function loadRange(f) {
+    return cached(`range:${f.range}:${f.fromMs}:${f.toMs}`, 30000, async () => {
+      const { since, until } = windowOf(f);
+      const iso = (ms) => (ms ? new Date(ms).toISOString() : null);
+      const [s, p] = await Promise.all([db.getSessionRows(iso(since), iso(until)), db.getPresenceRows(iso(since), iso(until))]);
       return {
         sessionRows: s.rows,
         presenceRows: p.rows,
         truncated: s.truncated || p.truncated,
         since,
+        until,
       };
     });
   }
@@ -121,6 +143,7 @@ module.exports = function registerDashboard(app, client) {
       res.set("Cache-Control", "no-store");
       res.json({
         server_name: guild?.name || "Discord server",
+        server_icon: guild?.iconURL?.({ size: 128, extension: "png", forceStatic: true }) || null,
         bot_ready: client.isReady(),
         bot_uptime_seconds: Math.floor(process.uptime()),
         counts,
@@ -160,17 +183,20 @@ module.exports = function registerDashboard(app, client) {
   // ---------- Analytics ----------
   app.get("/api/stats", guard, async (req, res) => {
     try {
-      const { range, user, channel } = parseFilters(req);
-      const out = await cached(`stats:${range}:${user}:${channel}`, 20000, async () => {
-        const d = await loadRange(range);
+      const f = parseFilters(req);
+      const { range, user, channel, tz, status } = f;
+      const out = await cached(`stats:${range}:${f.fromMs}:${f.toMs}:${user}:${channel}:${tz}:${status}`, 20000, async () => {
+        const d = await loadRange(f);
         const result = computeStats({
           sessionRows: d.sessionRows,
           presenceRows: d.presenceRows,
-          now: Date.now(),
+          now: d.until ? Math.min(Date.now(), d.until) : Date.now(),
           since: d.since,
           user,
           channel,
           liveName,
+          tz,
+          status,
         });
         result.meta.range = range;
         result.meta.truncated = d.truncated;
@@ -186,8 +212,9 @@ module.exports = function registerDashboard(app, client) {
   });
 
   // Individual sessions (newest first), same filters as /api/stats.
-  async function sessionList({ range, user, channel }) {
-    const d = await loadRange(range);
+  async function sessionList(f) {
+    const { user, channel } = f;
+    const d = await loadRange(f);
     const now = Date.now();
     const rows = d.sessionRows
       .filter((r) => (!user || r.user_id === user) && (!channel || r.channel_id === channel))
@@ -224,17 +251,20 @@ module.exports = function registerDashboard(app, client) {
 
   app.get("/api/sessions.csv", guard, async (req, res) => {
     try {
-      const rows = await sessionList(parseFilters(req));
+      const filters = parseFilters(req);
+      const rows = await sessionList(filters);
+      const local = new Intl.DateTimeFormat("en-CA", { timeZone: filters.tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+      const fmtLocal = (iso) => (iso ? local.format(new Date(iso)).replace(",", "") : "");
       // Prefix cells that start with =,+,-,@ so spreadsheets don't run them as formulas.
       const cell = (v) => {
         let s = String(v ?? "");
         if (/^[=+\-@]/.test(s)) s = "'" + s;
         return `"${s.replace(/"/g, '""')}"`;
       };
-      const lines = ["member,username,user_id,channel,joined_at_utc,left_at_utc,duration_seconds"];
+      const lines = [`member,username,user_id,channel,joined_local (${filters.tz}),left_local (${filters.tz}),joined_at_utc,left_at_utc,duration_seconds`];
       for (const r of rows) {
         lines.push(
-          [r.name, r.username, r.user_id, r.channel_name, r.joined_at, r.left_at || "", r.duration_seconds]
+          [r.name, r.username, r.user_id, r.channel_name, fmtLocal(r.joined_at), fmtLocal(r.left_at), r.joined_at, r.left_at || "", r.duration_seconds]
             .map(cell)
             .join(",")
         );
@@ -245,6 +275,83 @@ module.exports = function registerDashboard(app, client) {
     } catch (err) {
       console.error("[API] /api/sessions.csv failed:", err);
       res.status(500).send("export failed");
+    }
+  });
+
+  // Role color + avatar for each member, so names can look like they do in Discord.
+  app.get("/api/people", guard, (req, res) => {
+    const guild = getGuild();
+    const people = {};
+    if (guild) {
+      guild.members.cache.forEach((m) => {
+        if (m.user.bot) return;
+        // displayHexColor is "#000000" when the member's roles have no color
+        const color = m.displayHexColor && m.displayHexColor !== "#000000" ? m.displayHexColor : null;
+        people[m.id] = {
+          name: m.displayName,
+          color,
+          avatar: m.displayAvatarURL({ size: 64, extension: "webp", forceStatic: true }),
+        };
+      });
+    }
+    res.set("Cache-Control", "no-store");
+    res.json({ people });
+  });
+
+  // ---------- Attendance reports ----------
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const validDate = (s) => {
+    if (!DATE_RE.test(s)) return false;
+    const [y, m, d] = s.split("-").map(Number);
+    const t = new Date(Date.UTC(y, m - 1, d));
+    return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
+  };
+  const MAX_REPORT_DAYS = 92;
+
+  app.get("/api/report", guard, async (req, res) => {
+    try {
+      const tz = validTz(req.query.tz) || DEFAULT_TZ;
+      const type = req.query.type === "presence" ? "presence" : "voice";
+      const from = String(req.query.from || "");
+      const to = String(req.query.to || "");
+      if (!validDate(from) || !validDate(to) || from > to) return res.status(400).json({ error: "bad_dates" });
+
+      const z = makeTz(tz);
+      let days = 0;
+      for (let d = from; d <= to && days <= MAX_REPORT_DAYS; d = z.addDays(d, 1)) days++;
+      if (days > MAX_REPORT_DAYS) return res.status(400).json({ error: "range_too_long", max_days: MAX_REPORT_DAYS });
+
+      const user = ID_RE.test(req.query.user || "") ? req.query.user : "";
+      const channel = ID_RE.test(req.query.channel || "") ? req.query.channel : "";
+      const minMinutes = Math.min(Math.max(parseInt(req.query.min, 10) || 0, 0), 600);
+      const mode = ["active", "idle", "dnd"].includes(req.query.mode) ? req.query.mode : "online";
+      const roster = req.query.roster !== "0";
+
+      const key = `report:${type}:${from}:${to}:${tz}:${user}:${channel}:${minMinutes}:${mode}:${roster}`;
+      const out = await cached(key, 20000, async () => {
+        const fromMs = z.startOfDate(from);
+        const toMs = z.startOfDate(z.addDays(to, 1));
+        const none = { rows: [], truncated: false };
+        // Status needs earlier history so we know what each member's status was when the period began.
+        const [s, p] = await Promise.all([
+          type === "voice" ? db.getSessionRows(new Date(fromMs).toISOString(), new Date(toMs).toISOString()) : none,
+          type === "presence" ? db.getPresenceRows(new Date(fromMs - 14 * DAY).toISOString(), new Date(toMs).toISOString()) : none,
+        ]);
+        const rosterIds = [];
+        const guild = getGuild();
+        if (roster && !user && guild) guild.members.cache.forEach((m) => { if (!m.user.bot) rosterIds.push(m.id); });
+        const result = computeReport({
+          type, sessionRows: s.rows, presenceRows: p.rows, from, to, tz, user, channel,
+          minSeconds: minMinutes * 60, mode, roster, rosterIds, now: Date.now(), liveName,
+        });
+        result.meta.truncated = s.truncated || p.truncated;
+        return result;
+      });
+      res.set("Cache-Control", "no-store");
+      res.json(out);
+    } catch (err) {
+      console.error("[API] /api/report failed:", err);
+      res.status(500).json({ error: "report_failed" });
     }
   });
 
@@ -265,10 +372,18 @@ module.exports = function registerDashboard(app, client) {
 
   app.get("/api/recent-logs", guard, async (req, res) => {
     try {
-      const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 30, 1), 100);
-      const user = ID_RE.test(req.query.user || "") ? req.query.user : "";
+      const f = parseFilters(req);
+      const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 30, 1), 300);
       const kind = ["presence", "voice"].includes(req.query.type) ? req.query.type : "all";
-      const logs = await db.getRecentLogs(limit, { userId: user, kind });
+      const { since, until } = windowOf(f);
+      const logs = await db.getRecentLogs(limit, {
+        userId: f.user,
+        channelId: f.channel,
+        status: f.status,
+        kind,
+        sinceIso: since ? new Date(since).toISOString() : null,
+        untilIso: until ? new Date(until).toISOString() : null,
+      });
       for (const l of logs) l.name = liveName(l.user_id) || l.display_name || l.username;
       res.set("Cache-Control", "no-store");
       res.json({ logs });
