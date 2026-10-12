@@ -167,8 +167,6 @@
       --btn-radius: 999px;
       --seg-radius: 999px;
       --nav-radius: 999px;
-      --nav-active-bg: color-mix(in srgb, var(--accent) 22%, transparent);
-      --nav-active-fg: var(--accent);
     }
 
     [data-theme="amoled"] {
@@ -189,9 +187,6 @@
       --btn-fg: var(--accent);
       --btn-border: var(--accent);
       --nav-radius: 0rem;
-      --nav-active-bg: transparent;
-      --nav-active-fg: var(--accent);
-      --nav-active-shadow: inset 3px 0 0 var(--accent);
     }
 
     [data-theme="vampire"] {
@@ -207,8 +202,7 @@
       --font: "Crimson Pro", Georgia, serif;
       --font-heading: "Pirata One", "Crimson Pro", Georgia, serif;
       --radius: .3rem;
-      --btn-bg: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #3b1060));
-      --btn-border: color-mix(in srgb, var(--accent) 60%, #000);
+      --btn-bg: linear-gradient(180deg, var(--accent), #3b1060);
     }
 
     [data-theme="arctic"] {
@@ -765,34 +759,35 @@
       font-weight: 600;
     }
 
+    /* Safe RGBA background styles so html2canvas never crashes on color-mix */
     .b-online {
       color: var(--online);
-      background: color-mix(in srgb, var(--online) 16%, transparent);
+      background: rgba(35, 165, 90, 0.16);
     }
 
     .b-idle {
       color: var(--idle);
-      background: color-mix(in srgb, var(--idle) 16%, transparent);
+      background: rgba(240, 178, 50, 0.16);
     }
 
     .b-dnd {
       color: var(--dnd);
-      background: color-mix(in srgb, var(--dnd) 16%, transparent);
+      background: rgba(242, 63, 67, 0.16);
     }
 
     .b-offline {
       color: var(--offline);
-      background: color-mix(in srgb, var(--offline) 20%, transparent);
+      background: rgba(128, 132, 142, 0.2);
     }
 
     .b-accent {
       color: var(--accent);
-      background: color-mix(in srgb, var(--accent) 18%, transparent);
+      background: rgba(220, 20, 60, 0.2);
     }
 
     .b-accent-dim {
       color: var(--muted);
-      background: color-mix(in srgb, var(--accent) 8%, transparent);
+      background: rgba(128, 132, 142, 0.1);
     }
 
     .bar-track {
@@ -1298,7 +1293,7 @@
     }
 
     .sheet td.fut {
-      background: repeating-linear-gradient(45deg, transparent 0 4px, color-mix(in srgb, var(--border) 60%, transparent) 4px 5px);
+      background: repeating-linear-gradient(45deg, transparent 0 4px, rgba(255, 255, 255, 0.05) 4px 5px);
     }
 
     .sheet .r {
@@ -1309,7 +1304,7 @@
     .modal-overlay {
       position: fixed;
       inset: 0;
-      z-index: 50;
+      z-index: 60;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1703,7 +1698,7 @@
           </div>
         </section>
 
-        <!-- ============ Reports (Fixed Z-Index & Multi-Select Dropdown) ============ -->
+        <!-- ============ Reports ============ -->
         <section class="tab-panel space-y-5" data-tab-panel="reports">
           <!-- Elevated relative container with z-30 to stay strictly above #rOut -->
           <div class="card p-5 no-print relative" style="z-index: 30;">
@@ -2328,7 +2323,7 @@
     function updateReportMemberSummary() {
       const checked = [...document.querySelectorAll(".r-user-check:checked")];
       const summary = $("rUserSummary");
-      if (checked.length === 0 || checked.length === reportMembersCache.length) {
+      if (checked.length === 0 || (reportMembersCache.length && checked.length === reportMembersCache.length)) {
         summary.textContent = "All members";
       } else if (checked.length === 1) {
         const uid = checked[0].value;
@@ -2345,7 +2340,7 @@
 
     function getSelectedReportUsers() {
       const checked = [...document.querySelectorAll(".r-user-check:checked")];
-      if (checked.length === 0 || checked.length === reportMembersCache.length) {
+      if (checked.length === 0 || (reportMembersCache.length && checked.length === reportMembersCache.length)) {
         return [];
       }
       return checked.map((cb) => cb.value);
@@ -2379,8 +2374,82 @@
           f.channels.map((c2) => `<option value="${esc(c2.channel_id)}">${esc(c2.name)}${c2.is_afk ? " [AFK]" : ""}</option>`).join("");
         populateReportMemberMultiSelect(f.members);
         populateShareChannels(f.share_channels || []);
+
+        // If opened via shared report URL, apply report parameters and auto-generate
+        if (applyUrlReportParams()) {
+          showTab("reports");
+          generateReport();
+        }
       } catch (e) { }
       loadPeople();
+    }
+
+    // -------------------------------------------------------------
+    // URL SERIALIZATION & PARSING FOR REPORTS
+    // -------------------------------------------------------------
+    function getReportUrl() {
+      const q = new URLSearchParams();
+      if (KEY) q.set("key", KEY);
+      q.set("tab", "reports");
+      q.set("repType", $("rType") ? $("rType").value : "voice");
+      q.set("repPeriod", $("rPeriod") ? $("rPeriod").value : "last7");
+
+      if ($("rPeriod") && $("rPeriod").value === "custom") {
+        if ($("rFrom") && $("rFrom").value) q.set("repFrom", $("rFrom").value);
+        if ($("rTo") && $("rTo").value) q.set("repTo", $("rTo").value);
+      }
+
+      const selectedUsers = getSelectedReportUsers();
+      if (selectedUsers && selectedUsers.length > 0) {
+        q.set("repUsers", selectedUsers.join(","));
+      }
+
+      if ($("rChannel") && $("rChannel").value) {
+        q.set("repChan", $("rChannel").value);
+      }
+
+      if ($("rType") && $("rType").value === "slackers") {
+        if ($("rTargetTime")) q.set("targetTime", $("rTargetTime").value);
+        if ($("rGrace")) q.set("grace", $("rGrace").value);
+      } else if ($("rType") && $("rType").value === "presence") {
+        if ($("rMode")) q.set("repMode", $("rMode").value);
+        if ($("rMin")) q.set("repMin", $("rMin").value);
+        q.set("repRoster", $("rRoster") && $("rRoster").checked ? "1" : "0");
+      } else {
+        if ($("rMin")) q.set("repMin", $("rMin").value);
+        q.set("repRoster", $("rRoster") && $("rRoster").checked ? "1" : "0");
+      }
+
+      return window.location.origin + window.location.pathname + "?" + q.toString() + "#reports";
+    }
+
+    function applyUrlReportParams() {
+      const p = new URLSearchParams(window.location.search);
+      const repType = p.get("repType");
+      if (!repType) return false;
+
+      if ($("rType")) $("rType").value = repType;
+      if (p.get("repPeriod") && $("rPeriod")) $("rPeriod").value = p.get("repPeriod");
+      if (p.get("repFrom") && $("rFrom")) $("rFrom").value = p.get("repFrom");
+      if (p.get("repTo") && $("rTo")) $("rTo").value = p.get("repTo");
+      if (p.get("targetTime") && $("rTargetTime")) $("rTargetTime").value = p.get("targetTime");
+      if (p.get("grace") && $("rGrace")) $("rGrace").value = p.get("grace");
+      if (p.get("repChan") && $("rChannel")) $("rChannel").value = p.get("repChan");
+      if (p.get("repMin") && $("rMin")) $("rMin").value = p.get("repMin");
+      if (p.get("repMode") && $("rMode")) $("rMode").value = p.get("repMode");
+      if (p.get("repRoster") && $("rRoster")) $("rRoster").checked = (p.get("repRoster") === "1");
+
+      const repUsers = p.get("repUsers");
+      if (repUsers) {
+        const userIds = new Set(repUsers.split(",").map((s) => s.trim()).filter(Boolean));
+        document.querySelectorAll(".r-user-check").forEach((cb) => {
+          cb.checked = userIds.has(cb.value);
+        });
+        updateReportMemberSummary();
+      }
+
+      updateReportForm();
+      return true;
     }
 
     function renderOverview(o) {
@@ -3053,6 +3122,11 @@
         repLogLimit = 100;
         renderReport();
         $("rStatus").textContent = "";
+
+        // Update browser URL so copying link preserves all report parameters
+        if (history.replaceState) {
+          history.replaceState(null, "", getReportUrl());
+        }
       } catch (e) {
         $("rStatus").textContent = String(e.status) === "400" ? "Pick valid dates, up to 92 days apart." : "Couldn't generate the report. Try again.";
       }
@@ -3232,7 +3306,7 @@
           if (!c) return `<td class="cell muted">&middot;</td>`;
           const present = c.s >= m.min_seconds;
           const pct = present ? Math.round(25 + 75 * (c.s / maxS)) : 0;
-          const style = present ? `background:color-mix(in srgb, var(--accent) ${pct}%, var(--surface-2));color:${pct > 55 ? "var(--accent-fg)" : "var(--text)"}` : "";
+          const style = present ? `background:var(--accent);opacity:${0.25 + 0.75 * (c.s / maxS)};color:var(--accent-fg);` : "";
           const tip = [
             mem.name + ", " + fmtDay(d, true),
             L.firstCol + " " + tod(c.f),
@@ -3360,7 +3434,6 @@
       let imageData = null;
       if ($("shareIncludeImage").checked) {
         try {
-          // If sharing from Reports tab, capture the rendered report container (#rOut)
           const targetEl = (currentTab === "reports" && $("rOut")?.children.length)
             ? $("rOut")
             : (document.querySelector(".tab-panel.active") || $("mainCaptureArea"));
@@ -3372,6 +3445,14 @@
             logging: false,
             backgroundColor: cssv("--bg") || "#0a0a0b",
             ignoreElements: (el) => el.classList.contains("no-print") || el.classList.contains("modal-overlay"),
+            onclone: (clonedDoc) => {
+              clonedDoc.querySelectorAll("*").forEach((el) => {
+                const comp = window.getComputedStyle(el);
+                if (comp.backgroundColor && comp.backgroundColor.includes("color-mix")) {
+                  el.style.backgroundColor = "transparent";
+                }
+              });
+            }
           });
           imageData = canvas.toDataURL("image/png");
         } catch (err) {
@@ -3387,12 +3468,16 @@
           (state.channel ? `🎙️ **Channel:** ${$("fChannel").selectedOptions[0]?.text || state.channel}\n` : "") +
           (state.status ? `🟢 **Status:** ${state.status.toUpperCase()}\n` : "");
 
+        let reportUrl = window.location.href;
+
         if (currentTab === "reports" && lastReport) {
           const rm = lastReport.meta, rsm = lastReport.summary;
+          reportUrl = getReportUrl();
+
           if (rm.type === "slackers") {
             title = `⚠️ Slackers & Late Penalty Report (${rm.from} to ${rm.to})`;
             summary = `🎯 **Expected Arrival:** ${rm.target_time} (Grace: ${rm.grace_minutes}m)\n` +
-              `👑 **Chief Slacker:** ${rsm.chief_slacker ? rsm.chief_slacker.name : "Nobody!"} (${rsm.chief_slacker?.penalty_points || 0} pts)\n` +
+              `👑 **Chief Slacker:** ${rsm.chief_slacker ? rsm.chief_slacker.name : "None!"} (${rsm.chief_slacker?.penalty_points || 0} pts)\n` +
               `🚨 **Total Penalties:** ${rsm.total_penalties} | **Late Occurrences:** ${rsm.total_late_occurrences}`;
           } else {
             title = `📋 ${rm.type === "voice" ? "Voice" : "Online"} Attendance Report (${rm.from} to ${rm.to})`;
@@ -3406,7 +3491,7 @@
           channelId,
           title,
           summary,
-          url: window.location.href,
+          url: reportUrl,
           imageData,
         };
 
@@ -3452,7 +3537,8 @@
     if (state.status) $("fStatus").value = state.status;
     applyTheme(themePref(), false);
     renderRangeButtons();
-    const startTab = location.hash.slice(1) || store.get("banha-tab") || "overview";
+
+    const startTab = location.hash.slice(1) || (new URLSearchParams(location.search).get("tab")) || store.get("banha-tab") || "overview";
     if (location.hash.slice(1) !== startTab) history.replaceState(null, "", location.pathname + location.search + "#" + startTab);
     showTab(startTab);
     loadFilterOptions().then(syncUrl);
