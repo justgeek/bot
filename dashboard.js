@@ -1,19 +1,22 @@
 // dashboard.js - dashboard page (GET /) and JSON API (/api/*).
 const path = require("path");
+const Discord = require("discord.js");
 const db = require("./db");
 const { computeStats } = require("./stats");
 const { computeReport } = require("./report");
 const { makeTz, validTz, DEFAULT_TZ } = require("./tz");
-const { IDs } = require("./config");
+const { IDs, MemberColorOverrides, allowedShareChannels } = require("./config");
 
 const DAY = 86400e3;
 const RANGES = { "24h": 1, "7d": 7, "30d": 30, "90d": 90, "365d": 365, all: null };
 const ID_RE = /^\d{5,25}$/;
 const STATUS_ORDER = { online: 0, idle: 1, dnd: 2 };
 
+// 3-minute rate limiting for Discord report sharing
+let lastShareTimestamp = 0;
+const SHARE_COOLDOWN_MS = 3 * 60 * 1000;
+
 module.exports = function registerDashboard(app, client) {
-  // Optional protection: set DASHBOARD_KEY on Heroku and open /?key=YOUR_KEY.
-  // If it isn't set, the dashboard is public.
   function guard(req, res, next) {
     const required = process.env.DASHBOARD_KEY;
     if (!required) return next();
@@ -23,11 +26,10 @@ module.exports = function registerDashboard(app, client) {
   }
 
   const getGuild = () => client.guilds.cache.get(IDs.guild);
-  // Server nickname if set, otherwise global display name, otherwise username.
   const liveName = (id) => getGuild()?.members.cache.get(id)?.displayName || null;
+  const liveStatus = (id) => getGuild()?.members.cache.get(id)?.presence?.status || "offline";
   const hours = (secs) => Math.round((secs / 3600) * 10) / 10;
 
-  // ---- tiny TTL cache (also shares one in-flight request between viewers) ----
   const cache = new Map();
   function cached(key, ttlMs, fn) {
     const now = Date.now();
@@ -45,13 +47,13 @@ module.exports = function registerDashboard(app, client) {
   }
 
   function parseFilters(req) {
-    const tz = validTz(req.query.tz) || DEFAULT_TZ; // each viewer's own timezone
+    const tz = validTz(req.query.tz) || DEFAULT_TZ;
+    const dayStart = Math.min(23, Math.max(0, parseInt(req.query.dayStart, 10) || 0));
     let range = Object.prototype.hasOwnProperty.call(RANGES, req.query.range) ? req.query.range : "7d";
     let fromMs = null;
     let toMs = null;
     if (req.query.range === "custom") {
-      // custom window: local date-times like 2026-10-11T20:30, read on the viewer's clock
-      const z = makeTz(tz);
+      const z = makeTz(tz, dayStart);
       fromMs = z.localToMs(req.query.from);
       toMs = z.localToMs(req.query.to);
       const good = Number.isFinite(fromMs) && Number.isFinite(toMs) && fromMs < toMs && toMs - fromMs <= 400 * DAY;
@@ -59,12 +61,22 @@ module.exports = function registerDashboard(app, client) {
       if (!good) fromMs = toMs = null;
     }
     const user = ID_RE.test(req.query.user || "") ? req.query.user : "";
-    const channel = ID_RE.test(req.query.channel || "") ? req.query.channel : "";
+    const rawChan = req.query.channel || "";
+    let channel = "";
+    let includeAfk = false;
+
+    if (rawChan === "__all__") {
+      includeAfk = true;
+      channel = "";
+    } else if (ID_RE.test(rawChan)) {
+      channel = rawChan;
+      includeAfk = true; // explicitly picked channel
+    }
+
     const status = ["online", "idle", "dnd", "offline"].includes(req.query.status) ? req.query.status : "";
-    return { range, user, channel, tz, status, fromMs, toMs };
+    return { range, user, channel, rawChan, includeAfk, tz, dayStart, status, fromMs, toMs };
   }
 
-  // The [since, until] window (ms) a set of filters describes; null = open ended.
   function windowOf({ range, fromMs, toMs }) {
     if (range === "custom") return { since: fromMs, until: toMs };
     const days = RANGES[range];
@@ -86,7 +98,6 @@ module.exports = function registerDashboard(app, client) {
     });
   }
 
-  // Plain-text health check (the old root response), handy for uptime pingers.
   app.get("/health", (req, res) => {
     res.send("BANHA FOREVER !!!!! BOT IS RUNNING OK");
   });
@@ -117,10 +128,13 @@ module.exports = function registerDashboard(app, client) {
         guild.voiceStates.cache.forEach((vs) => {
           const user = vs.member?.user;
           if (!vs.channelId || !user || user.bot || !db.isTrackedChannel(vs.channelId)) return;
+          const isAfk = db.isAfkChannel(vs.channelId, vs.channel?.name, client);
+
           if (!channels.has(vs.channelId)) {
             channels.set(vs.channelId, {
               channel_id: vs.channelId,
               channel_name: vs.channel?.name || "Voice",
+              is_afk: isAfk,
               members: [],
             });
           }
@@ -138,7 +152,13 @@ module.exports = function registerDashboard(app, client) {
       const inVoice = [...channels.values()].sort((a, b) =>
         a.channel_name.localeCompare(b.channel_name, undefined, { numeric: true })
       );
-      const totalSeconds = await db.getTotalVoiceSeconds();
+
+      // In-voice count excludes members idling in the AFK channel
+      const inVoiceActiveCount = inVoice
+        .filter((c) => !c.is_afk)
+        .reduce((n, c) => n + c.members.length, 0);
+
+      const totalSeconds = await db.getTotalVoiceSeconds(true, client);
 
       res.set("Cache-Control", "no-store");
       res.json({
@@ -149,7 +169,7 @@ module.exports = function registerDashboard(app, client) {
         counts,
         members_online: membersOnline,
         in_voice: inVoice,
-        in_voice_count: inVoice.reduce((n, c) => n + c.members.length, 0),
+        in_voice_count: inVoiceActiveCount,
         total_voice_seconds: totalSeconds,
         total_voice_hours: hours(totalSeconds),
       });
@@ -159,7 +179,7 @@ module.exports = function registerDashboard(app, client) {
     }
   });
 
-  // Members and voice channels for the filter dropdowns.
+  // Channels & members for filter dropdowns
   app.get("/api/filters", guard, (req, res) => {
     const guild = getGuild();
     const members = [];
@@ -170,22 +190,28 @@ module.exports = function registerDashboard(app, client) {
       });
       guild.channels.cache.forEach((c) => {
         if (c.isVoiceBased?.() && db.isTrackedChannel(c.id)) {
-          channels.push({ channel_id: c.id, name: c.name, pos: c.rawPosition ?? 0 });
+          const isAfk = db.isAfkChannel(c.id, c.name, client);
+          channels.push({ channel_id: c.id, name: c.name, is_afk: isAfk, pos: c.rawPosition ?? 0 });
         }
       });
     }
     members.sort((a, b) => a.name.localeCompare(b.name));
     channels.sort((a, b) => a.pos - b.pos);
     res.set("Cache-Control", "no-store");
-    res.json({ members, channels: channels.map(({ pos, ...c }) => c) });
+    res.json({
+      members,
+      channels: channels.map(({ pos, ...c }) => c),
+      share_channels: allowedShareChannels || []
+    });
   });
 
   // ---------- Analytics ----------
   app.get("/api/stats", guard, async (req, res) => {
     try {
       const f = parseFilters(req);
-      const { range, user, channel, tz, status } = f;
-      const out = await cached(`stats:${range}:${f.fromMs}:${f.toMs}:${user}:${channel}:${tz}:${status}`, 20000, async () => {
+      const { range, user, channel, includeAfk, tz, dayStart, status } = f;
+      const key = `stats:${range}:${f.fromMs}:${f.toMs}:${user}:${channel}:${includeAfk}:${tz}:${dayStart}:${status}`;
+      const out = await cached(key, 20000, async () => {
         const d = await loadRange(f);
         const result = computeStats({
           sessionRows: d.sessionRows,
@@ -194,9 +220,13 @@ module.exports = function registerDashboard(app, client) {
           since: d.since,
           user,
           channel,
+          includeAfk,
           liveName,
+          liveStatus,
           tz,
+          dayStart,
           status,
+          client,
         });
         result.meta.range = range;
         result.meta.truncated = d.truncated;
@@ -211,13 +241,17 @@ module.exports = function registerDashboard(app, client) {
     }
   });
 
-  // Individual sessions (newest first), same filters as /api/stats.
   async function sessionList(f) {
-    const { user, channel } = f;
+    const { user, channel, includeAfk } = f;
     const d = await loadRange(f);
     const now = Date.now();
     const rows = d.sessionRows
-      .filter((r) => (!user || r.user_id === user) && (!channel || r.channel_id === channel))
+      .filter((r) => {
+        if (user && r.user_id !== user) return false;
+        if (channel && r.channel_id !== channel) return false;
+        if (!includeAfk && !channel && db.isAfkChannel(r.channel_id, r.channel_name, client)) return false;
+        return true;
+      })
       .map((r) => {
         const start = Date.parse(r.joined_at);
         const end = r.left_at ? Date.parse(r.left_at) : now;
@@ -255,7 +289,6 @@ module.exports = function registerDashboard(app, client) {
       const rows = await sessionList(filters);
       const local = new Intl.DateTimeFormat("en-CA", { timeZone: filters.tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
       const fmtLocal = (iso) => (iso ? local.format(new Date(iso)).replace(",", "") : "");
-      // Prefix cells that start with =,+,-,@ so spreadsheets don't run them as formulas.
       const cell = (v) => {
         let s = String(v ?? "");
         if (/^[=+\-@]/.test(s)) s = "'" + s;
@@ -278,15 +311,16 @@ module.exports = function registerDashboard(app, client) {
     }
   });
 
-  // Role color + avatar for each member, so names can look like they do in Discord.
+  // Role color + avatar with support for MemberColorOverrides
   app.get("/api/people", guard, (req, res) => {
     const guild = getGuild();
     const people = {};
+    const overrides = MemberColorOverrides || {};
     if (guild) {
       guild.members.cache.forEach((m) => {
         if (m.user.bot) return;
-        // displayHexColor is "#000000" when the member's roles have no color
-        const color = m.displayHexColor && m.displayHexColor !== "#000000" ? m.displayHexColor : null;
+        const override = overrides[m.id] || overrides[m.user.username.toLowerCase()] || overrides[m.displayName.toLowerCase()];
+        const color = override || (m.displayHexColor && m.displayHexColor !== "#000000" ? m.displayHexColor : null);
         people[m.id] = {
           name: m.displayName,
           color,
@@ -311,28 +345,37 @@ module.exports = function registerDashboard(app, client) {
   app.get("/api/report", guard, async (req, res) => {
     try {
       const tz = validTz(req.query.tz) || DEFAULT_TZ;
+      const dayStart = Math.min(23, Math.max(0, parseInt(req.query.dayStart, 10) || 0));
       const type = req.query.type === "presence" ? "presence" : "voice";
       const from = String(req.query.from || "");
       const to = String(req.query.to || "");
       if (!validDate(from) || !validDate(to) || from > to) return res.status(400).json({ error: "bad_dates" });
 
-      const z = makeTz(tz);
+      const z = makeTz(tz, dayStart);
       let days = 0;
       for (let d = from; d <= to && days <= MAX_REPORT_DAYS; d = z.addDays(d, 1)) days++;
       if (days > MAX_REPORT_DAYS) return res.status(400).json({ error: "range_too_long", max_days: MAX_REPORT_DAYS });
 
       const user = ID_RE.test(req.query.user || "") ? req.query.user : "";
-      const channel = ID_RE.test(req.query.channel || "") ? req.query.channel : "";
+      const rawChan = req.query.channel || "";
+      let channel = "";
+      let includeAfk = false;
+      if (rawChan === "__all__") {
+        includeAfk = true;
+      } else if (ID_RE.test(rawChan)) {
+        channel = rawChan;
+        includeAfk = true;
+      }
+
       const minMinutes = Math.min(Math.max(parseInt(req.query.min, 10) || 0, 0), 600);
       const mode = ["active", "idle", "dnd"].includes(req.query.mode) ? req.query.mode : "online";
       const roster = req.query.roster !== "0";
 
-      const key = `report:${type}:${from}:${to}:${tz}:${user}:${channel}:${minMinutes}:${mode}:${roster}`;
+      const key = `report:${type}:${from}:${to}:${tz}:${dayStart}:${user}:${channel}:${includeAfk}:${minMinutes}:${mode}:${roster}`;
       const out = await cached(key, 20000, async () => {
         const fromMs = z.startOfDate(from);
         const toMs = z.startOfDate(z.addDays(to, 1));
         const none = { rows: [], truncated: false };
-        // Status needs earlier history so we know what each member's status was when the period began.
         const [s, p] = await Promise.all([
           type === "voice" ? db.getSessionRows(new Date(fromMs).toISOString(), new Date(toMs).toISOString()) : none,
           type === "presence" ? db.getPresenceRows(new Date(fromMs - 14 * DAY).toISOString(), new Date(toMs).toISOString()) : none,
@@ -341,8 +384,8 @@ module.exports = function registerDashboard(app, client) {
         const guild = getGuild();
         if (roster && !user && guild) guild.members.cache.forEach((m) => { if (!m.user.bot) rosterIds.push(m.id); });
         const result = computeReport({
-          type, sessionRows: s.rows, presenceRows: p.rows, from, to, tz, user, channel,
-          minSeconds: minMinutes * 60, mode, roster, rosterIds, now: Date.now(), liveName,
+          type, sessionRows: s.rows, presenceRows: p.rows, from, to, tz, dayStart, user, channel, includeAfk,
+          minSeconds: minMinutes * 60, mode, roster, rosterIds, now: Date.now(), liveName, liveStatus, client,
         });
         result.meta.truncated = s.truncated || p.truncated;
         return result;
@@ -390,6 +433,57 @@ module.exports = function registerDashboard(app, client) {
     } catch (err) {
       console.error("[API] /api/recent-logs failed:", err);
       res.status(500).json({ error: "logs_failed" });
+    }
+  });
+
+  // ---------- Share snapshot to Discord (3-min cooldown) ----------
+  app.post("/api/share-discord", guard, express.json({ limit: "15mb" }), async (req, res) => {
+    const now = Date.now();
+    const elapsed = now - lastShareTimestamp;
+    if (elapsed < SHARE_COOLDOWN_MS) {
+      const remainingSeconds = Math.ceil((SHARE_COOLDOWN_MS - elapsed) / 1000);
+      return res.status(429).json({ error: "cooldown", remainingSeconds });
+    }
+
+    const { channelId, title, summary, url, imageData } = req.body || {};
+    const allowed = (allowedShareChannels || []).some((c) => c.id === channelId);
+    if (!allowed) {
+      return res.status(400).json({ error: "channel_not_allowed" });
+    }
+
+    const targetChannel = client.channels.cache.get(channelId);
+    if (!targetChannel || !targetChannel.isTextBased()) {
+      return res.status(404).json({ error: "channel_not_found" });
+    }
+
+    try {
+      const files = [];
+      let embed = new Discord.EmbedBuilder()
+        .setTitle(title || "📊 Banha Bot Report Snapshot")
+        .setDescription(
+          `${summary || "Here is a snapshot of the dashboard."}\n\n🔗 **Open with Active Filters:**\n<${url}>`
+        )
+        .setColor(0x5865f2)
+        .setTimestamp();
+
+      if (imageData && typeof imageData === "string" && imageData.startsWith("data:image/")) {
+        const base64Data = imageData.replace(/^data:image\/\w+;base64,/, "");
+        const buffer = Buffer.from(base64Data, "base64");
+        files.push({ attachment: buffer, name: "report-snapshot.png" });
+        embed.setImage("attachment://report-snapshot.png");
+      }
+
+      await targetChannel.send({
+        embeds: [embed],
+        files: files,
+        flags: [Discord.MessageFlags.SuppressEmbeds],
+      });
+
+      lastShareTimestamp = Date.now();
+      res.json({ success: true, channelName: targetChannel.name });
+    } catch (err) {
+      console.error("[API] /api/share-discord failed:", err);
+      res.status(500).json({ error: "discord_send_failed", details: err.message });
     }
   });
 };

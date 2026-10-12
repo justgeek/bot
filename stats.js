@@ -1,6 +1,6 @@
 // stats.js - turns raw voice sessions + status logs into dashboard analytics.
-// Pure functions (no Discord/Supabase), so they are easy to test.
 const { makeTz } = require("./tz");
+const db = require("./db");
 const HOUR = 3600e3;
 const DAY = 86400e3;
 
@@ -16,11 +16,11 @@ const HIST_BUCKETS = [
 
 const STATUSES = ["online", "idle", "dnd", "offline"];
 
-function computeStats({ sessionRows, presenceRows, now, since, user, channel, liveName, tz, status }) {
-  const z = makeTz(tz);
+function computeStats({ sessionRows, presenceRows, now, since, user, channel, liveName, liveStatus, tz, status, dayStart = 0, includeAfk = false, client = null }) {
+  const z = makeTz(tz, dayStart);
   const eachHourSlice = z.eachHourSlice;
   const dateKey = z.dateOf;
-  // ---- names (latest known display name, preferring the live server nickname) ----
+
   const names = new Map();
   const chanNames = new Map();
   for (const r of sessionRows) {
@@ -34,6 +34,8 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
   // ---- sessions clipped to the window ----
   const win = [];
   for (const r of sessionRows) {
+    // Exclude AFK channel if not explicitly requested
+    if (!includeAfk && !channel && db.isAfkChannel(r.channel_id, r.channel_name, client)) continue;
     const start = Date.parse(r.joined_at);
     const end = r.left_at ? Date.parse(r.left_at) : now;
     const cs = Math.max(start, since == null ? start : since);
@@ -42,6 +44,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
     win.push({
       userId: r.user_id,
       channelId: r.channel_id,
+      channelName: r.channel_name,
       cs,
       ce,
       secs: (ce - cs) / 1000,
@@ -103,7 +106,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
     });
   }
 
-  // ---- day axis (filled so gaps show as zero) ----
+  // ---- day axis ----
   const dayKeys = [];
   let lastKey = null;
   for (let t = sinceEff; t <= now; t += 6 * HOUR) {
@@ -125,24 +128,26 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
     };
   });
 
-  // ---- co-presence (who is in the same channel at the same time) ----
+  // ---- co-presence: Unique clusters of members hanging out together ----
   const byChan = new Map();
   for (const s of scopedChan) {
     if (!byChan.has(s.channelId)) byChan.set(s.channelId, []);
     byChan.get(s.channelId).push(s);
   }
-  const pairMap = new Map();
+  const groupMap = new Map();
   let personTotal = 0;
   let personTogether = 0;
+
   for (const list of byChan.values()) {
     const ev = [];
     for (const s of list) {
       ev.push([s.cs, 1, s.userId]);
       ev.push([s.ce, -1, s.userId]);
     }
-    ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]); // leaves before joins at the same instant
+    ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
     const active = new Map();
     let last = null;
+
     for (const [t, type, uid] of ev) {
       if (last !== null && t > last && active.size && (!user || active.has(user))) {
         const dt = (t - last) / 1000;
@@ -154,12 +159,12 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
           personTotal += dt * ids.length;
           if (ids.length >= 2) personTogether += dt * ids.length;
         }
-        for (let i = 0; i < ids.length; i++) {
-          for (let j = i + 1; j < ids.length; j++) {
-            if (user && ids[i] !== user && ids[j] !== user) continue;
-            const key = ids[i] < ids[j] ? `${ids[i]}|${ids[j]}` : `${ids[j]}|${ids[i]}`;
-            pairMap.set(key, (pairMap.get(key) || 0) + dt);
-          }
+
+        // Only log unique groups of 2 or more members
+        if (ids.length >= 2) {
+          const sortedIds = ids.slice().sort();
+          const key = sortedIds.join("|");
+          groupMap.set(key, (groupMap.get(key) || 0) + dt);
         }
       }
       last = t;
@@ -171,19 +176,23 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
       }
     }
   }
-  const pairs = [...pairMap.entries()]
+
+  const pairs = [...groupMap.entries()]
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10)
     .map(([key, seconds]) => {
-      const [a, b] = key.split("|");
+      const uids = key.split("|");
+      const members = uids.map((id) => ({ user_id: id, name: nameOf(id) }));
       return {
-        a: { user_id: a, name: nameOf(a) },
-        b: { user_id: b, name: nameOf(b) },
+        key,
+        members,
+        a: members[0] || { user_id: "", name: "" },
+        b: members[1] || { user_id: "", name: "" },
         seconds: Math.round(seconds),
       };
     });
 
-  // ---- peak concurrency (whole server, or the selected channel) ----
+  // ---- peak concurrency ----
   let peak = { count: 0, at: null };
   {
     const ev = [];
@@ -251,9 +260,15 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
     .sort((a, b) => b.seconds - a.seconds);
 
   // ---- status (presence) analytics ----
+  // Preserve database ID to guarantee chronological order during same-second events
   const prs = presenceRows
     .filter((r) => !user || r.user_id === user)
-    .map((r) => ({ u: r.user_id, status: r.status, t: Date.parse(r.changed_at) }))
+    .map((r) => ({
+      id: Number(r.id) || 0,
+      u: r.user_id,
+      status: r.status,
+      t: Date.parse(r.changed_at)
+    }))
     .filter((r) => r.t <= now && (since == null || r.t >= since) && STATUSES.includes(r.status));
 
   const byUser = new Map();
@@ -265,17 +280,42 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
   const totals = { online: 0, idle: 0, dnd: 0, offline: 0 };
   const hourlyBy = Object.fromEntries(STATUSES.map((k) => [k, new Array(24).fill(0)]));
   const perMember = [];
+
   for (const [uid, arr] of byUser) {
-    arr.sort((a, b) => a.t - b.t);
+    // Sort primarily by timestamp, then by database auto-increment ID
+    arr.sort((a, b) => a.t - b.t || a.id - b.id);
+
+    // Remove redundant consecutive same-status events
+    const cleanArr = [];
+    for (const item of arr) {
+      if (cleanArr.length > 0 && cleanArr[cleanArr.length - 1].status === item.status && cleanArr[cleanArr.length - 1].t === item.t) {
+        continue;
+      }
+      cleanArr.push(item);
+    }
+
     const row = { user_id: uid, name: nameOf(uid), online: 0, idle: 0, dnd: 0, offline: 0 };
-    for (let i = 0; i < arr.length; i++) {
-      const start = arr[i].t;
-      const end = i + 1 < arr.length ? arr[i + 1].t : now;
+    for (let i = 0; i < cleanArr.length; i++) {
+      const start = cleanArr[i].t;
+      let end = i + 1 < cleanArr.length ? cleanArr[i + 1].t : now;
+
+      // If user went online and offline in the same second, duration is 0
+      if (end <= start) continue;
+
+      // If user is currently confirmed offline, do not project an old online state to `now`
+      if (i + 1 >= cleanArr.length && cleanArr[i].status !== "offline" && liveStatus) {
+        const curStatus = liveStatus(uid);
+        if (curStatus === "offline") {
+          end = start; // cap at 0 duration
+        }
+      }
+
       if (!(end > start)) continue;
       const secs = (end - start) / 1000;
-      row[arr[i].status] += secs;
-      totals[arr[i].status] += secs;
-      const target = hourlyBy[arr[i].status];
+      row[cleanArr[i].status] += secs;
+      totals[cleanArr[i].status] += secs;
+
+      const target = hourlyBy[cleanArr[i].status];
       eachHourSlice(start, end, (b, sec) => {
         target[b.hour] += sec;
       });
@@ -283,13 +323,12 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
     for (const k of STATUSES) row[k] = Math.round(row[k]);
     perMember.push(row);
   }
-  // "Online" means status online. Idle and busy are tracked separately, not counted as online.
+
   const rankBy = STATUSES.includes(status) ? status : "online";
   perMember.sort((a, b) => b[rankBy] - a[rankBy] || b.online - a.online);
 
   const changesMap = new Map();
   const changesByStatus = { online: 0, idle: 0, dnd: 0, offline: 0 };
-  // With a status filter, "changes" means changes TO that status.
   const prsShown = STATUSES.includes(status) ? prs.filter((r) => r.status === status) : prs;
   for (const r of prs) changesByStatus[r.status] += 1;
   for (const r of prsShown) {
@@ -305,6 +344,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
       user: user || null,
       channel: channel || null,
       tz: z.tz,
+      dayStart: z.dayStartHour,
       status: STATUSES.includes(status) ? status : null,
       sessions_loaded: sessionRows.length,
       presence_loaded: presenceRows.length,

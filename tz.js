@@ -1,7 +1,4 @@
-// tz.js - timezone helpers shared by stats.js and report.js.
-// All timestamps are stored in UTC; these helpers answer "what day / hour is
-// that on the viewer's clock?" for any IANA zone, including half-hour zones
-// (India, Nepal) and zones with daylight saving time.
+// tz.js - timezone & rollover helpers shared by stats.js, report.js, and dashboard.js.
 const HOUR = 3600e3;
 const DEFAULT_TZ = "Africa/Cairo";
 const helpers = new Map();
@@ -17,9 +14,11 @@ function validTz(tz) {
   }
 }
 
-function makeTz(input) {
+function makeTz(input, dayStartHour = 0) {
   const tz = validTz(input) || DEFAULT_TZ;
-  const cached = helpers.get(tz);
+  const H = Math.min(23, Math.max(0, parseInt(dayStartHour, 10) || 0));
+  const cacheKey = `${tz}:${H}`;
+  const cached = helpers.get(cacheKey);
   if (cached) return cached;
 
   const fmt = new Intl.DateTimeFormat("en-US", {
@@ -36,8 +35,6 @@ function makeTz(input) {
   const dayCache = new Map();
   const binCache = new Map();
 
-  // Local wall-clock time minus UTC, in ms. Offsets only ever change on
-  // 15-minute boundaries, so caching per 15 minutes is exact.
   function offset(ms) {
     const k = Math.floor(ms / 900000);
     let o = offCache.get(k);
@@ -54,15 +51,20 @@ function makeTz(input) {
 
   const dateStr = (d) => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 
-  // "2026-10-11" on the viewer's clock
+  // Date on the viewer's clock, adjusted by the gaming day rollover hour H
   function dateOf(ms) {
-    return dateStr(new Date(ms + offset(ms)));
+    return dateStr(new Date(ms + offset(ms) - H * HOUR));
   }
 
-  // { date, hour, minute, dow (0 = Monday) } on the viewer's clock
   function partsOf(ms) {
-    const d = new Date(ms + offset(ms));
-    return { date: dateStr(d), hour: d.getUTCHours(), minute: d.getUTCMinutes(), dow: (d.getUTCDay() + 6) % 7 };
+    const dShifted = new Date(ms + offset(ms) - H * HOUR);
+    const dLocal = new Date(ms + offset(ms));
+    return {
+      date: dateStr(dShifted),
+      hour: dLocal.getUTCHours(),
+      minute: dLocal.getUTCMinutes(),
+      dow: (dShifted.getUTCDay() + 6) % 7
+    };
   }
 
   function addDays(date, n) {
@@ -70,16 +72,15 @@ function makeTz(input) {
     return dateStr(new Date(Date.UTC(y, m - 1, d + n)));
   }
 
-  // The real (UTC) instant when a local date starts, i.e. local midnight.
   function startOfDate(date) {
     const [y, m, d] = date.split("-").map(Number);
     const guess = Date.UTC(y, m - 1, d);
     let t = guess - offset(guess);
     t = guess - offset(t);
-    return t;
+    // Offset local midnight by H hours so gaming days start at H:00
+    return t + H * HOUR;
   }
 
-  // "2026-10-11T14:30" read on the viewer's clock -> the real instant in ms (NaN if invalid).
   function localToMs(str) {
     const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(String(str || ""));
     if (!m) return NaN;
@@ -92,7 +93,6 @@ function makeTz(input) {
     return t;
   }
 
-  // [start, end) of a local day in real time (23 or 25 hours on DST days).
   function dayBounds(date) {
     let b = dayCache.get(date);
     if (!b) {
@@ -107,15 +107,18 @@ function makeTz(input) {
     let b = binCache.get(localHourStart);
     if (!b) {
       const d = new Date(localHourStart);
-      b = { hour: d.getUTCHours(), dow: (d.getUTCDay() + 6) % 7, date: dateStr(d) };
+      const dShifted = new Date(localHourStart - H * HOUR);
+      b = {
+        hour: d.getUTCHours(),
+        dow: (dShifted.getUTCDay() + 6) % 7,
+        date: dateStr(dShifted)
+      };
       if (binCache.size > 200000) binCache.clear();
       binCache.set(localHourStart, b);
     }
     return b;
   }
 
-  // Calls cb(bin, seconds, sliceStart, sliceEnd) for each slice of
-  // [start, end) that falls inside one hour on the viewer's clock.
   function eachHourSlice(start, end, cb) {
     let t = start;
     while (t < end) {
@@ -127,8 +130,8 @@ function makeTz(input) {
     }
   }
 
-  const helper = { tz, offset, dateOf, partsOf, addDays, startOfDate, localToMs, dayBounds, eachHourSlice };
-  helpers.set(tz, helper);
+  const helper = { tz, dayStartHour: H, offset, dateOf, partsOf, addDays, startOfDate, localToMs, dayBounds, eachHourSlice };
+  helpers.set(cacheKey, helper);
   return helper;
 }
 

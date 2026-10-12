@@ -1,25 +1,19 @@
 // report.js - attendance reports for voice channels and online status.
-// Pure function (no Discord/Supabase) so it can be tested with fake data.
-//
-// A "day" is a calendar day on the viewer's clock (their timezone). Sessions and
-// status periods that cross midnight are split, so each day only counts the time
-// that really happened on that day.
 const { makeTz } = require("./tz");
+const db = require("./db");
 
 const STATUSES = ["online", "idle", "dnd"];
 
 function computeReport(o) {
-  const { type, sessionRows, presenceRows, from, to, user, channel, minSeconds, mode, roster, rosterIds, now, liveName } = o;
-  const z = makeTz(o.tz);
+  const { type, sessionRows, presenceRows, from, to, user, channel, minSeconds, mode, roster, rosterIds, now, liveName, liveStatus, dayStart = 0, includeAfk = false, client = null } = o;
+  const z = makeTz(o.tz, dayStart);
   const voice = type === "voice";
 
-  // ---- names ----
   const names = new Map();
   for (const r of sessionRows) names.set(r.user_id, r.display_name || r.username);
   for (const r of presenceRows) names.set(r.user_id, r.display_name || r.username);
   const nameOf = (id) => (liveName && liveName(id)) || names.get(id) || id;
 
-  // ---- period ----
   const dates = [];
   for (let d = from; d <= to; d = z.addDays(d, 1)) dates.push(d);
   const fromMs = z.startOfDate(from);
@@ -27,7 +21,6 @@ function computeReport(o) {
   const today = z.dateOf(now);
   const elapsed = dates.filter((d) => d <= today);
 
-  // ---- per member, per day records ----
   const recs = new Map();
   const rec = (uid, date) => {
     const key = uid + "|" + date;
@@ -39,10 +32,9 @@ function computeReport(o) {
     return r;
   };
 
-  // Splits [cs, ce) at local midnights and calls cb(date, a, b, dayStart, dayEnd).
   function eachDaySeg(cs, ce, cb) {
     let date = z.dateOf(cs);
-    for (;;) {
+    for (; ;) {
       const [ds, de] = z.dayBounds(date);
       const a = Math.max(cs, ds);
       const b = Math.min(ce, de);
@@ -54,7 +46,7 @@ function computeReport(o) {
 
   function addQualifying(R, a, b, ds, de, realStart, realEnd, stillGoing) {
     R.seconds += (b - a) / 1000;
-    if (a !== R.lastEnd) R.n += 1; // back-to-back pieces count as one spell
+    if (a !== R.lastEnd) R.n += 1;
     R.lastEnd = b;
     if (a < R.first) {
       R.first = a;
@@ -71,6 +63,8 @@ function computeReport(o) {
     for (const r of sessionRows) {
       if (user && r.user_id !== user) continue;
       if (channel && r.channel_id !== channel) continue;
+      if (!includeAfk && !channel && db.isAfkChannel(r.channel_id, r.channel_name, client)) continue;
+
       const start = Date.parse(r.joined_at);
       const end = r.left_at ? Date.parse(r.left_at) : now;
       const cs = Math.max(start, fromMs);
@@ -84,19 +78,27 @@ function computeReport(o) {
       });
     }
   } else {
-    const qualifies = (s) => (mode === "active" ? s !== "offline" : s === mode); // online, idle or dnd = exactly that status
+    const qualifies = (s) => (mode === "active" ? s !== "offline" : s === mode);
     const byUser = new Map();
     for (const r of presenceRows) {
       if (user && r.user_id !== user) continue;
       if (r.status !== "offline" && !STATUSES.includes(r.status)) continue;
       if (!byUser.has(r.user_id)) byUser.set(r.user_id, []);
-      byUser.get(r.user_id).push({ status: r.status, t: Date.parse(r.changed_at) });
+      byUser.get(r.user_id).push({ id: Number(r.id) || 0, status: r.status, t: Date.parse(r.changed_at) });
     }
+
     for (const [uid, arr] of byUser) {
-      arr.sort((a, b) => a.t - b.t);
+      // Sort by timestamp, tie-breaking with primary key ID
+      arr.sort((a, b) => a.t - b.t || a.id - b.id);
       for (let i = 0; i < arr.length; i++) {
         const start = arr[i].t;
-        const end = Math.min(i + 1 < arr.length ? arr[i + 1].t : now, now);
+        let end = Math.min(i + 1 < arr.length ? arr[i + 1].t : now, now);
+
+        if (end <= start) continue;
+        if (i + 1 >= arr.length && arr[i].status !== "offline" && liveStatus) {
+          if (liveStatus(uid) === "offline") end = start;
+        }
+
         const cs = Math.max(start, fromMs);
         const ce = Math.min(end, toMs);
         if (!(ce > cs)) continue;
@@ -112,7 +114,6 @@ function computeReport(o) {
     }
   }
 
-  // ---- members ----
   const attended = (R) => !!R && R.seconds >= minSeconds && R.seconds > 0;
   const ids = new Set();
   for (const R of recs.values()) if (R.seconds > 0) ids.add(R.uid);
@@ -150,14 +151,13 @@ function computeReport(o) {
       }
     }
 
-    // streaks over the days that have already happened
     let longest = 0, run = 0;
     for (const d of elapsed) {
       if (attended(recs.get(uid + "|" + d))) { run += 1; longest = Math.max(longest, run); } else run = 0;
     }
     let current = 0;
     let idx = elapsed.length - 1;
-    if (idx >= 0 && elapsed[idx] === today && !attended(recs.get(uid + "|" + today))) idx -= 1; // today isn't over yet
+    if (idx >= 0 && elapsed[idx] === today && !attended(recs.get(uid + "|" + today))) idx -= 1;
     for (; idx >= 0 && attended(recs.get(uid + "|" + elapsed[idx])); idx--) current += 1;
 
     members.push({
@@ -183,7 +183,6 @@ function computeReport(o) {
   members.sort((a, b) => b.days_attended - a.days_attended || b.total_seconds - a.total_seconds || a.name.localeCompare(b.name));
   members.forEach((m, i) => (m.rank = i + 1));
 
-  // ---- daily sheet ----
   const cellOf = (R) =>
     R && R.seconds > 0
       ? { s: Math.round(R.seconds), f: R.first, l: R.last, n: R.n, ci: R.ci, co: R.co, op: R.op, i: Math.round(R.st.idle), d: Math.round(R.st.dnd) }
@@ -193,7 +192,6 @@ function computeReport(o) {
     cells: dates.map((d) => cellOf(recs.get(m.user_id + "|" + d))),
   }));
 
-  // ---- day-by-day log ----
   const log = [];
   for (const R of recs.values()) {
     if (!(R.seconds > 0) || !ids.has(R.uid)) continue;
@@ -216,7 +214,6 @@ function computeReport(o) {
   }
   log.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.name.localeCompare(b.name)));
 
-  // ---- summary ----
   const pcts = members.map((m) => m.attendance_pct).filter((v) => v != null);
   const summary = {
     members_attended: members.filter((m) => m.days_attended > 0).length,
@@ -237,6 +234,7 @@ function computeReport(o) {
       today,
       period_days: elapsed.length,
       tz: z.tz,
+      dayStart: z.dayStartHour,
       min_seconds: minSeconds,
       generated_at: new Date(now).toISOString(),
       channel: channel || null,
