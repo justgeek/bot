@@ -480,10 +480,12 @@ module.exports = function registerDashboard(app, client) {
 
     try {
       const files = [];
+      const cleanUrl = url ? `<${url}>` : "";
+
       let embed = new Discord.EmbedBuilder()
         .setTitle(title || "📊 Banha Bot Report Snapshot")
         .setDescription(
-          `${summary || "Here is a snapshot of the dashboard."}\n\n🔗 **Open with Active Filters:**\n<${url}>`
+          `${summary || "Here is a snapshot of the dashboard."}\n\n🔗 **Interactive Dashboard:**\n${cleanUrl}`
         )
         .setColor(0xdc143c)
         .setTimestamp();
@@ -491,14 +493,16 @@ module.exports = function registerDashboard(app, client) {
       if (imageData && typeof imageData === "string" && imageData.startsWith("data:image/")) {
         const base64Data = imageData.replace(/^data:image\/\w+;base64,/, "");
         const buffer = Buffer.from(base64Data, "base64");
-        files.push({ attachment: buffer, name: "report-snapshot.png" });
+        const attachment = new Discord.AttachmentBuilder(buffer, { name: "report-snapshot.png" });
+        files.push(attachment);
         embed.setImage("attachment://report-snapshot.png");
       }
 
       await targetChannel.send({
+        content: `📊 **${title || "Report Snapshot"}** • ${cleanUrl}`,
         embeds: [embed],
         files: files,
-        flags: [Discord.MessageFlags?.SuppressEmbeds || 4],
+        // Removed SuppressEmbeds flag so embeds and images are visible
       });
 
       lastShareTimestamp = Date.now();

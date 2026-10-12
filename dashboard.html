@@ -3360,12 +3360,18 @@
       let imageData = null;
       if ($("shareIncludeImage").checked) {
         try {
-          const targetEl = currentTab === "reports" && $("rOut")?.children.length ? $("rOut") : (document.querySelector(".tab-panel.active") || $("mainCaptureArea"));
+          // If sharing from Reports tab, capture the rendered report container (#rOut)
+          const targetEl = (currentTab === "reports" && $("rOut")?.children.length)
+            ? $("rOut")
+            : (document.querySelector(".tab-panel.active") || $("mainCaptureArea"));
+
           const canvas = await html2canvas(targetEl, {
             scale: 1.5,
             useCORS: true,
+            allowTaint: true,
             logging: false,
-            backgroundColor: cssv("--bg") || "#0a0a0b"
+            backgroundColor: cssv("--bg") || "#0a0a0b",
+            ignoreElements: (el) => el.classList.contains("no-print") || el.classList.contains("modal-overlay"),
           });
           imageData = canvas.toDataURL("image/png");
         } catch (err) {
@@ -3386,7 +3392,7 @@
           if (rm.type === "slackers") {
             title = `⚠️ Slackers & Late Penalty Report (${rm.from} to ${rm.to})`;
             summary = `🎯 **Expected Arrival:** ${rm.target_time} (Grace: ${rm.grace_minutes}m)\n` +
-              `👑 **Chief Slacker:** ${rsm.chief_slacker ? rsm.chief_slacker.name : "None!"} (${rsm.chief_slacker?.penalty_points || 0} pts)\n` +
+              `👑 **Chief Slacker:** ${rsm.chief_slacker ? rsm.chief_slacker.name : "Nobody!"} (${rsm.chief_slacker?.penalty_points || 0} pts)\n` +
               `🚨 **Total Penalties:** ${rsm.total_penalties} | **Late Occurrences:** ${rsm.total_late_occurrences}`;
           } else {
             title = `📋 ${rm.type === "voice" ? "Voice" : "Online"} Attendance Report (${rm.from} to ${rm.to})`;
