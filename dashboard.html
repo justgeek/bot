@@ -759,7 +759,7 @@
       font-weight: 600;
     }
 
-    /* Safe RGBA background styles so html2canvas never crashes on color-mix */
+    /* Safe RGBA fallback background styles so html2canvas never crashes on color-mix */
     .b-online {
       color: var(--online);
       background: rgba(35, 165, 90, 0.16);
@@ -1700,7 +1700,6 @@
 
         <!-- ============ Reports ============ -->
         <section class="tab-panel space-y-5" data-tab-panel="reports">
-          <!-- Elevated relative container with z-30 to stay strictly above #rOut -->
           <div class="card p-5 no-print relative" style="z-index: 30;">
             <h2 class="text-lg font-semibold">Generate a report</h2>
             <p class="text-sm muted mb-4">Attendance and Slacker reports. Gaming days rotate automatically based on your
@@ -1731,7 +1730,6 @@
               <label id="rToWrap" class="hidden block text-sm muted">To <input id="rTo" type="date"
                   class="field w-full mt-1"></label>
 
-              <!-- Slacker specific controls -->
               <label id="rTargetTimeWrap" class="hidden block text-sm muted">Target Arrival Time
                 <input id="rTargetTime" type="time" value="21:00" class="field w-full mt-1">
               </label>
@@ -1739,7 +1737,7 @@
                 <input id="rGrace" type="number" min="0" max="120" value="15" class="field w-full mt-1">
               </label>
 
-              <!-- Multi-Select Member Dropdown Component (Elevated Z-Index) -->
+              <!-- Multi-Select Member Dropdown Component -->
               <div class="block text-sm muted relative" style="z-index: 40;">
                 <span>Members (Multi-select)</span>
                 <button type="button" id="rUserBtn"
@@ -1752,7 +1750,6 @@
                       clip-rule="evenodd" />
                   </svg>
                 </button>
-                <!-- Floats on top with z-50, shadow-2xl, and solid background -->
                 <div id="rUserDropdown"
                   class="hidden absolute left-0 right-0 top-full mt-1 card p-2 shadow-2xl space-y-2 border"
                   style="background:var(--surface); z-index: 50; min-width: 240px;">
@@ -1794,7 +1791,6 @@
               <span id="rStatus" class="text-sm muted"></span>
             </div>
           </div>
-          <!-- Set #rOut at z-index 1 so the dropdown above floats in front -->
           <div id="rOut" class="relative" style="z-index: 1;"></div>
         </section>
 
@@ -1887,7 +1883,24 @@
   </div>
 
   <script>
-    const KEY = new URLSearchParams(location.search).get("key");
+    // Capture initial report query parameters in memory BEFORE any tab restoration can wipe them
+    const rawUrlParams = new URLSearchParams(window.location.search);
+    const initialReportParams = {
+      hasReport: !!rawUrlParams.get("repType"),
+      repType: rawUrlParams.get("repType"),
+      repPeriod: rawUrlParams.get("repPeriod"),
+      repFrom: rawUrlParams.get("repFrom"),
+      repTo: rawUrlParams.get("repTo"),
+      targetTime: rawUrlParams.get("targetTime"),
+      grace: rawUrlParams.get("grace"),
+      repChan: rawUrlParams.get("repChan"),
+      repMin: rawUrlParams.get("repMin"),
+      repMode: rawUrlParams.get("repMode"),
+      repRoster: rawUrlParams.get("repRoster"),
+      repUsers: rawUrlParams.get("repUsers") ? rawUrlParams.get("repUsers").split(",").map(s => s.trim()).filter(Boolean) : null,
+    };
+
+    const KEY = rawUrlParams.get("key");
     const $ = (id) => document.getElementById(id);
     const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     const store = {
@@ -1960,7 +1973,7 @@
       document.title = label + " - " + ($("serverName").textContent || "Dashboard");
       store.set("banha-tab", id);
       updateFilterBar();
-      if (id === "reports") initReports();
+      if (id === "reports" && !initialReportParams.hasReport) initReports();
       if (id === "appearance" && window.__FONTS) Object.keys(window.__FONTS).forEach(window.__loadFonts);
       closeDrawer();
       requestAnimationFrame(() => Object.values(charts).forEach((c) => c.resize()));
@@ -1989,7 +2002,7 @@
       requestAnimationFrame(() => Object.values(charts).forEach((c) => c.resize()));
     };
 
-    const params = new URLSearchParams(location.search);
+    const params = rawUrlParams;
     const state = {
       range: RANGES.some((r) => r[0] === params.get("range")) ? params.get("range") : "7d",
       user: params.get("user") || "",
@@ -2006,6 +2019,11 @@
     let lastStats = null;
 
     function syncUrl() {
+      // If on reports tab, preserve the report URL rather than overwriting with range=7d
+      if (currentTab === "reports") {
+        if (lastReport && history.replaceState) history.replaceState(null, "", getReportUrl());
+        return;
+      }
       const q = new URLSearchParams();
       if (KEY) q.set("key", KEY);
       q.set("range", state.range);
@@ -2375,10 +2393,9 @@
         populateReportMemberMultiSelect(f.members);
         populateShareChannels(f.share_channels || []);
 
-        // If opened via shared report URL, apply report parameters and auto-generate
-        if (applyUrlReportParams()) {
-          showTab("reports");
-          generateReport();
+        // If opened via shared report URL, apply report parameters and auto-generate report
+        if (initialReportParams.hasReport) {
+          applyInitialReportParams();
         }
       } catch (e) { }
       loadPeople();
@@ -2423,25 +2440,22 @@
       return window.location.origin + window.location.pathname + "?" + q.toString() + "#reports";
     }
 
-    function applyUrlReportParams() {
-      const p = new URLSearchParams(window.location.search);
-      const repType = p.get("repType");
-      if (!repType) return false;
+    function applyInitialReportParams() {
+      if (!initialReportParams.hasReport) return;
 
-      if ($("rType")) $("rType").value = repType;
-      if (p.get("repPeriod") && $("rPeriod")) $("rPeriod").value = p.get("repPeriod");
-      if (p.get("repFrom") && $("rFrom")) $("rFrom").value = p.get("repFrom");
-      if (p.get("repTo") && $("rTo")) $("rTo").value = p.get("repTo");
-      if (p.get("targetTime") && $("rTargetTime")) $("rTargetTime").value = p.get("targetTime");
-      if (p.get("grace") && $("rGrace")) $("rGrace").value = p.get("grace");
-      if (p.get("repChan") && $("rChannel")) $("rChannel").value = p.get("repChan");
-      if (p.get("repMin") && $("rMin")) $("rMin").value = p.get("repMin");
-      if (p.get("repMode") && $("rMode")) $("rMode").value = p.get("repMode");
-      if (p.get("repRoster") && $("rRoster")) $("rRoster").checked = (p.get("repRoster") === "1");
+      if (initialReportParams.repType && $("rType")) $("rType").value = initialReportParams.repType;
+      if (initialReportParams.repPeriod && $("rPeriod")) $("rPeriod").value = initialReportParams.repPeriod;
+      if (initialReportParams.repFrom && $("rFrom")) $("rFrom").value = initialReportParams.repFrom;
+      if (initialReportParams.repTo && $("rTo")) $("rTo").value = initialReportParams.repTo;
+      if (initialReportParams.targetTime && $("rTargetTime")) $("rTargetTime").value = initialReportParams.targetTime;
+      if (initialReportParams.grace && $("rGrace")) $("rGrace").value = initialReportParams.grace;
+      if (initialReportParams.repChan && $("rChannel")) $("rChannel").value = initialReportParams.repChan;
+      if (initialReportParams.repMin && $("rMin")) $("rMin").value = initialReportParams.repMin;
+      if (initialReportParams.repMode && $("rMode")) $("rMode").value = initialReportParams.repMode;
+      if (initialReportParams.repRoster !== null && $("rRoster")) $("rRoster").checked = (initialReportParams.repRoster === "1");
 
-      const repUsers = p.get("repUsers");
-      if (repUsers) {
-        const userIds = new Set(repUsers.split(",").map((s) => s.trim()).filter(Boolean));
+      if (initialReportParams.repUsers && initialReportParams.repUsers.length > 0) {
+        const userIds = new Set(initialReportParams.repUsers);
         document.querySelectorAll(".r-user-check").forEach((cb) => {
           cb.checked = userIds.has(cb.value);
         });
@@ -2449,7 +2463,11 @@
       }
 
       updateReportForm();
-      return true;
+      showTab("reports");
+      generateReport();
+
+      // Clear the flag so future navigation behaves normally
+      initialReportParams.hasReport = false;
     }
 
     function renderOverview(o) {
@@ -3095,7 +3113,6 @@
     }
 
     async function generateReport() {
-      // Ensure dropdown is closed upon report generation
       $("rUserDropdown").classList.add("hidden");
       $("rUserBtn").setAttribute("aria-expanded", "false");
 
@@ -3123,7 +3140,7 @@
         renderReport();
         $("rStatus").textContent = "";
 
-        // Update browser URL so copying link preserves all report parameters
+        // Sync full report URL into browser address bar without losing parameters
         if (history.replaceState) {
           history.replaceState(null, "", getReportUrl());
         }
@@ -3446,6 +3463,7 @@
             backgroundColor: cssv("--bg") || "#0a0a0b",
             ignoreElements: (el) => el.classList.contains("no-print") || el.classList.contains("modal-overlay"),
             onclone: (clonedDoc) => {
+              // Replace any color-mix styles with safe solid/transparent colors so html2canvas never fails
               clonedDoc.querySelectorAll("*").forEach((el) => {
                 const comp = window.getComputedStyle(el);
                 if (comp.backgroundColor && comp.backgroundColor.includes("color-mix")) {
@@ -3538,8 +3556,9 @@
     applyTheme(themePref(), false);
     renderRangeButtons();
 
-    const startTab = location.hash.slice(1) || (new URLSearchParams(location.search).get("tab")) || store.get("banha-tab") || "overview";
-    if (location.hash.slice(1) !== startTab) history.replaceState(null, "", location.pathname + location.search + "#" + startTab);
+    // Prioritize incoming shared report link over cached localStorage tabs
+    const startTab = (initialReportParams.hasReport ? "reports" : null) || location.hash.slice(1) || (rawUrlParams.get("tab")) || store.get("banha-tab") || "overview";
+    if (location.hash.slice(1) !== startTab && !initialReportParams.hasReport) history.replaceState(null, "", location.pathname + location.search + "#" + startTab);
     showTab(startTab);
     loadFilterOptions().then(syncUrl);
     refreshLive();

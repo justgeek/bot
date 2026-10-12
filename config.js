@@ -34,7 +34,7 @@ module.exports = {
   // Allowed channels for the Dashboard "Share to Discord" feature
   allowedShareChannels: [
     { id: "1020315442042122330", name: "#commands" },
-    { id: "247069115204763648", name: "#general" },
+    { id: "247069115204763648", name: "#some_chat_room" },
     { id: "460899681787052083", name: "#v" },
   ],
 

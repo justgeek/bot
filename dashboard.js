@@ -201,11 +201,21 @@ module.exports = function registerDashboard(app, client) {
     }
     members.sort((a, b) => a.name.localeCompare(b.name));
     channels.sort((a, b) => a.pos - b.pos);
+
+    // Dynamically pull live channel names from Discord
+    const dynamicShareChannels = (allowedShareChannels || []).map((ch) => {
+      const liveChan = client.channels.cache.get(ch.id);
+      return {
+        id: ch.id,
+        name: liveChan ? `#${liveChan.name}` : (ch.name || `#${ch.id}`)
+      };
+    });
+
     res.set("Cache-Control", "no-store");
     res.json({
       members,
       channels: channels.map(({ pos, ...c }) => c),
-      share_channels: allowedShareChannels || []
+      share_channels: dynamicShareChannels
     });
   });
 
