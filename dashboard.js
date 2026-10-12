@@ -1,11 +1,16 @@
 // dashboard.js - dashboard page (GET /) and JSON API (/api/*).
 const path = require("path");
+const express = require("express");
 const Discord = require("discord.js");
 const db = require("./db");
 const { computeStats } = require("./stats");
 const { computeReport } = require("./report");
 const { makeTz, validTz, DEFAULT_TZ } = require("./tz");
-const { IDs, MemberColorOverrides, allowedShareChannels } = require("./config");
+const config = require("./config");
+
+const IDs = config.IDs || {};
+const MemberColorOverrides = config.MemberColorOverrides || {};
+const allowedShareChannels = config.allowedShareChannels || [];
 
 const DAY = 86400e3;
 const RANGES = { "24h": 1, "7d": 7, "30d": 30, "90d": 90, "365d": 365, all: null };
@@ -70,7 +75,7 @@ module.exports = function registerDashboard(app, client) {
       channel = "";
     } else if (ID_RE.test(rawChan)) {
       channel = rawChan;
-      includeAfk = true; // explicitly picked channel
+      includeAfk = true;
     }
 
     const status = ["online", "idle", "dnd", "offline"].includes(req.query.status) ? req.query.status : "";
@@ -153,7 +158,6 @@ module.exports = function registerDashboard(app, client) {
         a.channel_name.localeCompare(b.channel_name, undefined, { numeric: true })
       );
 
-      // In-voice count excludes members idling in the AFK channel
       const inVoiceActiveCount = inVoice
         .filter((c) => !c.is_afk)
         .reduce((n, c) => n + c.members.length, 0);
@@ -451,7 +455,11 @@ module.exports = function registerDashboard(app, client) {
       return res.status(400).json({ error: "channel_not_allowed" });
     }
 
-    const targetChannel = client.channels.cache.get(channelId);
+    let targetChannel = client.channels.cache.get(channelId);
+    if (!targetChannel) {
+      targetChannel = await client.channels.fetch(channelId).catch(() => null);
+    }
+
     if (!targetChannel || !targetChannel.isTextBased()) {
       return res.status(404).json({ error: "channel_not_found" });
     }
@@ -463,7 +471,7 @@ module.exports = function registerDashboard(app, client) {
         .setDescription(
           `${summary || "Here is a snapshot of the dashboard."}\n\n🔗 **Open with Active Filters:**\n<${url}>`
         )
-        .setColor(0x5865f2)
+        .setColor(0xdc143c)
         .setTimestamp();
 
       if (imageData && typeof imageData === "string" && imageData.startsWith("data:image/")) {
@@ -476,7 +484,7 @@ module.exports = function registerDashboard(app, client) {
       await targetChannel.send({
         embeds: [embed],
         files: files,
-        flags: [Discord.MessageFlags.SuppressEmbeds],
+        flags: [Discord.MessageFlags?.SuppressEmbeds || 4],
       });
 
       lastShareTimestamp = Date.now();

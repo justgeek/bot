@@ -38,6 +38,6 @@
   "license": "ISC",
   "description": "Just another discord bot with random stuff!",
   "engines": {
-    "node": "20.x"
+    "node": "22.x"
   }
 }
