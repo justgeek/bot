@@ -1703,9 +1703,10 @@
           </div>
         </section>
 
-        <!-- ============ Reports ============ -->
+        <!-- ============ Reports (Fixed Z-Index & Multi-Select Dropdown) ============ -->
         <section class="tab-panel space-y-5" data-tab-panel="reports">
-          <div class="card p-5 no-print">
+          <!-- Elevated relative container with z-30 to stay strictly above #rOut -->
+          <div class="card p-5 no-print relative" style="z-index: 30;">
             <h2 class="text-lg font-semibold">Generate a report</h2>
             <p class="text-sm muted mb-4">Attendance and Slacker reports. Gaming days rotate automatically based on your
               rollover hour.</p>
@@ -1743,8 +1744,8 @@
                 <input id="rGrace" type="number" min="0" max="120" value="15" class="field w-full mt-1">
               </label>
 
-              <!-- Multi-Select Member Dropdown Component -->
-              <div class="block text-sm muted relative">
+              <!-- Multi-Select Member Dropdown Component (Elevated Z-Index) -->
+              <div class="block text-sm muted relative" style="z-index: 40;">
                 <span>Members (Multi-select)</span>
                 <button type="button" id="rUserBtn"
                   class="field w-full mt-1 text-left flex items-center justify-between cursor-pointer"
@@ -1756,9 +1757,10 @@
                       clip-rule="evenodd" />
                   </svg>
                 </button>
+                <!-- Floats on top with z-50, shadow-2xl, and solid background -->
                 <div id="rUserDropdown"
-                  class="hidden absolute left-0 right-0 top-full mt-1 z-30 card p-2 shadow-2xl space-y-2 border"
-                  style="background:var(--surface);">
+                  class="hidden absolute left-0 right-0 top-full mt-1 card p-2 shadow-2xl space-y-2 border"
+                  style="background:var(--surface); z-index: 50; min-width: 240px;">
                   <div class="flex items-center justify-between gap-2 border-b pb-1.5 px-1 text-xs"
                     style="border-color:var(--border);">
                     <button type="button" id="rUserSelectAll" class="link text-xs">Select All</button>
@@ -1767,7 +1769,7 @@
                   </div>
                   <input type="text" id="rUserSearch" placeholder="Search members..."
                     class="field w-full text-xs py-1 px-2" aria-label="Search members">
-                  <div id="rUserList" class="max-h-48 overflow-y-auto scroll-thin space-y-1 pr-1"></div>
+                  <div id="rUserList" class="max-h-56 overflow-y-auto scroll-thin space-y-1 pr-1"></div>
                 </div>
               </div>
 
@@ -1797,7 +1799,8 @@
               <span id="rStatus" class="text-sm muted"></span>
             </div>
           </div>
-          <div id="rOut"></div>
+          <!-- Set #rOut at z-index 1 so the dropdown above floats in front -->
+          <div id="rOut" class="relative" style="z-index: 1;"></div>
         </section>
 
         <!-- ============ Appearance ============ -->
@@ -2343,7 +2346,7 @@
     function getSelectedReportUsers() {
       const checked = [...document.querySelectorAll(".r-user-check:checked")];
       if (checked.length === 0 || checked.length === reportMembersCache.length) {
-        return []; // Empty array means all members
+        return [];
       }
       return checked.map((cb) => cb.value);
     }
@@ -2372,7 +2375,6 @@
         $("fUser").value = state.user;
         $("fChannel").value = state.channel;
 
-        // Fill reports channel selector and multi-select member dropdown
         $("rChannel").innerHTML = `<option value="">Active voice channels (excl. AFK)</option><option value="__all__">All channels (incl. AFK)</option>` +
           f.channels.map((c2) => `<option value="${esc(c2.channel_id)}">${esc(c2.name)}${c2.is_afk ? " [AFK]" : ""}</option>`).join("");
         populateReportMemberMultiSelect(f.members);
@@ -3024,6 +3026,10 @@
     }
 
     async function generateReport() {
+      // Ensure dropdown is closed upon report generation
+      $("rUserDropdown").classList.add("hidden");
+      $("rUserBtn").setAttribute("aria-expanded", "false");
+
       const period = $("rPeriod").value;
       const [from, to] = presetDates(period);
       if (period !== "custom") { $("rFrom").value = from; $("rTo").value = to; }
