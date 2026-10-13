@@ -86,6 +86,8 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
   // ---- time distributions ----
   const hourly = new Array(24).fill(0);
   const hourlySpeaking = new Array(24).fill(0);
+  const hourlyMuted = new Array(24).fill(0);
+  const hourlyDeafened = new Array(24).fill(0);
   const heat = Array.from({ length: 7 }, () => new Array(24).fill(0));
   const dailyMap = new Map();
   const memberMap = new Map();
@@ -117,7 +119,11 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
     let first = true;
     eachHourSlice(s.cs, s.ce, (b, sec) => {
       hourly[b.hour] += sec;
-      if (s.secs > 0) hourlySpeaking[b.hour] += s.speakingSecs * (sec / s.secs);
+      if (s.secs > 0) {
+        hourlySpeaking[b.hour] += s.speakingSecs * (sec / s.secs);
+        hourlyMuted[b.hour] += s.mutedSecs * (sec / s.secs);
+        hourlyDeafened[b.hour] += s.deafenedSecs * (sec / s.secs);
+      }
       heat[b.dow][b.hour] += sec;
       let d = dailyMap.get(b.date);
       if (!d) dailyMap.set(b.date, (d = { seconds: 0, speaking: 0, streaming: 0, muted: 0, deafened: 0, sessions: 0, users: new Set() }));
@@ -413,6 +419,8 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
     daily,
     hourly: hourly.map(round),
     hourly_speaking: hourlySpeaking.map(round),
+    hourly_muted: hourlyMuted.map(round),
+    hourly_deafened: hourlyDeafened.map(round),
     heatmap: heat.map((row) => row.map(round)),
     channels,
     members,

@@ -1720,8 +1720,8 @@
           <div class="grid lg:grid-cols-2 gap-4 mt-4">
             <div class="card p-5">
               <h3 class="font-semibold">Most time in voice</h3>
-              <p class="text-xs muted mb-3">Time in voice, with the part spent talking in amber. Click a bar to filter
-                everything to that member.</p>
+              <p class="text-xs muted mb-3">Time in voice, with the part spent talking (amber), muted while listening
+                (blue) and deafened (grey). Click a bar to filter everything to that member.</p>
               <div class="relative h-72"><canvas id="cLeader"></canvas>
                 <p class="empty hidden absolute inset-0 flex items-center justify-center muted">No voice activity in
                   this range.</p>
@@ -3024,6 +3024,8 @@
           datasets: [
             { label: "In voice", data: orderedHours.map((h) => hrs(s.hourly[h])), backgroundColor: T.accent, borderRadius: 3 },
             { label: "On the mic", data: orderedHours.map((h) => hrs((s.hourly_speaking || [])[h] || 0)), backgroundColor: "#f59e0b", borderRadius: 3 },
+            { label: "Muted", data: orderedHours.map((h) => hrs((s.hourly_muted || [])[h] || 0)), backgroundColor: "#38bdf8", borderRadius: 3 },
+            { label: "Deafened", data: orderedHours.map((h) => hrs((s.hourly_deafened || [])[h] || 0)), backgroundColor: "#94a3b8", borderRadius: 3 },
           ],
         },
         options: {
@@ -3048,19 +3050,21 @@
         $("hHourly").textContent = "When " + whoText + " in voice";
         $("subHourly").textContent = "Time spent in voice during each clock hour, added up over " + rangeText() + " (" + tzCity() + " time)." +
           (n === 1 ? " One member can add at most 1 hour per day to a slot, so a bar of 2h means they were there for that whole hour on two days." : " Everyone's time is stacked, so 3 people there for the whole hour on one day make 3h.") +
-          " Amber is the part spent talking.";
+          " Amber is the part spent talking, blue muted while listening, grey deafened.";
       }
 
       renderHeatmap(s.heatmap);
 
       const lead = s.members.slice(0, 10);
       chartUsers.cLeader = lead.map((m) => m.user_id);
-      sizeChart("cLeader", lead.length, 288);
+      sizeChart("cLeader", lead.length * 1.8, 288); // four bars per member need taller rows
       upsert("cLeader", {
         type: "bar",
         data: { labels: lead.map((m) => m.name), datasets: [
             { label: "In voice", data: lead.map((m) => hrs(m.seconds)), backgroundColor: T.accent, borderRadius: 4 },
             { label: "On the mic", data: lead.map((m) => hrs(m.speaking_seconds || 0)), backgroundColor: "#f59e0b", borderRadius: 4 },
+            { label: "Muted", data: lead.map((m) => hrs(m.muted_seconds || 0)), backgroundColor: "#38bdf8", borderRadius: 4 },
+            { label: "Deafened", data: lead.map((m) => hrs(m.deafened_seconds || 0)), backgroundColor: "#94a3b8", borderRadius: 4 },
           ] },
         options: {
           indexAxis: "y",
