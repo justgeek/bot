@@ -826,7 +826,7 @@
       align-items: center;
       justify-content: space-between;
       gap: .5rem;
-      max-width: 16rem;
+      max-width: 24rem;
       text-align: left;
       cursor: pointer;
     }
@@ -1692,9 +1692,9 @@
 
           <div class="grid lg:grid-cols-2 gap-4 mt-4">
             <div class="card p-5">
-              <h3 class="font-semibold">When people are in voice</h3>
-              <p class="text-xs muted mb-3">Total hours by hour of the day (<span class="tzname">your time</span>).
-                Starts at your chosen rollover hour.</p>
+              <h3 id="hHourly" class="font-semibold">When people are in voice</h3>
+              <p id="subHourly" class="text-xs muted mb-3">Time spent in voice during each clock hour, added up over
+                the range.</p>
               <div class="relative h-64"><canvas id="cHourly"></canvas>
                 <p class="empty hidden absolute inset-0 flex items-center justify-center muted">No voice activity in
                   this range.</p>
@@ -1711,27 +1711,9 @@
           <div class="grid lg:grid-cols-2 gap-4 mt-4">
             <div class="card p-5">
               <h3 class="font-semibold">Most time in voice</h3>
-              <p class="text-xs muted mb-3">Click a bar to filter everything to that member.</p>
+              <p class="text-xs muted mb-3">Time in voice, with the part spent talking in amber. Click a bar to filter
+                everything to that member.</p>
               <div class="relative h-72"><canvas id="cLeader"></canvas>
-                <p class="empty hidden absolute inset-0 flex items-center justify-center muted">No voice activity in
-                  this range.</p>
-              </div>
-            </div>
-            <div class="card p-5">
-              <h3 class="font-semibold">Time per voice channel</h3>
-              <p class="text-xs muted mb-3">Share of total voice hours.</p>
-              <div class="relative h-72"><canvas id="cChannels"></canvas>
-                <p class="empty hidden absolute inset-0 flex items-center justify-center muted">No voice activity in
-                  this range.</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="grid lg:grid-cols-2 gap-4 mt-4">
-            <div class="card p-5">
-              <h3 class="font-semibold">How long sessions last</h3>
-              <p class="text-xs muted mb-3">Number of sessions by length.</p>
-              <div class="relative h-64"><canvas id="cHist"></canvas>
                 <p class="empty hidden absolute inset-0 flex items-center justify-center muted">No voice activity in
                   this range.</p>
               </div>
@@ -2306,9 +2288,12 @@
       return secs + "s";
     }
     const hrs = (secs) => Math.round((secs / 3600) * 100) / 100;
+    // Hours and minutes ("17h 42m"), not decimal hours; minutes are dropped once it gets past 100 hours
     function hrsText(secs) {
-      const h = secs / 3600;
-      return h >= 100 ? Math.round(h).toLocaleString() + " h" : (Math.round(h * 10) / 10).toLocaleString() + " h";
+      const mins = Math.round((Number(secs) || 0) / 60);
+      const h = Math.floor(mins / 60), m = mins % 60;
+      if (h >= 100) return Math.round(mins / 60).toLocaleString() + "h";
+      return h ? h + "h " + m + "m" : m + "m";
     }
     function hourLabel(h) {
       if (h === 0) return "12 AM";
@@ -2457,7 +2442,18 @@
         charts[id] = new Chart($(id), config);
       }
     }
-    const hoursTip = { callbacks: { label: (c) => " " + (c.parsed.x ?? c.parsed.y ?? c.parsed) + " h" } };
+    // Chart values are plotted in decimal hours; tooltips read them back as hours and minutes
+    const hoursTip = {
+      callbacks: {
+        label: (c) => {
+          const pie = typeof c.parsed === "number";
+          const v = pie ? c.parsed : (c.chart.options.indexAxis === "y" ? c.parsed.x : c.parsed.y);
+          const name = pie ? c.label : c.dataset.label;
+          if (c.dataset.yAxisID === "y1") return " " + name + ": " + v;
+          return " " + (name ? name + ": " : "") + hrsText(v * 3600);
+        },
+      },
+    };
     const axisTitle = (text) => ({ display: true, text });
 
     function renderRangeButtons() {
@@ -2569,7 +2565,11 @@
         return ids.length + " members";
       }
       function render() {
-        summary.textContent = summaryText();
+        // one or two picked members show with their picture; anything else is a text label
+        const picked = get(), label = summaryText();
+        if (picked.length && picked.length <= 2 && label === picked.map(nameOf).join(", ")) {
+          summary.innerHTML = `<span class="flex items-center gap-3">${picked.map((id) => who(id, nameOf(id), { plain: true })).join("")}</span>`;
+        } else summary.textContent = label;
         if (panel.classList.contains("hidden")) return;
         part("[data-quick]").innerHTML = groups().map((g) =>
           `<button type="button" class="mpick-chip" data-group="${esc(g.key)}" aria-pressed="${g.ids.every((id) => sel.has(id))}" title="Tick or untick everyone in this group">${g.color ? `<span class="dot" style="background:${esc(g.color)}"></span>` : ""}${esc(g.label)} <span class="n">${g.ids.length}</span></button>`).join("");
@@ -2838,7 +2838,8 @@
     function renderInsights(s) {
       const k = s.kpis, cards = [];
       const add = (title, value, detail, html) => cards.push({ title, value, detail, html });
-      const total = k.total_seconds;
+      // shares are of everyone's time added up; channel uptime would overcount when people overlap
+      const total = k.person_hours || k.total_seconds;
 
       if (total > 0) {
         const top = s.members[0];
@@ -2852,7 +2853,7 @@
         const topStreamer = [...s.members].sort((a, b) => (b.streaming_seconds || 0) - (a.streaming_seconds || 0))[0];
         if (topStreamer && topStreamer.streaming_seconds > 0) {
           add("Top Streamer 🖥️", topStreamer.name, hrsText(topStreamer.streaming_seconds) + ` sharing their screen (${Math.round((topStreamer.streaming_seconds / topStreamer.seconds) * 100)}% of their VC time)`, who(topStreamer.user_id, topStreamer.name, { lg: true }));
-        }
+        } else add("Top Streamer 🖥️", "Nobody yet", "No screen share recorded in this range");
 
         const hMax = s.hourly.indexOf(Math.max(...s.hourly));
         add("Busiest hour", hourLabel(hMax) + " to " + hourLabel((hMax + 1) % 24), hrsText(s.hourly[hMax]) + " in voice during that hour, " + tzCity() + " time");
@@ -2861,7 +2862,7 @@
         const dMax = dowTotals.indexOf(Math.max(...dowTotals));
         add("Busiest weekday", DAYS_FULL[dMax], hrsText(dowTotals[dMax]) + " across the range");
 
-        if (s.channels[0] && !state.channel) add("Favorite channel", s.channels[0].name, Math.round((s.channels[0].seconds / total) * 100) + "% of voice time, " + s.channels[0].sessions + " sessions");
+        if (s.channels.length > 1 && !state.channel) add("Favorite channel", s.channels[0].name, Math.round((s.channels[0].seconds / total) * 100) + "% of voice time, " + s.channels[0].sessions + " sessions");
 
         if (k.longest) add("Longest session", dur(k.longest.seconds), k.longest.name + " in " + k.longest.channel_name + ", " + fullFmt.format(new Date(k.longest.started_at)));
 
@@ -2985,7 +2986,7 @@
         },
         options: {
           interaction: { mode: "index", intersect: false },
-          plugins: { legend },
+          plugins: { legend, tooltip: hoursTip },
           scales: {
             y: { beginAtZero: true, title: axisTitle("Hours"), grid: { color: T.grid } },
             y1: { beginAtZero: true, position: "right", title: axisTitle("Members"), grid: { drawOnChartArea: false }, ticks: { precision: 0 } },
@@ -2998,13 +2999,35 @@
         type: "bar",
         data: {
           labels: orderedHours.map((h) => shortHour(h)),
-          datasets: [{ label: "Hours in voice", data: orderedHours.map((h) => hrs(s.hourly[h])), backgroundColor: T.accent, borderRadius: 3 }],
+          datasets: [
+            { label: "In voice", data: orderedHours.map((h) => hrs(s.hourly[h])), backgroundColor: T.accent, borderRadius: 3 },
+            { label: "On the mic", data: orderedHours.map((h) => hrs((s.hourly_speaking || [])[h] || 0)), backgroundColor: "#f59e0b", borderRadius: 3 },
+          ],
         },
         options: {
-          plugins: { legend: { display: false } },
-          scales: { y: { beginAtZero: true, title: axisTitle("Hours"), grid: { color: T.grid } }, x: { grid: { display: false } } },
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend,
+            tooltip: {
+              callbacks: {
+                title: (items) => { const h = orderedHours[items[0].dataIndex]; return hourLabel(h) + " to " + hourLabel((h + 1) % 24); },
+                label: hoursTip.callbacks.label,
+                // the bar is a total over the whole range, so also say what that is on a typical day
+                footer: (items) => { const h = orderedHours[items[0].dataIndex], days = Math.max(1, s.daily.length); return "About " + hrsText(s.hourly[h] / days) + " per day over " + days + " day" + (days === 1 ? "" : "s"); },
+              },
+            },
+          },
+          scales: { y: { beginAtZero: true, title: axisTitle("Hours added up over the range"), grid: { color: T.grid } }, x: { grid: { display: false } } },
         },
       }, noVoice);
+      {
+        const n = state.user ? state.user.split(",").length : 0;
+        const whoText = n === 1 ? userPicker.names()[0] + " is" : n > 1 ? "these " + n + " members are" : "people are";
+        $("hHourly").textContent = "When " + whoText + " in voice";
+        $("subHourly").textContent = "Time spent in voice during each clock hour, added up over " + rangeText() + " (" + tzCity() + " time)." +
+          (n === 1 ? " One member can add at most 1 hour per day to a slot, so a bar of 2h means they were there for that whole hour on two days." : " Everyone's time is stacked, so 3 people there for the whole hour on one day make 3h.") +
+          " Amber is the part spent talking.";
+      }
 
       renderHeatmap(s.heatmap);
 
@@ -3013,26 +3036,18 @@
       sizeChart("cLeader", lead.length, 288);
       upsert("cLeader", {
         type: "bar",
-        data: { labels: lead.map((m) => m.name), datasets: [{ label: "Hours in voice", data: lead.map((m) => hrs(m.seconds)), backgroundColor: T.accent, borderRadius: 4 }] },
+        data: { labels: lead.map((m) => m.name), datasets: [
+            { label: "In voice", data: lead.map((m) => hrs(m.seconds)), backgroundColor: T.accent, borderRadius: 4 },
+            { label: "On the mic", data: lead.map((m) => hrs(m.speaking_seconds || 0)), backgroundColor: "#f59e0b", borderRadius: 4 },
+          ] },
         options: {
           indexAxis: "y",
-          plugins: { legend: { display: false }, tooltip: hoursTip },
+          interaction: { mode: "index", axis: "y", intersect: false },
+          plugins: { legend, tooltip: hoursTip },
           scales: { x: { beginAtZero: true, title: axisTitle("Hours"), grid: { color: T.grid } }, y: { grid: { display: false }, ticks: { autoSkip: false, color: (c) => chartColor("cLeader", c.index) } } },
           onClick: (_e, els) => { if (els.length && lastStats) { const m = lastStats.members[els[0].index]; if (m) setUser(m.user_id); } },
           onHover: (e, els) => { e.native.target.style.cursor = els.length ? "pointer" : "default"; },
         },
-      }, noVoice);
-
-      upsert("cChannels", {
-        type: "doughnut",
-        data: { labels: s.channels.map((c) => c.name), datasets: [{ data: s.channels.map((c) => hrs(c.seconds)), backgroundColor: s.channels.map((_, i) => T.palette[i % T.palette.length]), borderColor: T.surface }] },
-        options: { plugins: { legend: { position: "bottom", labels: { color: T.text } }, tooltip: { callbacks: { label: (c) => " " + c.label + ": " + c.parsed + " h" } } } },
-      }, noVoice);
-
-      upsert("cHist", {
-        type: "bar",
-        data: { labels: s.histogram.map((h) => h.label), datasets: [{ label: "Sessions", data: s.histogram.map((h) => h.count), backgroundColor: T.palette[3], borderRadius: 3 }] },
-        options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 }, title: axisTitle("Sessions"), grid: { color: T.grid } }, x: { grid: { display: false } } } },
       }, noVoice);
 
       renderPairs(s.pairs);
@@ -3045,7 +3060,7 @@
       upsert("cStatus", {
         type: "doughnut",
         data: { labels: keys.map((k) => STATUS[k].label), datasets: [{ data: keys.map((k) => hrs(p.totals[k])), backgroundColor: keys.map((k) => T[k]), borderColor: T.surface }] },
-        options: { plugins: { legend: { position: "bottom", labels: { color: T.text } }, tooltip: { callbacks: { label: (c) => " " + c.label + ": " + c.parsed + " h" } } } },
+        options: { plugins: { legend: { position: "bottom", labels: { color: T.text } }, tooltip: hoursTip } },
       }, noStatus);
 
       $("hStatusMembers").textContent = sf ? "Hours " + lbl + " per member" : "Hours online, idle and busy per member";
@@ -3064,7 +3079,7 @@
         data: { labels: pm.map((m) => m.name), datasets: stKeys.map((k) => ({ label: STATUS[k].label, data: pm.map((m) => hrs(m[k])), backgroundColor: T[k] })) },
         options: {
           indexAxis: "y",
-          plugins: { legend: sf ? { display: false } : legend },
+          plugins: { legend: sf ? { display: false } : legend, tooltip: hoursTip },
           scales: { x: { stacked: true, beginAtZero: true, title: axisTitle("Hours"), grid: { color: T.grid } }, y: { stacked: true, grid: { display: false }, ticks: { autoSkip: false, color: (c) => chartColor("cStatusMembers", c.index) } } },
           onClick: (_e, els) => { const u = els.length && chartUsers.cStatusMembers[els[0].index]; if (u) setUser(u); },
           onHover: (e, els) => { e.native.target.style.cursor = els.length ? "pointer" : "default"; },
@@ -3079,7 +3094,7 @@
           datasets: stKeys.map((k) => ({ label: STATUS[k].label, data: orderedHours.map((h) => hrs(hbs[k][h])), backgroundColor: T[k], borderRadius: 3 })),
         },
         options: {
-          plugins: { legend: sf ? { display: false } : legend },
+          plugins: { legend: sf ? { display: false } : legend, tooltip: hoursTip },
           scales: { y: { stacked: true, beginAtZero: true, title: axisTitle("Hours"), grid: { color: T.grid } }, x: { stacked: true, grid: { display: false } } },
         },
       }, noStatus);
