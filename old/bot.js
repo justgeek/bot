@@ -24,9 +24,9 @@ const tesseract = require("node-tesseract-ocr");
 const monitor = require("active-window");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const Groq = require("groq-sdk");
-const { getRelevantEmojis, isValidDiscordEmoji } = require('./ai.js');
+const { getRelevantEmojis, isValidDiscordEmoji } = require('../ai.js');
 // const { textToSpeech } = require('./tts.js');
-const { isCraigMember, renameCraigToMokhber } = require("./utils");
+const { isCraigMember, renameCraigToMokhber } = require("../utils.js");
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -172,7 +172,7 @@ const joinBanhaVoiceChannel = async (channelToJoin) => {
     console.log(`Bot joined voice channel: ${channelToJoin}`);
   } catch (err) {
     console.error("Voice connection failed to become ready:", err);
-    try { connection.destroy(); } catch {}
+    try { connection.destroy(); } catch { }
     connection = null;
     return null;
   }
@@ -183,7 +183,7 @@ const joinBanhaVoiceChannel = async (channelToJoin) => {
     player.on('stateChange', (oldState, newState) => {
       try {
         console.log(`AudioPlayer state: ${oldState.status} -> ${newState.status}`);
-      } catch {}
+      } catch { }
     });
   }
 
@@ -220,12 +220,12 @@ client.on("ready", () => {
     const voicePkg = require('@discordjs/voice/package.json');
     console.log(`Runtime Node: ${process.version}`);
     console.log(`@discordjs/voice version: ${voicePkg.version}`);
-  } catch {}
+  } catch { }
   client.user.setStatus('invisible');
   sendToChannel(IDs.channelV, 'Sup!\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t("**!commands**" for stuff)');
 
   // Optional: print dependency report once for debugging audio env
-  try { console.log(generateDependencyReport()); } catch {}
+  try { console.log(generateDependencyReport()); } catch { }
 
   if (shouldJoinVoiceChannel(IDs.voice3)) {
     joinBanhaVoiceChannel(IDs.voice3);
@@ -495,7 +495,7 @@ client.on("messageCreate", async (msg) => {
     // AI logic based on environment variable
     const preferredService = process.env.AI_SERVICE?.toLowerCase();
     const userPrompt = message.slice(2).trim();
-        
+
     if (preferredService === 'gemini') {
       // Try Gemini first
       try {
@@ -621,8 +621,8 @@ client.on("messageCreate", async (msg) => {
 
   else if (message.startsWith("!")) {
     message = message.replace("!", "").trim();
-  // else if (message.startsWith("$")) {
-  //   message = message.replace("$", "").trim();
+    // else if (message.startsWith("$")) {
+    //   message = message.replace("$", "").trim();
 
     // Set default language to "ja" for fallback TTS
     let lang = "ja";
@@ -730,10 +730,10 @@ client.on("presenceUpdate", (before, after) => {
 
     // Check if this activity is new (wasn't in the 'before' state)
     const isNewActivity = !beforeActivities.some(a => a.name === activity.name);
-    
+
     if (isNewActivity) {
       let action = "Activity:";
-      
+
       // Determine what they are doing based on Discord's ActivityType
       switch (activity.type) {
         case Discord.ActivityType.Playing: action = "🎮 Playing"; break;
@@ -748,12 +748,12 @@ client.on("presenceUpdate", (before, after) => {
       // 'state' often contains artists, group sizes, or custom status text
       const details = activity.details ? ` | ${activity.details}` : "";
       const state = activity.state ? ` | ${activity.state}` : "";
-      
+
       const msg2 = now() + "\t**" + user.username + ":\t**" + action + " " + activity.name + details + state;
       console.log(msg2);
       sendToChannel(IDs.channelActivity, msg2); // Make sure you define channelActivity in your IDs object!
     }
-});
+  });
 
 
   if (userID == IDs.Moonscarlet && (statusBefore == "offline" || statusBefore == "") && statusAfter == "online") {
