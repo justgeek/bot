@@ -43,7 +43,10 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
     const ce = Math.min(end, now);
     if (!(ce > cs)) continue;
 
-    const speakingSecs = Number(r.speaking_seconds) || 0;
+    // Talk / stream time is stored per session, so a session cut by the window keeps a matching share of it
+    const frac = end > start ? (ce - cs) / (end - start) : 0;
+    const speakingSecs = (Number(r.speaking_seconds) || 0) * frac;
+    const streamingSecs = (Number(r.streaming_seconds) || 0) * frac;
     rawIntervals.push([cs, ce]);
 
     win.push({
@@ -54,6 +57,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
       ce,
       secs: (ce - cs) / 1000,
       speakingSecs,
+      streamingSecs,
       open: !r.left_at,
     });
   }
@@ -82,11 +86,12 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
   for (const s of scoped) {
     let m = memberMap.get(s.userId);
     if (!m) {
-      m = { seconds: 0, speaking_seconds: 0, sessions: 0, longest: 0, days: new Set(), chans: new Map(), first: s.cs, last: s.ce, open: false };
+      m = { seconds: 0, speaking_seconds: 0, streaming_seconds: 0, sessions: 0, longest: 0, days: new Set(), chans: new Map(), first: s.cs, last: s.ce, open: false };
       memberMap.set(s.userId, m);
     }
     m.seconds += s.secs;
     m.speaking_seconds += s.speakingSecs;
+    m.streaming_seconds += s.streamingSecs;
     m.sessions += 1;
     m.longest = Math.max(m.longest, s.secs);
     m.first = Math.min(m.first, s.cs);
@@ -104,8 +109,12 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
       hourly[b.hour] += sec;
       heat[b.dow][b.hour] += sec;
       let d = dailyMap.get(b.date);
-      if (!d) dailyMap.set(b.date, (d = { seconds: 0, sessions: 0, users: new Set() }));
+      if (!d) dailyMap.set(b.date, (d = { seconds: 0, speaking: 0, streaming: 0, sessions: 0, users: new Set() }));
       d.seconds += sec;
+      if (s.secs > 0) {
+        d.speaking += s.speakingSecs * (sec / s.secs);
+        d.streaming += s.streamingSecs * (sec / s.secs);
+      }
       d.users.add(s.userId);
       if (first) d.sessions += 1;
       first = false;
@@ -130,6 +139,8 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
     return {
       date,
       voice_seconds: d ? Math.round(d.seconds) : 0,
+      speaking_seconds: d ? Math.round(d.speaking) : 0,
+      streaming_seconds: d ? Math.round(d.streaming) : 0,
       sessions: d ? d.sessions : 0,
       users: d ? d.users.size : 0,
     };
@@ -219,6 +230,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
   const totalOccupancySeconds = user ? scoped.reduce((n, s) => n + s.secs, 0) : db.unionIntervals(scopedIntervals);
   const personHoursTotal = scoped.reduce((n, s) => n + s.secs, 0);
   const totalSpeakingSeconds = scoped.reduce((n, s) => n + s.speakingSecs, 0);
+  const totalStreamingSeconds = scoped.reduce((n, s) => n + s.streamingSecs, 0);
 
   const sorted = scoped.map((s) => s.secs).sort((a, b) => a - b);
   const median = sorted.length
@@ -237,6 +249,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
       started_at: new Date(s.cs).toISOString(),
       seconds: Math.round(s.secs),
       speaking_seconds: Math.round(s.speakingSecs),
+      streaming_seconds: Math.round(s.streamingSecs),
       open: s.open,
     }));
 
@@ -258,6 +271,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
         seconds: Math.round(m.seconds),
         speaking_seconds: Math.round(m.speaking_seconds),
         talk_ratio_pct: talkRatio,
+        streaming_seconds: Math.round(m.streaming_seconds),
         sessions: m.sessions,
         avg_session_seconds: Math.round(m.seconds / m.sessions),
         longest_seconds: Math.round(m.longest),
@@ -360,6 +374,8 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
       person_hours: round(personHoursTotal),
       total_speaking_seconds: round(totalSpeakingSeconds),
       avg_speaking_pct: personHoursTotal > 0 ? Math.round((totalSpeakingSeconds / personHoursTotal) * 1000) / 10 : 0,
+      total_streaming_seconds: round(totalStreamingSeconds),
+      streamers: [...memberMap.values()].filter((m) => m.streaming_seconds >= 1).length,
       sessions: scoped.length,
       avg_session_seconds: scoped.length ? round(personHoursTotal / scoped.length) : 0,
       median_session_seconds: round(median),

@@ -60,7 +60,41 @@ function seedSpeakingSeconds(userId, seconds) {
 }
 
 function trackedSpeakerIds() {
-  return [...new Set([...sessionSpeakingTally.keys(), ...activeSpeakers.keys()])];
+  return [...new Set([...sessionSpeakingTally.keys(), ...activeSpeakers.keys(), ...sessionStreamTally.keys(), ...activeStreamers.keys()])];
+}
+
+// In-memory screen-share ("Go Live") trackers, fed by voiceStateUpdate in events.js
+const activeStreamers = new Map(); // userId -> start timestamp (ms)
+const sessionStreamTally = new Map(); // userId -> accumulated streaming duration (ms)
+
+function setStreaming(userId, isStreaming) {
+  if (isStreaming) {
+    if (!activeStreamers.has(userId)) activeStreamers.set(userId, Date.now());
+    return;
+  }
+  const started = activeStreamers.get(userId);
+  if (!started) return;
+  activeStreamers.delete(userId);
+  sessionStreamTally.set(userId, (sessionStreamTally.get(userId) || 0) + Math.max(0, Date.now() - started));
+}
+
+function getLiveStreamingSeconds(userId) {
+  let totalMs = sessionStreamTally.get(userId) || 0;
+  const started = activeStreamers.get(userId);
+  if (started) totalMs += Math.max(0, Date.now() - started);
+  return Math.round(totalMs / 1000);
+}
+
+function flushStreamingSeconds(userId) {
+  const secs = getLiveStreamingSeconds(userId);
+  activeStreamers.delete(userId);
+  sessionStreamTally.delete(userId);
+  return secs;
+}
+
+function seedStreamingSeconds(userId, seconds) {
+  if (!(seconds > 0)) return;
+  sessionStreamTally.set(userId, (sessionStreamTally.get(userId) || 0) + seconds * 1000);
 }
 
 function flushSpeakingSeconds(userId) {
@@ -223,5 +257,9 @@ module.exports = {
   flushSpeakingSeconds,
   getLiveSpeakingSeconds,
   seedSpeakingSeconds,
-  trackedSpeakerIds
+  trackedSpeakerIds,
+  setStreaming,
+  getLiveStreamingSeconds,
+  flushStreamingSeconds,
+  seedStreamingSeconds
 };

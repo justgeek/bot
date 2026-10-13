@@ -62,6 +62,8 @@ function computeReport(o) {
         uid,
         date,
         seconds: 0,
+        spk: 0,
+        strm: 0,
         n: 0,
         first: Infinity,
         last: -Infinity,
@@ -116,9 +118,14 @@ function computeReport(o) {
       const ce = Math.min(end, toMs);
       if (!(ce > cs)) continue;
       const chName = r.channel_name || "Voice";
+      // Talk / stream time is stored per session; each day gets the share matching its slice of the session
+      const spkRate = (Number(r.speaking_seconds) || 0) / (end - start);
+      const strmRate = (Number(r.streaming_seconds) || 0) / (end - start);
       eachDaySeg(cs, ce, (date, a, b, ds, de) => {
         const R = rec(r.user_id, date);
         addQualifying(R, a, b, ds, de, start, end, !r.left_at);
+        R.spk += spkRate * (b - a);
+        R.strm += strmRate * (b - a);
         R.ch.set(chName, (R.ch.get(chName) || 0) + (b - a) / 1000);
       });
     }
@@ -187,6 +194,7 @@ function computeReport(o) {
     }
 
     for (const uid of ids) {
+      let totalSecs = 0, totalSpk = 0, totalStrm = 0;
       let daysLate = 0;
       let daysExcused = 0;
       let daysOnTime = 0;
@@ -199,6 +207,7 @@ function computeReport(o) {
         if (date > today) continue;
 
         const R = recs.get(uid + "|" + date);
+        if (R) { totalSecs += R.seconds; totalSpk += R.spk; totalStrm += R.strm; }
         const dayStartMs = z.startOfDate(date);
 
         let targetMs = dayStartMs;
@@ -297,6 +306,9 @@ function computeReport(o) {
         days_on_time: daysOnTime,
         days_excused: daysExcused,
         days_absent: daysAbsent,
+        total_speaking_seconds: Math.round(totalSpk),
+        talk_ratio_pct: totalSecs > 0 ? Math.round((totalSpk / totalSecs) * 1000) / 10 : 0,
+        total_streaming_seconds: Math.round(totalStrm),
         total_days: totalEvaluatedDays,
         punctuality_pct: punctualityPct,
         avg_late_minutes: avgLateMin,
@@ -305,6 +317,12 @@ function computeReport(o) {
       });
     }
 
+    const dayExtras = (l) => {
+      const R = recs.get(l.user_id + "|" + l.date);
+      l.speaking_seconds = R ? Math.round(R.spk) : 0;
+      l.streaming_seconds = R ? Math.round(R.strm) : 0;
+    };
+    slackerLog.forEach(dayExtras);
     slackerMembers.sort((a, b) => b.penalty_points - a.penalty_points || b.days_late - a.days_late || b.total_late_minutes - a.total_late_minutes);
     slackerMembers.forEach((m, idx) => (m.rank = idx + 1));
     slackerLog.sort((a, b) => b.date.localeCompare(a.date) || b.penalty_points - a.penalty_points);
@@ -358,13 +376,15 @@ function computeReport(o) {
 
   const members = [];
   for (const uid of ids) {
-    let days = 0, total = 0, sessions = 0;
+    let days = 0, total = 0, sessions = 0, spk = 0, strm = 0;
     const firstMins = [];
     let earliest = null, latest = null, firstAt = Infinity, lastAt = -Infinity, stillIn = false;
     for (const date of dates) {
       const R = recs.get(uid + "|" + date);
       if (!R || R.seconds <= 0) continue;
       total += R.seconds;
+      spk += R.spk;
+      strm += R.strm;
       sessions += R.n;
       if (!attended(R)) continue;
       days += 1;
@@ -398,6 +418,9 @@ function computeReport(o) {
       absent_days: Math.max(0, elapsed.length - days),
       attendance_pct: elapsed.length ? Math.round((days / elapsed.length) * 1000) / 10 : null,
       total_seconds: Math.round(total),
+      total_speaking_seconds: Math.round(spk),
+      talk_ratio_pct: total > 0 ? Math.round((spk / total) * 1000) / 10 : 0,
+      total_streaming_seconds: Math.round(strm),
       avg_seconds_per_day: days ? Math.round(total / days) : 0,
       sessions,
       avg_first_min: firstMins.length ? Math.round(firstMins.reduce((a, b) => a + b, 0) / firstMins.length) : null,
@@ -416,7 +439,7 @@ function computeReport(o) {
 
   const cellOf = (R) =>
     R && R.seconds > 0
-      ? { s: Math.round(R.seconds), f: R.first, l: R.last, n: R.n, ci: R.ci, co: R.co, op: R.op, i: Math.round(R.st.idle), d: Math.round(R.st.dnd) }
+      ? { s: Math.round(R.seconds), spk: Math.round(R.spk), ratio: Math.round((R.spk / R.seconds) * 1000) / 10, strm: Math.round(R.strm), f: R.first, l: R.last, n: R.n, ci: R.ci, co: R.co, op: R.op, i: Math.round(R.st.idle), d: Math.round(R.st.dnd) }
       : null;
   const grid = members.map((m) => ({
     user_id: m.user_id,
@@ -432,6 +455,9 @@ function computeReport(o) {
       name: nameOf(R.uid),
       attended: attended(R),
       seconds: Math.round(R.seconds),
+      speaking_seconds: Math.round(R.spk),
+      talk_ratio_pct: Math.round((R.spk / R.seconds) * 1000) / 10,
+      streaming_seconds: Math.round(R.strm),
       first: R.first,
       last: R.last,
       count: R.n,
@@ -450,6 +476,8 @@ function computeReport(o) {
     members_attended: members.filter((m) => m.days_attended > 0).length,
     members_listed: members.length,
     total_seconds: members.reduce((n, m) => n + m.total_seconds, 0),
+    total_speaking_seconds: members.reduce((n, m) => n + m.total_speaking_seconds, 0),
+    total_streaming_seconds: members.reduce((n, m) => n + m.total_streaming_seconds, 0),
     attended_member_days: members.reduce((n, m) => n + m.days_attended, 0),
     avg_attendance_pct: pcts.length ? Math.round((pcts.reduce((a, b) => a + b, 0) / pcts.length) * 10) / 10 : null,
     best: members[0] && members[0].days_attended > 0 ? { user_id: members[0].user_id, name: members[0].name, days: members[0].days_attended } : null,

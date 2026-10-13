@@ -26,6 +26,7 @@ create table if not exists presence_logs (
 alter table voice_sessions add column if not exists display_name text;
 alter table presence_logs  add column if not exists display_name text;
 alter table voice_sessions add column if not exists speaking_seconds integer not null default 0;
+alter table voice_sessions add column if not exists streaming_seconds integer not null default 0; -- screen share ("Go Live") time
 
 -- "I'll be late" notices submitted from the dashboard (is_valid = sent before target_at)
 create table if not exists late_notices (

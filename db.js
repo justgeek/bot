@@ -84,9 +84,30 @@ async function logPresence(userId, username, status, displayName) {
   }
 }
 
-async function _endVoiceSession(userId, speakingSeconds = 0) {
+// voice_sessions.streaming_seconds is added by schema.sql; until that has been run, carry on without it.
+let hasStreamingCol = true;
+const isMissingColumn = (error) => !!error && (error.code === "42703" || error.code === "PGRST204");
+function streamingColMissing() {
+  if (hasStreamingCol) console.warn("[DB] voice_sessions.streaming_seconds is missing - run schema.sql to record stream time.");
+  hasStreamingCol = false;
+}
+
+async function writeStreaming(userId, streamingSeconds) {
+  const secs = parseInt(streamingSeconds, 10) || 0;
+  if (!supabase || !hasStreamingCol || secs <= 0) return;
+  const { error } = await supabase
+    .from("voice_sessions")
+    .update({ streaming_seconds: secs })
+    .eq("user_id", String(userId))
+    .is("left_at", null);
+  if (isMissingColumn(error)) streamingColMissing();
+  else if (error) console.error("[DB] writeStreaming failed:", error.message || error);
+}
+
+async function _endVoiceSession(userId, speakingSeconds = 0, streamingSeconds = 0) {
   if (!supabase) return;
   try {
+    await writeStreaming(userId, streamingSeconds);
     const { error } = await supabase.rpc("end_voice_session", {
       p_user_id: String(userId),
       p_speaking_seconds: parseInt(speakingSeconds, 10) || 0
@@ -125,19 +146,20 @@ async function _startVoiceSession(userId, username, channelId, channelName, disp
   }
 }
 
-const endVoiceSession = (userId, speakingSeconds = 0) =>
-  serialize(String(userId), () => _endVoiceSession(userId, speakingSeconds));
+const endVoiceSession = (userId, speakingSeconds = 0, streamingSeconds = 0) =>
+  serialize(String(userId), () => _endVoiceSession(userId, speakingSeconds, streamingSeconds));
 
 const startVoiceSession = (userId, username, channelId, channelName, displayName) =>
   serialize(String(userId), () =>
     _startVoiceSession(userId, username, channelId, channelName, displayName)
   );
 
-// Saves the running mic talk time on a still-open session, so it survives a bot restart.
-const checkpointSpeaking = (userId, speakingSeconds) =>
+// Saves the running mic talk / stream time on a still-open session, so it survives a bot restart.
+const checkpointSpeaking = (userId, speakingSeconds, streamingSeconds = 0) =>
   serialize(String(userId), async () => {
     if (!supabase) return;
     try {
+      await writeStreaming(userId, streamingSeconds);
       const { error } = await supabase
         .from("voice_sessions")
         .update({ speaking_seconds: parseInt(speakingSeconds, 10) || 0 })
@@ -149,7 +171,7 @@ const checkpointSpeaking = (userId, speakingSeconds) =>
     }
   });
 
-// Returns Map(userId -> speaking seconds already saved) for sessions that stayed open across a restart.
+// Returns Map(userId -> { speaking, streaming } seconds already saved) for sessions that stayed open across a restart.
 async function reconcileVoiceSessions(client) {
   const carried = new Map();
   if (!supabase) return carried;
@@ -171,17 +193,18 @@ async function reconcileVoiceSessions(client) {
 
     const { data: open, error } = await supabase
       .from("voice_sessions")
-      .select("user_id, channel_id, speaking_seconds")
+      .select("*")
       .is("left_at", null);
     if (error) throw error;
 
     const stillValid = new Set();
     for (const row of open || []) {
       const now = current.get(row.user_id);
+      const saved = { speaking: Number(row.speaking_seconds) || 0, streaming: Number(row.streaming_seconds) || 0 };
       if (now && now.channelId === row.channel_id) {
         stillValid.add(row.user_id);
-        carried.set(row.user_id, Number(row.speaking_seconds) || 0);
-      } else await endVoiceSession(row.user_id, Number(row.speaking_seconds) || 0);
+        carried.set(row.user_id, saved);
+      } else await endVoiceSession(row.user_id, saved.speaking, saved.streaming);
     }
 
     for (const [userId, info] of current) {
@@ -257,16 +280,24 @@ async function fetchAll(makeQuery) {
 
 async function getSessionRows(sinceIso, untilIso) {
   if (!supabase) return { rows: [], truncated: false };
-  try {
-    return await fetchAll(() => {
+  const load = () =>
+    fetchAll(() => {
       let q = supabase
         .from("voice_sessions")
-        .select("id, user_id, username, display_name, channel_id, channel_name, joined_at, left_at, duration_seconds, speaking_seconds")
+        .select("id, user_id, username, display_name, channel_id, channel_name, joined_at, left_at, duration_seconds, speaking_seconds" + (hasStreamingCol ? ", streaming_seconds" : ""))
         .order("id", { ascending: true });
       if (sinceIso) q = q.or(`left_at.is.null,left_at.gte.${sinceIso}`);
       if (untilIso) q = q.lte("joined_at", untilIso);
       return q;
     });
+  try {
+    try {
+      return await load();
+    } catch (err) {
+      if (!hasStreamingCol || !isMissingColumn(err)) throw err;
+      streamingColMissing();
+      return await load();
+    }
   } catch (err) {
     console.error("[DB] getSessionRows failed:", err.message || err);
     return { rows: [], truncated: false };

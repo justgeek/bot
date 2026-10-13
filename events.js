@@ -40,19 +40,28 @@ module.exports = (client) => {
     membersLoaded
       .then(() => db.reconcileVoiceSessions(client))
       .then((carried) => {
-        for (const [userId, secs] of carried || []) audio.seedSpeakingSeconds(userId, secs);
+        for (const [userId, saved] of carried || []) {
+          audio.seedSpeakingSeconds(userId, saved.speaking);
+          audio.seedStreamingSeconds(userId, saved.streaming);
+        }
+        // Pick up anyone who was already sharing their screen when the bot started
+        guild?.voiceStates.cache.forEach((vs) => {
+          if (vs.channelId && vs.streaming && !vs.member?.user?.bot && db.isTrackedChannel(vs.channelId)) audio.setStreaming(vs.id, true);
+        });
       });
 
-    // Save running mic talk time once a minute so open sessions show it and a restart doesn't lose it
+    // Save running mic talk / stream time once a minute so open sessions show it and a restart doesn't lose it
     const lastSavedSpeaking = new Map();
     setInterval(() => {
       const guild = client.guilds.cache.get(IDs.guild);
       for (const userId of audio.trackedSpeakerIds()) {
         if (!guild?.voiceStates.cache.get(userId)?.channelId) continue;
         const secs = audio.getLiveSpeakingSeconds(userId);
-        if (lastSavedSpeaking.get(userId) === secs) continue;
-        lastSavedSpeaking.set(userId, secs);
-        db.checkpointSpeaking(userId, secs);
+        const streamSecs = audio.getLiveStreamingSeconds(userId);
+        const stamp = secs + ":" + streamSecs;
+        if (lastSavedSpeaking.get(userId) === stamp) continue;
+        lastSavedSpeaking.set(userId, stamp);
+        db.checkpointSpeaking(userId, secs, streamSecs);
       }
     }, 60000);
   });
@@ -374,13 +383,17 @@ module.exports = (client) => {
       const dbUsername = after.member?.user?.username || dbUserId;
 
       if (before.channelId) {
-        // Retrieve and flush the member's speaking seconds for this session
+        // Retrieve and flush the member's speaking and screen-share seconds for this session
         const speakingSecs = audio.flushSpeakingSeconds ? audio.flushSpeakingSeconds(dbUserId) : 0;
-        db.endVoiceSession(dbUserId, speakingSecs);
+        db.endVoiceSession(dbUserId, speakingSecs, audio.flushStreamingSeconds(dbUserId));
       }
       if (after.channelId && db.isTrackedChannel(after.channelId)) {
         db.startVoiceSession(dbUserId, dbUsername, after.channelId, after.channel?.name, after.member?.displayName);
       }
+    }
+    // Screen share ("Go Live") started or stopped; a stream ends when its owner leaves or switches channel
+    if (!after.member?.user?.bot) {
+      audio.setStreaming(after.id, !!(after.channelId && after.streaming && db.isTrackedChannel(after.channelId)));
     }
 
     let chatMsg = " ";

@@ -48,7 +48,13 @@ module.exports = function registerDashboard(app, client) {
   // Sessions still in progress only get their talk time written at the end, so overlay the live tally
   const withLiveSpeaking = (rows) =>
     rows.map((r) =>
-      r.left_at ? r : { ...r, speaking_seconds: Math.max(Number(r.speaking_seconds) || 0, audio.getLiveSpeakingSeconds(r.user_id)) }
+      r.left_at
+        ? r
+        : {
+          ...r,
+          speaking_seconds: Math.max(Number(r.speaking_seconds) || 0, audio.getLiveSpeakingSeconds(r.user_id)),
+          streaming_seconds: Math.max(Number(r.streaming_seconds) || 0, audio.getLiveStreamingSeconds(r.user_id)),
+        }
     );
 
   const getGuild = () => client.guilds.cache.get(IDs.guild);
@@ -299,6 +305,7 @@ module.exports = function registerDashboard(app, client) {
           left_at: r.left_at,
           duration_seconds: Math.max(0, Math.round((end - start) / 1000)),
           speaking_seconds: Number(r.speaking_seconds) || 0,
+          streaming_seconds: Number(r.streaming_seconds) || 0,
           open: !r.left_at,
         };
       });
@@ -330,10 +337,10 @@ module.exports = function registerDashboard(app, client) {
         if (/^[=+\-@]/.test(s)) s = "'" + s;
         return `"${s.replace(/"/g, '""')}"`;
       };
-      const lines = [`member,username,user_id,channel,joined_local (${filters.tz}),left_local (${filters.tz}),joined_at_utc,left_at_utc,duration_seconds,speaking_seconds`];
+      const lines = [`member,username,user_id,channel,joined_local (${filters.tz}),left_local (${filters.tz}),joined_at_utc,left_at_utc,duration_seconds,speaking_seconds,streaming_seconds`];
       for (const r of rows) {
         lines.push(
-          [r.name, r.username, r.user_id, r.channel_name, fmtLocal(r.joined_at), fmtLocal(r.left_at), r.joined_at, r.left_at || "", r.duration_seconds, r.speaking_seconds]
+          [r.name, r.username, r.user_id, r.channel_name, fmtLocal(r.joined_at), fmtLocal(r.left_at), r.joined_at, r.left_at || "", r.duration_seconds, r.speaking_seconds, r.streaming_seconds]
             .map(cell)
             .join(",")
         );
