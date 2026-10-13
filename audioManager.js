@@ -60,41 +60,61 @@ function seedSpeakingSeconds(userId, seconds) {
 }
 
 function trackedSpeakerIds() {
-  return [...new Set([...sessionSpeakingTally.keys(), ...activeSpeakers.keys(), ...sessionStreamTally.keys(), ...activeStreamers.keys()])];
+  const ids = new Set([...sessionSpeakingTally.keys(), ...activeSpeakers.keys()]);
+  for (const t of Object.values(flagTimers)) for (const id of [...t.active.keys(), ...t.tally.keys()]) ids.add(id);
+  return [...ids];
 }
 
-// In-memory screen-share ("Go Live") trackers, fed by voiceStateUpdate in events.js
-const activeStreamers = new Map(); // userId -> start timestamp (ms)
-const sessionStreamTally = new Map(); // userId -> accumulated streaming duration (ms)
+// In-memory timers for on/off voice states, fed by voiceStateUpdate in events.js:
+//   streaming = sharing their screen ("Go Live")
+//   muted     = mic muted but still listening (deafening also mutes, so that time goes to "deafened" only)
+//   deafened  = deafened
+const FLAG_KINDS = ["streaming", "muted", "deafened"];
+const flagTimers = Object.fromEntries(FLAG_KINDS.map((k) => [k, { active: new Map(), tally: new Map() }])); // userId -> start ms / accumulated ms
 
-function setStreaming(userId, isStreaming) {
-  if (isStreaming) {
-    if (!activeStreamers.has(userId)) activeStreamers.set(userId, Date.now());
-    return;
+// flags: { streaming, muted, deafened } booleans describing the member right now
+function setVoiceFlags(userId, flags) {
+  for (const kind of FLAG_KINDS) {
+    const t = flagTimers[kind];
+    if (flags[kind]) {
+      if (!t.active.has(userId)) t.active.set(userId, Date.now());
+      continue;
+    }
+    const started = t.active.get(userId);
+    if (!started) continue;
+    t.active.delete(userId);
+    t.tally.set(userId, (t.tally.get(userId) || 0) + Math.max(0, Date.now() - started));
   }
-  const started = activeStreamers.get(userId);
-  if (!started) return;
-  activeStreamers.delete(userId);
-  sessionStreamTally.set(userId, (sessionStreamTally.get(userId) || 0) + Math.max(0, Date.now() - started));
 }
 
-function getLiveStreamingSeconds(userId) {
-  let totalMs = sessionStreamTally.get(userId) || 0;
-  const started = activeStreamers.get(userId);
-  if (started) totalMs += Math.max(0, Date.now() - started);
-  return Math.round(totalMs / 1000);
+// -> { streaming, muted, deafened } seconds so far in the member's current session
+function getLiveFlagSeconds(userId) {
+  const out = {};
+  for (const kind of FLAG_KINDS) {
+    const t = flagTimers[kind];
+    let totalMs = t.tally.get(userId) || 0;
+    const started = t.active.get(userId);
+    if (started) totalMs += Math.max(0, Date.now() - started);
+    out[kind] = Math.round(totalMs / 1000);
+  }
+  return out;
 }
 
-function flushStreamingSeconds(userId) {
-  const secs = getLiveStreamingSeconds(userId);
-  activeStreamers.delete(userId);
-  sessionStreamTally.delete(userId);
-  return secs;
+function flushFlagSeconds(userId) {
+  const out = getLiveFlagSeconds(userId);
+  for (const kind of FLAG_KINDS) {
+    flagTimers[kind].active.delete(userId);
+    flagTimers[kind].tally.delete(userId);
+  }
+  return out;
 }
 
-function seedStreamingSeconds(userId, seconds) {
-  if (!(seconds > 0)) return;
-  sessionStreamTally.set(userId, (sessionStreamTally.get(userId) || 0) + seconds * 1000);
+// Carries time saved before a restart over to the still-open session
+function seedFlagSeconds(userId, saved) {
+  for (const kind of FLAG_KINDS) {
+    const secs = Number(saved && saved[kind]) || 0;
+    if (secs > 0) flagTimers[kind].tally.set(userId, (flagTimers[kind].tally.get(userId) || 0) + secs * 1000);
+  }
 }
 
 function flushSpeakingSeconds(userId) {
@@ -258,8 +278,9 @@ module.exports = {
   getLiveSpeakingSeconds,
   seedSpeakingSeconds,
   trackedSpeakerIds,
-  setStreaming,
-  getLiveStreamingSeconds,
-  flushStreamingSeconds,
-  seedStreamingSeconds
+  FLAG_KINDS,
+  setVoiceFlags,
+  getLiveFlagSeconds,
+  flushFlagSeconds,
+  seedFlagSeconds
 };

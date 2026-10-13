@@ -48,14 +48,13 @@ module.exports = function registerDashboard(app, client) {
   // Sessions still in progress only get their talk time written at the end, so overlay the live tally
   const withLiveSpeaking = (rows) =>
     rows.map((r) =>
-      r.left_at
-        ? r
-        : {
-          ...r,
-          speaking_seconds: Math.max(Number(r.speaking_seconds) || 0, audio.getLiveSpeakingSeconds(r.user_id)),
-          streaming_seconds: Math.max(Number(r.streaming_seconds) || 0, audio.getLiveStreamingSeconds(r.user_id)),
-        }
-    );
+    {
+      if (r.left_at) return r;
+      const out = { ...r, speaking_seconds: Math.max(Number(r.speaking_seconds) || 0, audio.getLiveSpeakingSeconds(r.user_id)) };
+      const live = audio.getLiveFlagSeconds(r.user_id); // streaming / muted / deafened
+      for (const k of audio.FLAG_KINDS) out[k + "_seconds"] = Math.max(Number(r[k + "_seconds"]) || 0, live[k]);
+      return out;
+    });
 
   const getGuild = () => client.guilds.cache.get(IDs.guild);
   const liveName = (id) => getGuild()?.members.cache.get(id)?.displayName || null;
@@ -318,6 +317,8 @@ module.exports = function registerDashboard(app, client) {
           duration_seconds: Math.max(0, Math.round((end - start) / 1000)),
           speaking_seconds: Number(r.speaking_seconds) || 0,
           streaming_seconds: Number(r.streaming_seconds) || 0,
+          muted_seconds: Number(r.muted_seconds) || 0,
+          deafened_seconds: Number(r.deafened_seconds) || 0,
           open: !r.left_at,
         };
       });
@@ -349,10 +350,10 @@ module.exports = function registerDashboard(app, client) {
         if (/^[=+\-@]/.test(s)) s = "'" + s;
         return `"${s.replace(/"/g, '""')}"`;
       };
-      const lines = [`member,username,user_id,channel,joined_local (${filters.tz}),left_local (${filters.tz}),joined_at_utc,left_at_utc,duration_seconds,speaking_seconds,streaming_seconds`];
+      const lines = [`member,username,user_id,channel,joined_local (${filters.tz}),left_local (${filters.tz}),joined_at_utc,left_at_utc,duration_seconds,speaking_seconds,streaming_seconds,muted_seconds,deafened_seconds`];
       for (const r of rows) {
         lines.push(
-          [r.name, r.username, r.user_id, r.channel_name, fmtLocal(r.joined_at), fmtLocal(r.left_at), r.joined_at, r.left_at || "", r.duration_seconds, r.speaking_seconds, r.streaming_seconds]
+          [r.name, r.username, r.user_id, r.channel_name, fmtLocal(r.joined_at), fmtLocal(r.left_at), r.joined_at, r.left_at || "", r.duration_seconds, r.speaking_seconds, r.streaming_seconds, r.muted_seconds, r.deafened_seconds]
             .map(cell)
             .join(",")
         );

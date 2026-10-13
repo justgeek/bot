@@ -50,6 +50,8 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
     const frac = end > start ? (ce - cs) / (end - start) : 0;
     const speakingSecs = (Number(r.speaking_seconds) || 0) * frac;
     const streamingSecs = (Number(r.streaming_seconds) || 0) * frac;
+    const mutedSecs = (Number(r.muted_seconds) || 0) * frac;
+    const deafenedSecs = (Number(r.deafened_seconds) || 0) * frac;
     rawIntervals.push([cs, ce]);
 
     win.push({
@@ -61,6 +63,8 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
       secs: (ce - cs) / 1000,
       speakingSecs,
       streamingSecs,
+      mutedSecs,
+      deafenedSecs,
       open: !r.left_at,
     });
   }
@@ -90,12 +94,14 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
   for (const s of scoped) {
     let m = memberMap.get(s.userId);
     if (!m) {
-      m = { seconds: 0, speaking_seconds: 0, streaming_seconds: 0, sessions: 0, longest: 0, days: new Set(), chans: new Map(), first: s.cs, last: s.ce, open: false };
+      m = { seconds: 0, speaking_seconds: 0, streaming_seconds: 0, muted_seconds: 0, deafened_seconds: 0, sessions: 0, longest: 0, days: new Set(), chans: new Map(), first: s.cs, last: s.ce, open: false };
       memberMap.set(s.userId, m);
     }
     m.seconds += s.secs;
     m.speaking_seconds += s.speakingSecs;
     m.streaming_seconds += s.streamingSecs;
+    m.muted_seconds += s.mutedSecs;
+    m.deafened_seconds += s.deafenedSecs;
     m.sessions += 1;
     m.longest = Math.max(m.longest, s.secs);
     m.first = Math.min(m.first, s.cs);
@@ -114,11 +120,13 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
       if (s.secs > 0) hourlySpeaking[b.hour] += s.speakingSecs * (sec / s.secs);
       heat[b.dow][b.hour] += sec;
       let d = dailyMap.get(b.date);
-      if (!d) dailyMap.set(b.date, (d = { seconds: 0, speaking: 0, streaming: 0, sessions: 0, users: new Set() }));
+      if (!d) dailyMap.set(b.date, (d = { seconds: 0, speaking: 0, streaming: 0, muted: 0, deafened: 0, sessions: 0, users: new Set() }));
       d.seconds += sec;
       if (s.secs > 0) {
         d.speaking += s.speakingSecs * (sec / s.secs);
         d.streaming += s.streamingSecs * (sec / s.secs);
+        d.muted += s.mutedSecs * (sec / s.secs);
+        d.deafened += s.deafenedSecs * (sec / s.secs);
       }
       d.users.add(s.userId);
       if (first) d.sessions += 1;
@@ -146,6 +154,8 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
       voice_seconds: d ? Math.round(d.seconds) : 0,
       speaking_seconds: d ? Math.round(d.speaking) : 0,
       streaming_seconds: d ? Math.round(d.streaming) : 0,
+      muted_seconds: d ? Math.round(d.muted) : 0,
+      deafened_seconds: d ? Math.round(d.deafened) : 0,
       sessions: d ? d.sessions : 0,
       users: d ? d.users.size : 0,
     };
@@ -237,6 +247,8 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
   const personHoursTotal = scoped.reduce((n, s) => n + s.secs, 0);
   const totalSpeakingSeconds = scoped.reduce((n, s) => n + s.speakingSecs, 0);
   const totalStreamingSeconds = scoped.reduce((n, s) => n + s.streamingSecs, 0);
+  const totalMutedSeconds = scoped.reduce((n, s) => n + s.mutedSecs, 0);
+  const totalDeafenedSeconds = scoped.reduce((n, s) => n + s.deafenedSecs, 0);
 
   const sorted = scoped.map((s) => s.secs).sort((a, b) => a - b);
   const median = sorted.length
@@ -256,6 +268,8 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
       seconds: Math.round(s.secs),
       speaking_seconds: Math.round(s.speakingSecs),
       streaming_seconds: Math.round(s.streamingSecs),
+      muted_seconds: Math.round(s.mutedSecs),
+      deafened_seconds: Math.round(s.deafenedSecs),
       open: s.open,
     }));
 
@@ -278,6 +292,8 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
         speaking_seconds: Math.round(m.speaking_seconds),
         talk_ratio_pct: talkRatio,
         streaming_seconds: Math.round(m.streaming_seconds),
+        muted_seconds: Math.round(m.muted_seconds),
+        deafened_seconds: Math.round(m.deafened_seconds),
         sessions: m.sessions,
         avg_session_seconds: Math.round(m.seconds / m.sessions),
         longest_seconds: Math.round(m.longest),
@@ -381,6 +397,8 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
       total_speaking_seconds: round(totalSpeakingSeconds),
       avg_speaking_pct: personHoursTotal > 0 ? Math.round((totalSpeakingSeconds / personHoursTotal) * 1000) / 10 : 0,
       total_streaming_seconds: round(totalStreamingSeconds),
+      total_muted_seconds: round(totalMutedSeconds),
+      total_deafened_seconds: round(totalDeafenedSeconds),
       streamers: [...memberMap.values()].filter((m) => m.streaming_seconds >= 1).length,
       sessions: scoped.length,
       avg_session_seconds: scoped.length ? round(personHoursTotal / scoped.length) : 0,

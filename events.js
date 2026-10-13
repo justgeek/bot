@@ -14,6 +14,17 @@ const { getRelevantEmojis } = require('./ai.js');
 const { buildMemeMenus } = require("./menuBuilder");
 const db = require("./db");
 
+// What a member's voice state counts as right now. Deafening always mutes too, so that time is
+// "deafened" only and "muted" means muted while still listening. Self and server mute/deafen both count.
+function voiceFlags(vs) {
+  const tracked = !!(vs.channelId && db.isTrackedChannel(vs.channelId));
+  return {
+    streaming: tracked && !!vs.streaming,
+    deafened: tracked && !!vs.deaf,
+    muted: tracked && !!vs.mute && !vs.deaf,
+  };
+}
+
 module.exports = (client) => {
   client.on("error", (e) => console.error("ERR NOT HANDLED:", e));
 
@@ -42,11 +53,11 @@ module.exports = (client) => {
       .then((carried) => {
         for (const [userId, saved] of carried || []) {
           audio.seedSpeakingSeconds(userId, saved.speaking);
-          audio.seedStreamingSeconds(userId, saved.streaming);
+          audio.seedFlagSeconds(userId, saved);
         }
-        // Pick up anyone who was already sharing their screen when the bot started
+        // Pick up anyone already streaming, muted or deafened when the bot started
         guild?.voiceStates.cache.forEach((vs) => {
-          if (vs.channelId && vs.streaming && !vs.member?.user?.bot && db.isTrackedChannel(vs.channelId)) audio.setStreaming(vs.id, true);
+          if (!vs.member?.user?.bot) audio.setVoiceFlags(vs.id, voiceFlags(vs));
         });
       });
 
@@ -57,11 +68,11 @@ module.exports = (client) => {
       for (const userId of audio.trackedSpeakerIds()) {
         if (!guild?.voiceStates.cache.get(userId)?.channelId) continue;
         const secs = audio.getLiveSpeakingSeconds(userId);
-        const streamSecs = audio.getLiveStreamingSeconds(userId);
-        const stamp = secs + ":" + streamSecs;
+        const flagSecs = audio.getLiveFlagSeconds(userId);
+        const stamp = secs + ":" + Object.values(flagSecs).join(":");
         if (lastSavedSpeaking.get(userId) === stamp) continue;
         lastSavedSpeaking.set(userId, stamp);
-        db.checkpointSpeaking(userId, secs, streamSecs);
+        db.checkpointSpeaking(userId, secs, flagSecs);
       }
     }, 60000);
   });
@@ -385,16 +396,14 @@ module.exports = (client) => {
       if (before.channelId) {
         // Retrieve and flush the member's speaking and screen-share seconds for this session
         const speakingSecs = audio.flushSpeakingSeconds ? audio.flushSpeakingSeconds(dbUserId) : 0;
-        db.endVoiceSession(dbUserId, speakingSecs, audio.flushStreamingSeconds(dbUserId));
+        db.endVoiceSession(dbUserId, speakingSecs, audio.flushFlagSeconds(dbUserId));
       }
       if (after.channelId && db.isTrackedChannel(after.channelId)) {
         db.startVoiceSession(dbUserId, dbUsername, after.channelId, after.channel?.name, after.member?.displayName);
       }
     }
-    // Screen share ("Go Live") started or stopped; a stream ends when its owner leaves or switches channel
-    if (!after.member?.user?.bot) {
-      audio.setStreaming(after.id, !!(after.channelId && after.streaming && db.isTrackedChannel(after.channelId)));
-    }
+    // Screen share, mute or deafen toggled (all of them end when the member leaves voice)
+    if (!after.member?.user?.bot) audio.setVoiceFlags(after.id, voiceFlags(after));
 
     let chatMsg = " ";
     const person = after.member.user.username;

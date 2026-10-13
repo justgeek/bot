@@ -803,6 +803,14 @@
       color: var(--dnd);
     }
 
+    :is([data-theme="daylight"], [data-theme="paper"], [data-theme="mint"], [data-theme="sky"], [data-theme="sakura"], [data-theme="brutalist"]) .text-sky-400 {
+      color: #0369a1;
+    }
+
+    :is([data-theme="daylight"], [data-theme="paper"], [data-theme="mint"], [data-theme="sky"], [data-theme="sakura"], [data-theme="brutalist"]) .text-slate-400 {
+      color: #475569;
+    }
+
     :is([data-theme="daylight"], [data-theme="paper"], [data-theme="mint"], [data-theme="sky"], [data-theme="sakura"], [data-theme="brutalist"]) .text-purple-400 {
       color: #7c3aed;
     }
@@ -1681,9 +1689,10 @@
           <div id="kpis" class="grid grid-cols-2 md:grid-cols-4 gap-4"></div>
 
           <div class="card p-5 mt-4">
-            <h3 class="font-semibold">Voice hours, talk time and stream time per day</h3>
-            <p class="text-xs muted mb-3">Bars show total voice hours, actual mic talk time (amber) and screen-share
-              stream time (purple). The line shows unique members who joined.</p>
+            <h3 class="font-semibold">Voice, talk, stream, muted and deafened time per day</h3>
+            <p class="text-xs muted mb-3">Bars show total voice hours, actual mic talk time (amber), screen-share
+              stream time (purple), muted-but-listening time (blue) and deafened time (grey). Click a legend entry to
+              hide it. The line shows unique members who joined.</p>
             <div class="relative h-64"><canvas id="cDaily"></canvas>
               <p class="empty hidden absolute inset-0 flex items-center justify-center muted">No voice activity in this
                 range.</p>
@@ -1785,6 +1794,8 @@
                     <th class="r text-amber-400" data-sort="speaking_seconds">Talk time (Mic)</th>
                     <th class="r" data-sort="talk_ratio_pct">Talk %</th>
                     <th class="r text-purple-400" data-sort="streaming_seconds" title="Time spent sharing their screen (Go Live)">Stream time</th>
+                    <th class="r text-sky-400" data-sort="muted_seconds" title="Mic muted but still listening">Muted</th>
+                    <th class="r text-slate-400" data-sort="deafened_seconds" title="Deafened (which also mutes; not counted again under Muted)">Deafened</th>
                     <th class="r" data-sort="sessions">Sessions</th>
                     <th class="r" data-sort="avg_session_seconds">Avg session</th>
                     <th class="r" data-sort="longest_seconds">Longest</th>
@@ -1818,6 +1829,8 @@
                     <th class="r">Length</th>
                     <th class="r text-amber-400">Mic Talk Time</th>
                     <th class="r text-purple-400">Stream Time</th>
+                    <th class="r text-sky-400" title="Mic muted but still listening">Muted</th>
+                    <th class="r text-slate-400" title="Deafened (which also mutes; not counted again under Muted)">Deafened</th>
                   </tr>
                 </thead>
                 <tbody id="sessRows"></tbody>
@@ -2827,11 +2840,11 @@
         kpiCard("Voice activity (Channel uptime)", hrsText(k.total_seconds), (k.person_hours ? `${hrsText(k.person_hours)} person-hours` : "")),
         kpiCard("Total Mic Talk Time", hrsText(k.total_speaking_seconds || 0), `${k.avg_speaking_pct || 0}% active talk ratio`),
         kpiCard("Total Stream Time", hrsText(k.total_streaming_seconds || 0), (k.streamers || 0) + " member" + (k.streamers === 1 ? "" : "s") + " shared their screen"),
+        kpiCard("Muted / Deafened", hrsText(k.total_muted_seconds || 0) + " / " + hrsText(k.total_deafened_seconds || 0), "Muted while listening / deafened"),
         kpiCard("Average session", dur(k.avg_session_seconds), "Median " + dur(k.median_session_seconds) + (k.longest ? ", longest " + dur(k.longest.seconds) + " (" + k.longest.name + ")" : "")),
         kpiCard("Members who joined voice", k.unique_members, k.active_days + " active days"),
         kpiCard("Most in voice at once", k.peak_concurrent.count || "-", k.peak_concurrent.at ? fullFmt.format(new Date(k.peak_concurrent.at)) : ""),
         kpiCard(state.status ? "Changes to " + STATUS[state.status].label.toLowerCase() : "Status changes", k.presence_changes.toLocaleString(), state.status ? "Times a member switched to it" : "Online, idle, busy, offline"),
-        kpiCard("Tracking window", dayLabel(dateKeyOf(Date.parse(s.meta.since))) + " to " + dayLabel(dateKeyOf(Date.parse(s.meta.until))), rangeText()),
       ].join("");
     }
 
@@ -2854,6 +2867,11 @@
         if (topStreamer && topStreamer.streaming_seconds > 0) {
           add("Top Streamer 🖥️", topStreamer.name, hrsText(topStreamer.streaming_seconds) + ` sharing their screen (${Math.round((topStreamer.streaming_seconds / topStreamer.seconds) * 100)}% of their VC time)`, who(topStreamer.user_id, topStreamer.name, { lg: true }));
         } else add("Top Streamer 🖥️", "Nobody yet", "No screen share recorded in this range");
+
+        for (const [key, title, what] of [["muted_seconds", "Most Muted 🔇", "muted while listening"], ["deafened_seconds", "Most Deafened 🙉", "deafened"]]) {
+          const topM = [...s.members].sort((a, b) => (b[key] || 0) - (a[key] || 0))[0];
+          if (topM && topM[key] > 0) add(title, topM.name, hrsText(topM[key]) + ` ${what} (${Math.round((topM[key] / topM.seconds) * 100)}% of their VC time)`, who(topM.user_id, topM.name, { lg: true }));
+        }
 
         const hMax = s.hourly.indexOf(Math.max(...s.hourly));
         add("Busiest hour", hourLabel(hMax) + " to " + hourLabel((hMax + 1) % 24), hrsText(s.hourly[hMax]) + " in voice during that hour, " + tzCity() + " time");
@@ -2945,6 +2963,8 @@
     <td class="r num text-amber-400 font-semibold">${hrsText(m.speaking_seconds || 0)}</td>
     <td class="r num font-bold">${m.talk_ratio_pct || 0}%</td>
     <td class="r num text-purple-400 font-semibold">${m.streaming_seconds ? hrsText(m.streaming_seconds) : "-"}</td>
+    <td class="r num text-sky-400">${m.muted_seconds ? hrsText(m.muted_seconds) : "-"}</td>
+    <td class="r num text-slate-400">${m.deafened_seconds ? hrsText(m.deafened_seconds) : "-"}</td>
     <td class="r num">${m.sessions}</td>
     <td class="r num">${dur(m.avg_session_seconds)}</td>
     <td class="r num">${dur(m.longest_seconds)}</td>
@@ -2981,6 +3001,8 @@
             { type: "bar", label: "Hours in voice", data: s.daily.map((d) => hrs(d.voice_seconds)), backgroundColor: T.accent, borderRadius: 3, yAxisID: "y", order: 3 },
             { type: "bar", label: "Mic Talk Time", data: s.daily.map((d) => hrs(d.speaking_seconds || 0)), backgroundColor: "#f59e0b", borderRadius: 3, yAxisID: "y", order: 2 },
             { type: "bar", label: "Stream Time", data: s.daily.map((d) => hrs(d.streaming_seconds || 0)), backgroundColor: "#a855f7", borderRadius: 3, yAxisID: "y", order: 2 },
+            { type: "bar", label: "Muted", data: s.daily.map((d) => hrs(d.muted_seconds || 0)), backgroundColor: "#38bdf8", borderRadius: 3, yAxisID: "y", order: 2 },
+            { type: "bar", label: "Deafened", data: s.daily.map((d) => hrs(d.deafened_seconds || 0)), backgroundColor: "#94a3b8", borderRadius: 3, yAxisID: "y", order: 2 },
             { type: "line", label: "Members who joined", data: s.daily.map((d) => d.users), borderColor: T.online, backgroundColor: T.online, tension: 0.3, pointRadius: s.daily.length > 60 ? 0 : 2, yAxisID: "y1", order: 1 },
           ],
         },
@@ -3133,6 +3155,8 @@
     <td class="r num font-semibold">${dur(r.duration_seconds)}</td>
     <td class="r num text-amber-400 font-bold">${dur(r.speaking_seconds || 0)}</td>
     <td class="r num text-purple-400 font-bold">${r.streaming_seconds ? dur(r.streaming_seconds) : "-"}</td>
+    <td class="r num text-sky-400">${r.muted_seconds ? dur(r.muted_seconds) : "-"}</td>
+    <td class="r num text-slate-400">${r.deafened_seconds ? dur(r.deafened_seconds) : "-"}</td>
   </tr>`).join("");
       $("sessCount").textContent = data.rows.length ? "Showing " + data.rows.length + " of " + data.total.toLocaleString() : "";
       $("sessMore").classList.toggle("hidden", data.rows.length >= data.total || state.sessLimit >= 200);
@@ -3524,6 +3548,7 @@
       <td class="r num muted">${x.days_absent}</td>
       <td class="r num text-amber-400">${dur(x.total_speaking_seconds || 0)} (${x.talk_ratio_pct || 0}%)</td>
       <td class="r num text-purple-400">${x.total_streaming_seconds ? dur(x.total_streaming_seconds) : "-"}</td>
+      <td class="r num text-sky-400">${muteDeaf(x.total_muted_seconds, x.total_deafened_seconds)}</td>
       <td class="r num">${x.punctuality_pct}%</td>
       <td class="r num">${x.avg_late_minutes ? `+${x.avg_late_minutes}m` : "-"}</td>
       <td class="whitespace-nowrap">${x.worst_late ? `+${x.worst_late.minutes}m (${fmtDay(x.worst_late.date)})` : "-"}</td>
@@ -3545,6 +3570,7 @@
       <td class="num">${l.actual_time ? esc(tod(l.actual_time)) : '<span class="muted">-</span>'}</td>
       <td class="r num text-amber-400 font-semibold">${dur(l.speaking_seconds || 0)}</td>
       <td class="r num text-purple-400 font-semibold">${l.streaming_seconds ? dur(l.streaming_seconds) : "-"}</td>
+      <td class="r num text-sky-400">${muteDeaf(l.muted_seconds, l.deafened_seconds)}</td>
       <td>${stBadge}${l.excuse ? ` <span class="muted text-xs">(${esc(l.excuse)})</span>` : ""}</td>
       <td class="r num font-bold ${l.penalty_points > 0 ? 'text-red-400' : 'text-green-400'}">${l.penalty_points > 0 ? `+${l.penalty_points} pts` : '0'}</td>
     </tr>`;
@@ -3569,18 +3595,24 @@
     <div class="card p-5 mt-4">
       <h3 class="font-bold text-lg mb-2">Tardiness Leaderboard</h3>
       <div class="overflow-x-auto scroll-thin"><table class="t">
-        <thead><tr><th>#</th><th>Member</th><th class="r">Penalties</th><th class="r">Days Late</th><th class="r">On Time</th><th class="r text-blue-400">Excused</th><th class="r">Absent</th><th class="r text-amber-400">Mic Talk Time</th><th class="r text-purple-400">Stream Time</th><th class="r">Punctuality</th><th class="r">Avg Delay</th><th>Worst Delay</th></tr></thead>
+        <thead><tr><th>#</th><th>Member</th><th class="r">Penalties</th><th class="r">Days Late</th><th class="r">On Time</th><th class="r text-blue-400">Excused</th><th class="r">Absent</th><th class="r text-amber-400">Mic Talk Time</th><th class="r text-purple-400">Stream Time</th>${MUTE_TH}<th class="r">Punctuality</th><th class="r">Avg Delay</th><th>Worst Delay</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
     </div>
     <div class="card p-5 mt-4">
       <h3 class="font-bold text-lg mb-2">Daily Penalty Log</h3>
       <div class="overflow-x-auto scroll-thin"><table class="t">
-        <thead><tr><th>Date</th><th>Member</th><th>Target Time</th><th>Actual Join</th><th class="r text-amber-400">Mic Talk</th><th class="r text-purple-400">Stream</th><th>Status</th><th class="r">Penalty Points</th></tr></thead>
+        <thead><tr><th>Date</th><th>Member</th><th>Target Time</th><th>Actual Join</th><th class="r text-amber-400">Mic Talk</th><th class="r text-purple-400">Stream</th>${MUTE_TH}<th>Status</th><th class="r">Penalty Points</th></tr></thead>
         <tbody>${logRows}</tbody>
       </table></div>
     </div>`;
     }
+
+    // "muted / deafened" cell for report tables (muted = still listening; deafened time is not repeated in it)
+    function muteDeaf(muted, deafened) {
+      return muted || deafened ? (muted ? dur(muted) : "-") + " / " + (deafened ? dur(deafened) : "-") : "-";
+    }
+    const MUTE_TH = `<th class="r text-sky-400" title="Muted while still listening / deafened">Muted / Deaf</th>`;
 
     function leaderboardHtml(r, L) {
       const m = r.meta;
@@ -3597,6 +3629,7 @@
       <td class="r num text-amber-400 font-bold">${hrsText(x.total_speaking_seconds || 0)}</td>
       <td class="r num font-bold">${x.talk_ratio_pct || 0}%</td>
       <td class="r num text-purple-400 font-bold">${x.total_streaming_seconds ? hrsText(x.total_streaming_seconds) : "-"}</td>
+      <td class="r num text-sky-400">${muteDeaf(x.total_muted_seconds, x.total_deafened_seconds)}</td>
       <td class="r num">${x.days_attended ? dur(x.avg_seconds_per_day) : "-"}</td>
       <td class="r num">${x.sessions}</td>
       <td class="num">${fmtMin(x.avg_first_min)}</td>
@@ -3607,7 +3640,7 @@
     </tr>`;
       }).join("");
       return `<div class="overflow-x-auto scroll-thin"><table class="t">
-    <thead><tr><th>#</th><th>Member</th><th>Days present</th><th>Attendance</th><th class="r">${L.time}</th><th class="r text-amber-400">Mic Talk Time</th><th class="r">Talk %</th><th class="r text-purple-400">Stream Time</th><th class="r">Avg per day</th><th class="r">${L.spells}</th><th>${L.first}</th><th>${L.early}</th><th>${L.late}</th><th class="r">Best streak</th><th class="r">Streak now</th></tr></thead>
+    <thead><tr><th>#</th><th>Member</th><th>Days present</th><th>Attendance</th><th class="r">${L.time}</th><th class="r text-amber-400">Mic Talk Time</th><th class="r">Talk %</th><th class="r text-purple-400">Stream Time</th>${MUTE_TH}<th class="r">Avg per day</th><th class="r">${L.spells}</th><th>${L.first}</th><th>${L.early}</th><th>${L.late}</th><th class="r">Best streak</th><th class="r">Streak now</th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
     }
 
@@ -3632,6 +3665,8 @@
             "Voice: " + dur(c.s),
             "Mic Talk Time: " + dur(c.spk || 0) + " (" + (c.ratio || 0) + "%)",
             c.strm ? "Stream Time: " + dur(c.strm) : "",
+            c.mute ? "Muted (listening): " + dur(c.mute) : "",
+            c.deaf ? "Deafened: " + dur(c.deaf) : "",
             L.firstCol + " " + tod(c.f),
             L.lastCol + " " + (c.op ? "still here" : tod(c.l)),
             c.n + " " + L.unit + (c.n === 1 ? "" : "s"),
@@ -3639,10 +3674,10 @@
           ].filter(Boolean).join("\n");
           return `<td class="cell ${present ? "" : "low"}" style="${style}" title="${esc(tip)}">${compact(c.s)}</td>`;
         }).join("");
-        return `<tr><td class="stick">${who(row.user_id, mem.name)}</td>${cells}<td class="r num">${mem.days_attended}</td><td class="r num">${hrsText(mem.total_seconds)}</td><td class="r num text-amber-400 font-semibold">${hrsText(mem.total_speaking_seconds || 0)}</td><td class="r num text-purple-400 font-semibold">${mem.total_streaming_seconds ? hrsText(mem.total_streaming_seconds) : "-"}</td></tr>`;
+        return `<tr><td class="stick">${who(row.user_id, mem.name)}</td>${cells}<td class="r num">${mem.days_attended}</td><td class="r num">${hrsText(mem.total_seconds)}</td><td class="r num text-amber-400 font-semibold">${hrsText(mem.total_speaking_seconds || 0)}</td><td class="r num text-purple-400 font-semibold">${mem.total_streaming_seconds ? hrsText(mem.total_streaming_seconds) : "-"}</td><td class="r num text-sky-400">${muteDeaf(mem.total_muted_seconds, mem.total_deafened_seconds)}</td></tr>`;
       }).join("");
       return `<div class="overflow-x-auto scroll-thin"><table class="sheet">
-    <thead><tr><th class="stick">Member</th>${head}<th class="r">Days</th><th class="r">Total Voice</th><th class="r text-amber-400">Total Mic</th><th class="r text-purple-400">Total Stream</th></tr></thead>
+    <thead><tr><th class="stick">Member</th>${head}<th class="r">Days</th><th class="r">Total Voice</th><th class="r text-amber-400">Total Mic</th><th class="r text-purple-400">Total Stream</th>${MUTE_TH}</tr></thead>
     <tbody>${rows}</tbody></table></div>`;
     }
 
@@ -3657,13 +3692,14 @@
       <td class="r num text-amber-400 font-bold">${dur(x.speaking_seconds || 0)}</td>
       <td class="r num font-bold">${x.talk_ratio_pct || 0}%</td>
       <td class="r num text-purple-400 font-bold">${x.streaming_seconds ? dur(x.streaming_seconds) : "-"}</td>
+      <td class="r num text-sky-400">${muteDeaf(x.muted_seconds, x.deafened_seconds)}</td>
       <td class="r num">${x.count}</td>
       <td>${esc(r.meta.type === "voice" ? x.channels.join(", ") : "Idle " + compact(x.idle || 0) + ", busy " + compact(x.dnd || 0))}</td>
       <td>${x.attended ? badge("b-online", "Present") : badge("b-offline", "Below minimum")}</td>
     </tr>`).join("");
       const more = r.log.length > repLogLimit ? `<div class="mt-3 no-print"><button class="btn-ghost" data-act="more">Show more (${r.log.length - repLogLimit} left)</button></div>` : "";
       return `<div class="overflow-x-auto scroll-thin"><table class="t">
-    <thead><tr><th>Date</th><th>Member</th><th>${L.firstCol}</th><th>${L.lastCol}</th><th class="r">Voice Time</th><th class="r text-amber-400">Mic Talk Time</th><th class="r">Talk %</th><th class="r text-purple-400">Stream Time</th><th class="r">${L.spells}</th><th>${r.meta.type === "voice" ? "Channels" : "Idle and busy"}</th><th>Counted</th></tr></thead>
+    <thead><tr><th>Date</th><th>Member</th><th>${L.firstCol}</th><th>${L.lastCol}</th><th class="r">Voice Time</th><th class="r text-amber-400">Mic Talk Time</th><th class="r">Talk %</th><th class="r text-purple-400">Stream Time</th>${MUTE_TH}<th class="r">${L.spells}</th><th>${r.meta.type === "voice" ? "Channels" : "Idle and busy"}</th><th>Counted</th></tr></thead>
     <tbody>${rows}</tbody></table></div>${more}`;
     }
 
@@ -3685,8 +3721,8 @@
       const m = r.meta, L = reportLabels(m);
       if (kind === "slackers-lb") {
         downloadCsv(`slackers_report_${m.from}_to_${m.to}.csv`, [
-          ["rank", "member", "penalty_points", "days_late", "days_on_time", "days_excused", "days_absent", "mic_talk_hours", "punctuality_pct", "avg_late_minutes", "total_late_minutes", "stream_hours"],
-          ...r.members.map((x) => [x.rank, x.name, x.penalty_points, x.days_late, x.days_on_time, x.days_excused || 0, x.days_absent, hoursNum(x.total_speaking_seconds || 0), x.punctuality_pct, x.avg_late_minutes, x.total_late_minutes, hoursNum(x.total_streaming_seconds || 0)]),
+          ["rank", "member", "penalty_points", "days_late", "days_on_time", "days_excused", "days_absent", "mic_talk_hours", "punctuality_pct", "avg_late_minutes", "total_late_minutes", "stream_hours", "muted_hours", "deafened_hours"],
+          ...r.members.map((x) => [x.rank, x.name, x.penalty_points, x.days_late, x.days_on_time, x.days_excused || 0, x.days_absent, hoursNum(x.total_speaking_seconds || 0), x.punctuality_pct, x.avg_late_minutes, x.total_late_minutes, hoursNum(x.total_streaming_seconds || 0), hoursNum(x.total_muted_seconds || 0), hoursNum(x.total_deafened_seconds || 0)]),
         ]);
         return;
       }
@@ -3694,19 +3730,19 @@
       const minTxt = (v) => (v == null ? "" : pad2(Math.floor(v / 60)) + ":" + pad2(v % 60));
       if (kind === "lb") {
         downloadCsv(tag + "_leaderboard.csv", [
-          ["rank", "member", "days_present", "days_in_period", "attendance_pct", "total_voice_hours", "mic_talk_hours", "talk_pct", "avg_hours_per_present_day", L.spells.toLowerCase(), "usual_first (" + m.tz + ")", "earliest_first", "latest_last", "best_streak", "current_streak", "first_at (" + m.tz + ")", "last_at (" + m.tz + ")", "stream_hours"],
-          ...r.members.map((x) => [x.rank, x.name, x.days_attended, m.period_days, x.attendance_pct ?? "", hoursNum(x.total_seconds), hoursNum(x.total_speaking_seconds || 0), (x.talk_ratio_pct || 0) + "%", x.days_attended ? hoursNum(x.avg_seconds_per_day) : "", x.sessions, minTxt(x.avg_first_min), x.earliest ? minTxt(x.earliest.min) : "", x.latest ? minTxt(x.latest.min) : "", x.longest_streak, x.current_streak, csvStamp(x.first_at), csvStamp(x.last_at), hoursNum(x.total_streaming_seconds || 0)]),
+          ["rank", "member", "days_present", "days_in_period", "attendance_pct", "total_voice_hours", "mic_talk_hours", "talk_pct", "avg_hours_per_present_day", L.spells.toLowerCase(), "usual_first (" + m.tz + ")", "earliest_first", "latest_last", "best_streak", "current_streak", "first_at (" + m.tz + ")", "last_at (" + m.tz + ")", "stream_hours", "muted_hours", "deafened_hours"],
+          ...r.members.map((x) => [x.rank, x.name, x.days_attended, m.period_days, x.attendance_pct ?? "", hoursNum(x.total_seconds), hoursNum(x.total_speaking_seconds || 0), (x.talk_ratio_pct || 0) + "%", x.days_attended ? hoursNum(x.avg_seconds_per_day) : "", x.sessions, minTxt(x.avg_first_min), x.earliest ? minTxt(x.earliest.min) : "", x.latest ? minTxt(x.latest.min) : "", x.longest_streak, x.current_streak, csvStamp(x.first_at), csvStamp(x.last_at), hoursNum(x.total_streaming_seconds || 0), hoursNum(x.total_muted_seconds || 0), hoursNum(x.total_deafened_seconds || 0)]),
         ]);
       } else if (kind === "sheet") {
         const byId = new Map(r.members.map((x) => [x.user_id, x]));
         downloadCsv(tag + "_sheet.csv", [
-          ["member", ...m.dates, "days_present", "total_voice_hours", "total_mic_hours", "total_stream_hours"],
-          ...r.grid.map((row) => { const mem = byId.get(row.user_id); return [mem.name, ...row.cells.map((c) => (c ? hoursNum(c.s) : "")), mem.days_attended, hoursNum(mem.total_seconds), hoursNum(mem.total_speaking_seconds || 0), hoursNum(mem.total_streaming_seconds || 0)]; }),
+          ["member", ...m.dates, "days_present", "total_voice_hours", "total_mic_hours", "total_stream_hours", "total_muted_hours", "total_deafened_hours"],
+          ...r.grid.map((row) => { const mem = byId.get(row.user_id); return [mem.name, ...row.cells.map((c) => (c ? hoursNum(c.s) : "")), mem.days_attended, hoursNum(mem.total_seconds), hoursNum(mem.total_speaking_seconds || 0), hoursNum(mem.total_streaming_seconds || 0), hoursNum(mem.total_muted_seconds || 0), hoursNum(mem.total_deafened_seconds || 0)]; }),
         ]);
       } else {
         downloadCsv(tag + "_day-by-day.csv", [
-          ["date", "member", L.firstCol.toLowerCase() + " (" + m.tz + ")", L.lastCol.toLowerCase() + " (" + m.tz + ")", "voice_hours", "mic_talk_hours", "talk_pct", L.spells.toLowerCase(), m.type === "voice" ? "channels" : "idle_hours", m.type === "voice" ? "" : "busy_hours", "counted_as_present", "stream_hours"],
-          ...r.log.map((x) => [x.date, x.name, csvStamp(x.first), x.still_in ? "still here" : csvStamp(x.last), hoursNum(x.seconds), hoursNum(x.speaking_seconds || 0), (x.talk_ratio_pct || 0) + "%", x.count, m.type === "voice" ? x.channels.join("; ") : hoursNum(x.idle || 0), m.type === "voice" ? "" : hoursNum(x.dnd || 0), x.attended ? "yes" : "no", hoursNum(x.streaming_seconds || 0)]),
+          ["date", "member", L.firstCol.toLowerCase() + " (" + m.tz + ")", L.lastCol.toLowerCase() + " (" + m.tz + ")", "voice_hours", "mic_talk_hours", "talk_pct", L.spells.toLowerCase(), m.type === "voice" ? "channels" : "idle_hours", m.type === "voice" ? "" : "busy_hours", "counted_as_present", "stream_hours", "muted_hours", "deafened_hours"],
+          ...r.log.map((x) => [x.date, x.name, csvStamp(x.first), x.still_in ? "still here" : csvStamp(x.last), hoursNum(x.seconds), hoursNum(x.speaking_seconds || 0), (x.talk_ratio_pct || 0) + "%", x.count, m.type === "voice" ? x.channels.join("; ") : hoursNum(x.idle || 0), m.type === "voice" ? "" : hoursNum(x.dnd || 0), x.attended ? "yes" : "no", hoursNum(x.streaming_seconds || 0), hoursNum(x.muted_seconds || 0), hoursNum(x.deafened_seconds || 0)]),
         ]);
       }
     }

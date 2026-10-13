@@ -27,6 +27,8 @@ alter table voice_sessions add column if not exists display_name text;
 alter table presence_logs  add column if not exists display_name text;
 alter table voice_sessions add column if not exists speaking_seconds integer not null default 0;
 alter table voice_sessions add column if not exists streaming_seconds integer not null default 0; -- screen share ("Go Live") time
+alter table voice_sessions add column if not exists muted_seconds     integer not null default 0; -- mic muted, still listening
+alter table voice_sessions add column if not exists deafened_seconds  integer not null default 0; -- deafened (always muted too)
 
 -- "I'll be late" notices submitted from the dashboard (is_valid = sent before target_at)
 create table if not exists late_notices (
