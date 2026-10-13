@@ -115,6 +115,9 @@
     [data-theme="rose"],
     [data-theme="synthwave"],
     [data-theme="glass"],
+    [data-theme="terminal"],
+    [data-theme="contrast"],
+    [data-theme="wow"],
     [data-theme="dbd"],
     [data-theme="requiem"] {
       --scheme: dark;
@@ -140,9 +143,9 @@
     :root,
     [data-theme="discord"] {
       --bg: #1e1f22;
-      --surface: #1e293b;
-      --surface-2: #0f172a;
-      --border: #2b3548;
+      --surface: #2b2d31;
+      --surface-2: #232428;
+      --border: #3a3c43;
       --text: #dbdee1;
       --muted: #949ba4;
       --heading: #fff;
@@ -155,11 +158,11 @@
       --surface: #111c33;
       --surface-2: #0a1426;
       --border: #1f2e4d;
-      --text: #d6e2ff;
-      --muted: #8396bd;
-      --heading: #fff;
-      --accent: #38bdf8;
-      --accent-fg: #04202e;
+      --text: #cbd5e8;
+      --muted: #8494b3;
+      --heading: #eef3fc;
+      --accent: #5aa9e6;
+      --accent-fg: #06192b;
       --font: "Inter", system-ui, sans-serif;
       --font-heading: "Sora", "Inter", system-ui, sans-serif;
       --h-weight: 700;
@@ -173,11 +176,11 @@
       --bg: #000;
       --surface: #0d0d0d;
       --surface-2: #171717;
-      --border: #2a2a2a;
-      --text: #e5e5e5;
+      --border: #262626;
+      --text: #d4d4d4;
       --muted: #8a8a8a;
-      --heading: #fff;
-      --accent: #3ddc97;
+      --heading: #f5f5f5;
+      --accent: #4fcf9a;
       --accent-fg: #00170d;
       --font: "Outfit", system-ui, sans-serif;
       --font-heading: "Outfit", system-ui, sans-serif;
@@ -194,15 +197,16 @@
       --surface: #282a36;
       --surface-2: #21222c;
       --border: #44475a;
-      --text: #f8f8f2;
+      --text: #e6e6df;
       --muted: #9aa0c3;
-      --heading: #fff;
+      --heading: #f8f8f2;
       --accent: #bd93f9;
       --accent-fg: #1a1030;
       --font: "Crimson Pro", Georgia, serif;
       --font-heading: "Pirata One", "Crimson Pro", Georgia, serif;
       --radius: .3rem;
-      --btn-bg: linear-gradient(180deg, var(--accent), #3b1060);
+      /* stays light enough top to bottom for the dark button text */
+      --btn-bg: linear-gradient(180deg, var(--accent), #9a74dc);
     }
 
     [data-theme="arctic"] {
@@ -239,10 +243,10 @@
       --surface: #2a201b;
       --surface-2: #221a16;
       --border: #43322a;
-      --text: #f0e3d8;
-      --muted: #b09a8a;
-      --heading: #fff7f0;
-      --accent: #ff8a3d;
+      --text: #e6d8cc;
+      --muted: #a8927f;
+      --heading: #f7ede4;
+      --accent: #e8874a;
       --accent-fg: #2a1203;
       --font: "Work Sans", system-ui, sans-serif;
       --font-heading: "Fraunces", Georgia, serif;
@@ -253,11 +257,11 @@
       --bg: #1d1220;
       --surface: #2a1a2e;
       --surface-2: #221527;
-      --border: #4a2b50;
-      --text: #f3dff2;
-      --muted: #b995b8;
-      --heading: #fff;
-      --accent: #ff6fb5;
+      --border: #3f2745;
+      --text: #e8d6e7;
+      --muted: #ae8fad;
+      --heading: #fbeffa;
+      --accent: #ee7fb4;
       --accent-fg: #2a0518;
       --font: "DM Sans", system-ui, sans-serif;
       --font-heading: "DM Serif Display", Georgia, serif;
@@ -265,14 +269,14 @@
     }
 
     [data-theme="synthwave"] {
-      --bg: #140a2a;
-      --surface: #1f1240;
-      --surface-2: #170d33;
-      --border: #4b2a8a;
-      --text: #efe6ff;
-      --muted: #a58fd6;
-      --heading: #fff;
-      --accent: #ff4fd8;
+      --bg: #130b24;
+      --surface: #1c1236;
+      --surface-2: #160d2c;
+      --border: #33225c;
+      --text: #ddd3f3;
+      --muted: #9785c2;
+      --heading: #f6f0ff;
+      --accent: #ec66c9;
       --accent-fg: #28001f;
       --font: "Rajdhani", system-ui, sans-serif;
       --font-heading: "Orbitron", system-ui, sans-serif;
@@ -284,12 +288,13 @@
       --bg: #050a05;
       --surface: #0a140a;
       --surface-2: #071007;
-      --border: #1d3a1d;
-      --text: #b6ffbf;
-      --muted: #5fa86a;
-      --heading: #d6ffdb;
-      --accent: #33ff66;
+      --border: #1a331c;
+      --text: #9fd8a8;
+      --muted: #5d9666;
+      --heading: #c5f2cc;
+      --accent: #45d46e;
       --accent-fg: #002a0a;
+      --online: #45d46e;
       --radius: 0rem;
       --font: "JetBrains Mono", monospace;
       --h-prefix: "> ";
@@ -370,14 +375,14 @@
     }
 
     [data-theme="glass"] {
-      --bg: #0d1030;
-      --surface: #1c2350;
-      --surface-2: rgba(255, 255, 255, .1);
-      --border: rgba(255, 255, 255, .18);
-      --text: #eaf0ff;
-      --muted: #a9b6dc;
-      --heading: #fff;
-      --accent: #5eead4;
+      --bg: #0e1126;
+      --surface: #1a2040;
+      --surface-2: rgba(255, 255, 255, .07);
+      --border: rgba(255, 255, 255, .13);
+      --text: #dce3f5;
+      --muted: #9ba8cc;
+      --heading: #f4f7ff;
+      --accent: #63d6c4;
       --accent-fg: #04201c;
       --blur: 16px;
       --radius: 1rem;
@@ -386,12 +391,12 @@
     [data-theme="brutalist"] {
       --bg: #f5f5f0;
       --surface: #fff;
-      --surface-2: #ffe94d;
+      --surface-2: #e9e9e1;
       --border: #000;
-      --text: #000;
-      --muted: #444;
+      --text: #111;
+      --muted: #4a4a4a;
       --heading: #000;
-      --accent: #ffdd00;
+      --accent: #f5d000;
       --accent-fg: #000;
       --radius: 0rem;
       --border-w: 2px;
@@ -416,11 +421,11 @@
       --bg: #0d0a07;
       --surface: #20160a;
       --surface-2: #150e06;
-      --border: #6b4f1d;
-      --text: #ecdcb4;
-      --muted: #b39a6a;
-      --heading: #ffd100;
-      --accent: #ffd100;
+      --border: #4d3a18;
+      --text: #e0d2ae;
+      --muted: #a8915f;
+      --heading: #f2cf6b;
+      --accent: #e6b422;
       --accent-fg: #2a1a00;
       --font: "Alegreya Sans", Georgia, serif;
       --font-heading: "Cinzel", Georgia, serif;
@@ -476,7 +481,7 @@
       --h-transform: uppercase;
       --h-weight: 700;
       --h-spacing: .08em;
-      --h-shadow: 0 0 12px rgba(220, 20, 60, .45);
+      --h-shadow: 0 0 10px rgba(220, 20, 60, .28);
       --h-prefix: "☣ ";
       --radius: .2rem;
       --border-w: 1px;
@@ -779,9 +784,27 @@
       background: rgba(128, 132, 142, 0.2);
     }
 
+    /* --accent-soft is the current accent at 20% (set in readTheme), so the badge matches every theme */
     .b-accent {
       color: var(--accent);
-      background: rgba(220, 20, 60, 0.2);
+      background: var(--accent-soft, rgba(220, 20, 60, 0.2));
+    }
+
+    /* Tailwind's fixed 400-level tints wash out on light backgrounds; use the theme's own status colours there */
+    :is([data-theme="daylight"], [data-theme="paper"], [data-theme="mint"], [data-theme="sky"], [data-theme="sakura"], [data-theme="brutalist"]) .text-amber-400 {
+      color: var(--idle);
+    }
+
+    :is([data-theme="daylight"], [data-theme="paper"], [data-theme="mint"], [data-theme="sky"], [data-theme="sakura"], [data-theme="brutalist"]) .text-green-400 {
+      color: var(--online);
+    }
+
+    :is([data-theme="daylight"], [data-theme="paper"], [data-theme="mint"], [data-theme="sky"], [data-theme="sakura"], [data-theme="brutalist"]) .text-red-400 {
+      color: var(--dnd);
+    }
+
+    :is([data-theme="daylight"], [data-theme="paper"], [data-theme="mint"], [data-theme="sky"], [data-theme="sakura"], [data-theme="brutalist"]) .text-blue-400 {
+      color: #1f6fd0;
     }
 
     .b-accent-dim {
@@ -1879,7 +1902,7 @@
         <button id="closeShareModal" class="icon-btn" aria-label="Close modal">&times;</button>
       </div>
       <p class="text-xs muted">Post a link to Discord that opens this exact view - same tab, time range, member
-        and channel filters - for whoever clicks it. (Limited to once per 3 minutes).</p>
+        and channel filters - for whoever clicks it. (Limited to once per minute).</p>
       <div>
         <label class="block text-sm font-medium mb-1">Target Channel</label>
         <select id="shareChannel" class="field w-full"></select>
@@ -2205,6 +2228,11 @@
         accent: cssv("--accent"), text: cssv("--text"), muted: cssv("--muted"), grid: cssv("--grid"), surface: cssv("--surface"),
         online: cssv("--online"), idle: cssv("--idle"), dnd: cssv("--dnd"), offline: cssv("--offline"), accentFg: cssv("--accent-fg")
       };
+      const am = /^#([0-9a-f]{6})$/i.exec(T.accent);
+      if (am) {
+        const n = parseInt(am[1], 16);
+        document.documentElement.style.setProperty("--accent-soft", `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, 0.2)`);
+      } else document.documentElement.style.removeProperty("--accent-soft");
       const base = THEME_PAL[document.documentElement.getAttribute("data-theme")] || BASE_PALETTE;
       T.palette = [T.accent, ...base.filter((c) => c.toLowerCase() !== T.accent.toLowerCase())];
       Chart.defaults.color = T.muted;
@@ -2756,7 +2784,7 @@
     }
     $("memberRows").addEventListener("click", (e) => {
       const tr = e.target.closest("tr[data-user]");
-      if (tr) setUser(tr.dataset.user, "voice");
+      if (tr) setUser(state.user === tr.dataset.user ? "" : tr.dataset.user);
     });
     document.querySelectorAll("th[data-sort]").forEach((th) => th.addEventListener("click", () => {
       const k = th.dataset.sort;
@@ -3681,7 +3709,7 @@
 
         if (res.status === 429) {
           const data = await res.json();
-          showShareStatus(`Cooldown active! Please wait ${data.remainingSeconds || 180}s before sharing again.`, false);
+          showShareStatus(`Cooldown active! Please wait ${data.remainingSeconds || 60}s before sharing again.`, false);
           btn.disabled = false;
           return;
         }

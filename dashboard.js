@@ -19,7 +19,7 @@ const ID_RE = /^\d{5,25}$/;
 const STATUS_ORDER = { online: 0, idle: 1, dnd: 2 };
 
 let lastShareTimestamp = 0;
-const SHARE_COOLDOWN_MS = 3 * 60 * 1000;
+const SHARE_COOLDOWN_MS = 60 * 1000;
 
 module.exports = function registerDashboard(app, client) {
   function guard(req, res, next) {
@@ -545,7 +545,7 @@ module.exports = function registerDashboard(app, client) {
     }
   });
 
-  // ---------- Share snapshot to Discord (3-min cooldown) ----------
+  // ---------- Share snapshot to Discord (1-min cooldown) ----------
   app.post("/api/share-discord", guard, express.json({ limit: "15mb" }), async (req, res) => {
     const now = Date.now();
     const elapsed = now - lastShareTimestamp;
