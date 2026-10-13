@@ -176,8 +176,19 @@ function computeReport(o) {
     const slackerMembers = [];
     const slackerLog = [];
 
+    // Late notices per member per gaming day; one submitted in time beats one that wasn't
+    const noticeOf = new Map();
+    for (const n of o.notices || []) {
+      const at = z.localToMs(`${n.target_date}T${String(n.target_time || "").slice(0, 5)}`);
+      if (!Number.isFinite(at)) continue;
+      const key = n.user_id + "|" + z.dateOf(at);
+      const prev = noticeOf.get(key);
+      if (!prev || n.is_valid || !prev.is_valid) noticeOf.set(key, n);
+    }
+
     for (const uid of ids) {
       let daysLate = 0;
+      let daysExcused = 0;
       let daysOnTime = 0;
       let daysAbsent = 0;
       let totalLateMinutes = 0;
@@ -198,6 +209,9 @@ function computeReport(o) {
         }
 
         const attendedDay = R && R.seconds >= (minSeconds || 300);
+        const notice = noticeOf.get(uid + "|" + date);
+        const excuse = notice ? `${notice.delay_minutes}m notice: ${notice.reason}${notice.is_valid ? "" : " - sent too late"}` : undefined;
+        const excusedMs = notice && notice.is_valid ? notice.delay_minutes * 60000 : 0;
 
         if (!attendedDay) {
           daysAbsent += 1;
@@ -211,6 +225,7 @@ function computeReport(o) {
             status: "absent",
             late_minutes: 0,
             penalty_points: 3,
+            excuse,
           });
         } else {
           const firstJoin = R.first;
@@ -227,10 +242,26 @@ function computeReport(o) {
               status: "on_time",
               late_minutes: 0,
               penalty_points: 0,
+              excuse,
+            });
+          } else if (excusedMs && diffMs <= excusedMs + graceMs) {
+            // Announced beforehand and arrived within the announced delay: no penalty
+            daysExcused += 1;
+            slackerLog.push({
+              date,
+              user_id: uid,
+              name: nameOf(uid),
+              target_time: targetMs,
+              actual_time: firstJoin,
+              status: "excused",
+              late_minutes: Math.round(diffMs / 60000),
+              penalty_points: 0,
+              excuse,
             });
           } else {
             daysLate += 1;
-            const lateMin = Math.round(diffMs / 60000);
+            // With a valid notice only the minutes beyond the announced delay are penalised
+            const lateMin = Math.round((diffMs - excusedMs) / 60000);
             totalLateMinutes += lateMin;
             const points = Math.max(1, Math.ceil(lateMin / 15));
             totalPenaltyPoints += points;
@@ -245,15 +276,16 @@ function computeReport(o) {
               name: nameOf(uid),
               target_time: targetMs,
               actual_time: firstJoin,
-              status: "late",
+              status: excusedMs ? "late_excess" : "late",
               late_minutes: lateMin,
               penalty_points: points,
+              excuse,
             });
           }
         }
       }
 
-      const totalEvaluatedDays = daysLate + daysOnTime + daysAbsent;
+      const totalEvaluatedDays = daysLate + daysOnTime + daysExcused + daysAbsent;
       const punctualityPct = totalEvaluatedDays > 0 ? Math.round((daysOnTime / totalEvaluatedDays) * 100) : 0;
       const avgLateMin = daysLate > 0 ? Math.round(totalLateMinutes / daysLate) : 0;
 
@@ -263,6 +295,7 @@ function computeReport(o) {
         penalty_points: totalPenaltyPoints,
         days_late: daysLate,
         days_on_time: daysOnTime,
+        days_excused: daysExcused,
         days_absent: daysAbsent,
         total_days: totalEvaluatedDays,
         punctuality_pct: punctualityPct,

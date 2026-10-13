@@ -37,7 +37,24 @@ module.exports = (client) => {
     const membersLoaded = guild
       ? guild.members.fetch({ withPresences: true }).catch((e) => console.warn("Member fetch warning:", e.message))
       : Promise.resolve();
-    membersLoaded.then(() => db.reconcileVoiceSessions(client));
+    membersLoaded
+      .then(() => db.reconcileVoiceSessions(client))
+      .then((carried) => {
+        for (const [userId, secs] of carried || []) audio.seedSpeakingSeconds(userId, secs);
+      });
+
+    // Save running mic talk time once a minute so open sessions show it and a restart doesn't lose it
+    const lastSavedSpeaking = new Map();
+    setInterval(() => {
+      const guild = client.guilds.cache.get(IDs.guild);
+      for (const userId of audio.trackedSpeakerIds()) {
+        if (!guild?.voiceStates.cache.get(userId)?.channelId) continue;
+        const secs = audio.getLiveSpeakingSeconds(userId);
+        if (lastSavedSpeaking.get(userId) === secs) continue;
+        lastSavedSpeaking.set(userId, secs);
+        db.checkpointSpeaking(userId, secs);
+      }
+    }, 60000);
   });
 
   client.on("messageCreate", async (msg) => {

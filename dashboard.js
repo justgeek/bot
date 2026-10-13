@@ -7,6 +7,7 @@ const { computeStats } = require("./stats");
 const { computeReport } = require("./report");
 const { makeTz, validTz, DEFAULT_TZ } = require("./tz");
 const config = require("./config");
+const audio = require("./audioManager");
 
 const IDs = config.IDs || {};
 const MemberColorOverrides = config.MemberColorOverrides || {};
@@ -23,11 +24,32 @@ const SHARE_COOLDOWN_MS = 3 * 60 * 1000;
 module.exports = function registerDashboard(app, client) {
   function guard(req, res, next) {
     const required = process.env.DASHBOARD_KEY;
-    if (!required) return next();
     const supplied = req.query.key || req.get("x-dashboard-key");
-    if (supplied === required) return next();
+    if (!required || supplied === required) {
+      touchViewer(req);
+      return next();
+    }
     res.status(401).send("Unauthorized");
   }
+
+  // ---------- Who has the dashboard open (each open page polls every 20s) ----------
+  const VIEWER_TTL_MS = 60000;
+  const viewers = new Map(); // viewer id -> last seen (ms)
+  function touchViewer(req) {
+    const vid = req.query.vid;
+    if (typeof vid === "string" && /^[\w-]{3,40}$/.test(vid)) viewers.set(vid, Date.now());
+  }
+  function activeViewers() {
+    const cutoff = Date.now() - VIEWER_TTL_MS;
+    for (const [vid, at] of viewers) if (at < cutoff) viewers.delete(vid);
+    return Math.max(1, viewers.size);
+  }
+
+  // Sessions still in progress only get their talk time written at the end, so overlay the live tally
+  const withLiveSpeaking = (rows) =>
+    rows.map((r) =>
+      r.left_at ? r : { ...r, speaking_seconds: Math.max(Number(r.speaking_seconds) || 0, audio.getLiveSpeakingSeconds(r.user_id)) }
+    );
 
   const getGuild = () => client.guilds.cache.get(IDs.guild);
   const liveName = (id) => getGuild()?.members.cache.get(id)?.displayName || null;
@@ -93,7 +115,7 @@ module.exports = function registerDashboard(app, client) {
       const iso = (ms) => (ms ? new Date(ms).toISOString() : null);
       const [s, p] = await Promise.all([db.getSessionRows(iso(since), iso(until)), db.getPresenceRows(iso(since), iso(until))]);
       return {
-        sessionRows: s.rows,
+        sessionRows: withLiveSpeaking(s.rows),
         presenceRows: p.rows,
         truncated: s.truncated || p.truncated,
         since,
@@ -175,6 +197,7 @@ module.exports = function registerDashboard(app, client) {
         in_voice_count: inVoiceActiveCount,
         total_voice_seconds: totalSeconds,
         total_voice_hours: hours(totalSeconds),
+        active_viewers: activeViewers(),
       });
     } catch (err) {
       console.error("[API] /api/overview failed:", err);
@@ -398,10 +421,13 @@ module.exports = function registerDashboard(app, client) {
         const fromMs = z.startOfDate(from);
         const toMs = z.startOfDate(z.addDays(to, 1));
         const none = { rows: [], truncated: false };
-        const [s, p] = await Promise.all([
+        const [s, p, notices] = await Promise.all([
           type === "voice" || type === "slackers" ? db.getSessionRows(new Date(fromMs).toISOString(), new Date(toMs).toISOString()) : none,
           type === "presence" ? db.getPresenceRows(new Date(fromMs - 14 * DAY).toISOString(), new Date(toMs).toISOString()) : none,
+          // a gaming day runs past midnight, so its notices can carry the next calendar date
+          type === "slackers" ? db.getLateNotices(z.addDays(from, -1), z.addDays(to, 1)) : [],
         ]);
+        s.rows = withLiveSpeaking(s.rows);
         const rosterIds = [];
         const guild = getGuild();
         if (roster && guild) guild.members.cache.forEach((m) => { if (!m.user.bot) rosterIds.push(m.id); });
@@ -410,7 +436,7 @@ module.exports = function registerDashboard(app, client) {
           type, sessionRows: s.rows, presenceRows: p.rows, from, to, tz, dayStart,
           user: userList, channel, includeAfk,
           minSeconds: minMinutes * 60, mode, roster, rosterIds, now: Date.now(), liveName, liveStatus, client,
-          targetTime, graceMinutes,
+          targetTime, graceMinutes, notices,
         });
         result.meta.truncated = s.truncated || p.truncated;
         return result;
@@ -461,6 +487,64 @@ module.exports = function registerDashboard(app, client) {
     }
   });
 
+  // ---------- Late notice: "I'll be X minutes late", announced in chat ----------
+  // Only waives slacker penalties when it is submitted before the target start time.
+  app.post("/api/late-notice", guard, express.json({ limit: "20kb" }), async (req, res) => {
+    try {
+      const body = req.body || {};
+      const userId = String(body.userId || "");
+      const member = ID_RE.test(userId) ? getGuild()?.members.cache.get(userId) : null;
+      if (!member || member.user.bot) return res.status(400).json({ error: "Unknown member" });
+
+      const tz = validTz(body.tz) || DEFAULT_TZ;
+      const targetMs = makeTz(tz, 0).localToMs(body.targetAt);
+      if (!Number.isFinite(targetMs)) return res.status(400).json({ error: "Pick a valid target date and time" });
+      const now = Date.now();
+      if (Math.abs(targetMs - now) > 30 * DAY) return res.status(400).json({ error: "Target time must be within 30 days" });
+
+      const delayMinutes = parseInt(body.delayMinutes, 10);
+      if (!(delayMinutes >= 1 && delayMinutes <= 720)) return res.status(400).json({ error: "Delay must be between 1 and 720 minutes" });
+      const reason = String(body.reason || "").replace(/\s+/g, " ").trim().slice(0, 200);
+      if (!reason) return res.status(400).json({ error: "Please enter a reason" });
+
+      const isValid = now < targetMs;
+      const notice = await db.addLateNotice({
+        userId,
+        username: member.user.username,
+        displayName: member.displayName,
+        targetDate: body.targetAt.slice(0, 10),
+        targetTime: body.targetAt.slice(11, 16),
+        delayMinutes,
+        reason,
+        isValid,
+      });
+      for (const k of cache.keys()) if (k.startsWith("report:")) cache.delete(k);
+
+      const unix = (ms) => Math.floor(ms / 1000);
+      const text =
+        `📝 **Late notice** - <@${userId}> will be about **${delayMinutes} min** late for <t:${unix(targetMs)}:F>` +
+        ` (expected around <t:${unix(targetMs + delayMinutes * 60000)}:t>).\n` +
+        `> ${reason.replace(/[\\*_~`|>@]/g, "\\$&")}\n` +
+        (isValid
+          ? "✅ Submitted before the start time - late penalty waived up to that delay."
+          : "⚠️ Submitted after the start time - recorded, but the penalty still counts.");
+      let announced = false;
+      try {
+        const channelId = IDs.channelLateNotice || IDs.channelMain;
+        const channel = client.channels.cache.get(channelId) || (await client.channels.fetch(channelId));
+        await channel.send({ content: text, allowedMentions: { parse: [] } });
+        announced = true;
+      } catch (err) {
+        console.error("[API] late notice announce failed:", err.message || err);
+      }
+
+      res.json({ success: true, notice, announced });
+    } catch (err) {
+      console.error("[API] /api/late-notice failed:", err);
+      res.status(500).json({ error: err.message || "late_notice_failed" });
+    }
+  });
+
   // ---------- Share snapshot to Discord (3-min cooldown) ----------
   app.post("/api/share-discord", guard, express.json({ limit: "15mb" }), async (req, res) => {
     const now = Date.now();
@@ -487,15 +571,19 @@ module.exports = function registerDashboard(app, client) {
 
     try {
       const files = [];
-      const cleanUrl = url ? `<${url}>` : "";
+      const safeUrl = typeof url === "string" && /^https?:\/\/[^\s<>]+$/.test(url) && url.length < 1500 ? url : "";
+      const cleanUrl = safeUrl ? `<${safeUrl}>` : "";
+      const safeTitle = String(title || "📊 Banha Bot Report Snapshot").slice(0, 250);
 
       let embed = new Discord.EmbedBuilder()
-        .setTitle(title || "📊 Banha Bot Report Snapshot")
+        .setTitle(safeTitle)
         .setDescription(
-          `${summary || "Here is a snapshot of the dashboard."}\n\n🔗 **Interactive Dashboard:**\n${cleanUrl}`
+          `${String(summary || "Here is a snapshot of the dashboard.").slice(0, 1500)}` +
+          (safeUrl ? `\n\n🔗 **[Open the dashboard with these filters](${safeUrl})**` : "")
         )
         .setColor(0xdc143c)
         .setTimestamp();
+      if (safeUrl) embed.setURL(safeUrl);
 
       if (imageData && typeof imageData === "string" && imageData.startsWith("data:image/")) {
         const base64Data = imageData.replace(/^data:image\/\w+;base64,/, "");
@@ -506,9 +594,10 @@ module.exports = function registerDashboard(app, client) {
       }
 
       await targetChannel.send({
-        content: `📊 **${title || "Report Snapshot"}** • ${cleanUrl}`,
+        content: `📊 **${safeTitle}**${cleanUrl ? `\n${cleanUrl}` : ""}`,
         embeds: [embed],
         files: files,
+        allowedMentions: { parse: [] },
       });
 
       lastShareTimestamp = Date.now();

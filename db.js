@@ -93,14 +93,13 @@ async function _endVoiceSession(userId, speakingSeconds = 0) {
     });
     if (error) {
       // Direct update fallback in case RPC update has not run yet
-      await supabase
+      const secs = parseInt(speakingSeconds, 10) || 0;
+      const { error: updErr } = await supabase
         .from("voice_sessions")
-        .update({
-          left_at: new Date().toISOString(),
-          speaking_seconds: parseInt(speakingSeconds, 10) || 0,
-        })
+        .update(secs > 0 ? { left_at: new Date().toISOString(), speaking_seconds: secs } : { left_at: new Date().toISOString() })
         .eq("user_id", String(userId))
         .is("left_at", null);
+      if (updErr) throw updErr;
     }
   } catch (err) {
     console.error("[DB] endVoiceSession failed:", err.message || err);
@@ -134,11 +133,29 @@ const startVoiceSession = (userId, username, channelId, channelName, displayName
     _startVoiceSession(userId, username, channelId, channelName, displayName)
   );
 
+// Saves the running mic talk time on a still-open session, so it survives a bot restart.
+const checkpointSpeaking = (userId, speakingSeconds) =>
+  serialize(String(userId), async () => {
+    if (!supabase) return;
+    try {
+      const { error } = await supabase
+        .from("voice_sessions")
+        .update({ speaking_seconds: parseInt(speakingSeconds, 10) || 0 })
+        .eq("user_id", String(userId))
+        .is("left_at", null);
+      if (error) throw error;
+    } catch (err) {
+      console.error("[DB] checkpointSpeaking failed:", err.message || err);
+    }
+  });
+
+// Returns Map(userId -> speaking seconds already saved) for sessions that stayed open across a restart.
 async function reconcileVoiceSessions(client) {
-  if (!supabase) return;
+  const carried = new Map();
+  if (!supabase) return carried;
   try {
     const guild = client.guilds.cache.get(IDs.guild);
-    if (!guild) return;
+    if (!guild) return carried;
 
     const current = new Map();
     guild.voiceStates.cache.forEach((vs) => {
@@ -154,15 +171,17 @@ async function reconcileVoiceSessions(client) {
 
     const { data: open, error } = await supabase
       .from("voice_sessions")
-      .select("user_id, channel_id")
+      .select("user_id, channel_id, speaking_seconds")
       .is("left_at", null);
     if (error) throw error;
 
     const stillValid = new Set();
     for (const row of open || []) {
       const now = current.get(row.user_id);
-      if (now && now.channelId === row.channel_id) stillValid.add(row.user_id);
-      else await endVoiceSession(row.user_id, 0);
+      if (now && now.channelId === row.channel_id) {
+        stillValid.add(row.user_id);
+        carried.set(row.user_id, Number(row.speaking_seconds) || 0);
+      } else await endVoiceSession(row.user_id, Number(row.speaking_seconds) || 0);
     }
 
     for (const [userId, info] of current) {
@@ -173,6 +192,52 @@ async function reconcileVoiceSessions(client) {
     console.log(`[DB] Voice sessions reconciled (${current.size} user(s) in voice).`);
   } catch (err) {
     console.error("[DB] reconcileVoiceSessions failed:", err.message || err);
+  }
+  return carried;
+}
+
+// ---------- Late notices ----------
+async function addLateNotice(n) {
+  if (!supabase) throw new Error("Database is not configured");
+  const { data, error } = await supabase
+    .from("late_notices")
+    .insert({
+      user_id: String(n.userId),
+      username: n.username,
+      display_name: n.displayName || null,
+      target_date: n.targetDate, // "YYYY-MM-DD" + "HH:mm" on the submitter's clock
+      target_time: n.targetTime,
+      delay_minutes: n.delayMinutes,
+      reason: n.reason,
+      is_valid: n.isValid,
+    })
+    .select()
+    .single();
+  if (error) {
+    // 42P01 / PGRST205: the table has not been created yet
+    if (error.code === "42P01" || error.code === "PGRST205") {
+      throw new Error("late_notices table is missing - run schema.sql in Supabase first");
+    }
+    throw new Error(error.message || "insert failed");
+  }
+  return data;
+}
+
+async function getLateNotices(fromDate, toDate) {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("late_notices")
+      .select("id, user_id, target_date, target_time, delay_minutes, reason, is_valid, submitted_at")
+      .gte("target_date", fromDate)
+      .lte("target_date", toDate)
+      .order("id", { ascending: true })
+      .limit(5000);
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.error("[DB] getLateNotices failed:", err.message || err);
+    return [];
   }
 }
 
@@ -348,6 +413,9 @@ module.exports = {
   startVoiceSession,
   endVoiceSession,
   reconcileVoiceSessions,
+  checkpointSpeaking,
+  addLateNotice,
+  getLateNotices,
   getSessionRows,
   getPresenceRows,
   getTotalVoiceSeconds,

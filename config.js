@@ -10,6 +10,7 @@ module.exports = {
     channelStatus: "1020398542365401128", // status text channel
     channelActivity: "1474888679183876228", // activity text channel
     channelCommands: "1020315442042122330", // commands text channel
+    channelLateNotice: "247069115204763648", // where dashboard "late notices" are announced (main chat)
 
     voice1: "247069115204763649", // 1st voice channel
     voice2: "248868783534505984", // 2nd voice channel (secret)

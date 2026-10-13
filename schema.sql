@@ -25,6 +25,23 @@ create table if not exists presence_logs (
 -- Upgrade path for tables created by the first version
 alter table voice_sessions add column if not exists display_name text;
 alter table presence_logs  add column if not exists display_name text;
+alter table voice_sessions add column if not exists speaking_seconds integer not null default 0;
+
+-- "I'll be late" notices submitted from the dashboard (is_valid = sent before target_at)
+create table if not exists late_notices (
+  id            bigint generated always as identity primary key,
+  user_id       text        not null,
+  username      text        not null,
+  display_name  text,
+  target_date   date        not null,          -- target start on the submitter's clock
+  target_time   text        not null,          -- "HH:mm"
+  delay_minutes integer     not null,
+  reason        text        not null,
+  is_valid      boolean     not null default false,
+  submitted_at  timestamptz not null default now()
+);
+create index if not exists late_notices_target_idx on late_notices (target_date desc);
+alter table late_notices enable row level security;
 
 create index if not exists voice_sessions_open_idx   on voice_sessions (user_id) where left_at is null;
 create index if not exists voice_sessions_joined_idx on voice_sessions (joined_at desc);
@@ -37,13 +54,17 @@ alter table voice_sessions enable row level security;
 alter table presence_logs  enable row level security;
 
 -- Closes any open session for a user using the database clock.
-create or replace function end_voice_session(p_user_id text)
+-- Signature changed (added p_speaking_seconds), so the old version must be dropped first.
+drop function if exists end_voice_session(text);
+
+create or replace function end_voice_session(p_user_id text, p_speaking_seconds integer default 0)
 returns void
 language sql
 as $$
   update voice_sessions
      set left_at = now(),
-         duration_seconds = extract(epoch from (now() - joined_at))::integer
+         duration_seconds = extract(epoch from (now() - joined_at))::integer,
+         speaking_seconds = greatest(coalesce(speaking_seconds, 0), coalesce(p_speaking_seconds, 0))
    where user_id = p_user_id
      and left_at is null;
 $$;

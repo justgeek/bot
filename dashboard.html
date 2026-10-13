@@ -1878,15 +1878,15 @@
         <h3 id="shareModalTitle" class="text-lg font-bold hd">Share to Discord</h3>
         <button id="closeShareModal" class="icon-btn" aria-label="Close modal">&times;</button>
       </div>
-      <p class="text-xs muted">Post an image snapshot and a direct link of your current dashboard view to Discord.
-        (Limited to once per 3 minutes).</p>
+      <p class="text-xs muted">Post a link to Discord that opens this exact view - same tab, time range, member
+        and channel filters - for whoever clicks it. (Limited to once per 3 minutes).</p>
       <div>
         <label class="block text-sm font-medium mb-1">Target Channel</label>
         <select id="shareChannel" class="field w-full"></select>
       </div>
       <div class="flex items-center gap-2">
-        <input type="checkbox" id="shareIncludeImage" checked class="rounded">
-        <label for="shareIncludeImage" class="text-sm">Include screenshot image snapshot</label>
+        <input type="checkbox" id="shareIncludeImage" class="rounded">
+        <label for="shareIncludeImage" class="text-sm">Also attach a screenshot of the current view</label>
       </div>
       <div id="shareStatus" class="text-xs py-1 text-center font-medium hidden"></div>
       <div class="flex justify-end gap-2 pt-2">
@@ -1903,19 +1903,20 @@
         <h3 id="excuseModalTitle" class="text-lg font-bold hd">📝 Submit Late Notice</h3>
         <button id="closeExcuseModal" class="icon-btn" aria-label="Close modal">&times;</button>
       </div>
-      <p class="text-xs muted">Must be submitted <b>before the target time</b> to waive slacker penalty points.</p>
+      <p class="text-xs muted">Must be submitted <b>before the target time</b> to waive slacker penalty points. The
+        notice is announced in the Discord chat.</p>
       <div>
         <label class="block text-xs font-semibold uppercase muted mb-1">Member</label>
         <select id="excuseUser" class="field w-full"></select>
       </div>
-      <div class="grid grid-cols-2 gap-2">
-        <div>
-          <label class="block text-xs font-semibold uppercase muted mb-1">Target Start</label>
-          <input type="time" id="excuseTargetTime" value="21:00" class="field w-full">
+      <div class="grid grid-cols-3 gap-2">
+        <div class="col-span-2">
+          <label class="block text-xs font-semibold uppercase muted mb-1">Target Start (date &amp; time)</label>
+          <input type="datetime-local" id="excuseTargetAt" class="field w-full">
         </div>
         <div>
           <label class="block text-xs font-semibold uppercase muted mb-1">Delay (Mins)</label>
-          <input type="number" id="excuseDelay" min="5" max="360" value="45" class="field w-full">
+          <input type="number" id="excuseDelay" min="1" max="720" value="45" class="field w-full">
         </div>
       </div>
       <div>
@@ -2029,6 +2030,8 @@
       document.title = label + " - " + ($("serverName").textContent || "Dashboard");
       store.set("banha-tab", id);
       updateFilterBar();
+      // Keep the address bar in step with the tab, so a copied or shared link never carries another tab's filters
+      if (!initialReportParams.hasReport) syncUrl();
       if (id === "reports" && !initialReportParams.hasReport) initReports();
       if (id === "appearance" && window.__FONTS) Object.keys(window.__FONTS).forEach(window.__loadFonts);
       closeDrawer();
@@ -2069,16 +2072,16 @@
       logType: "all",
       logLimit: 30,
       sessLimit: 25,
-      memberSort: { key: "seconds", dir: -1 },
-      memberSearch: "",
+      memberSort: /^\w+:(asc|desc)$/.test(params.get("sort") || "")
+        ? { key: params.get("sort").split(":")[0], dir: params.get("sort").endsWith(":asc") ? 1 : -1 }
+        : { key: "seconds", dir: -1 },
+      memberSearch: params.get("q") || "",
     };
+    $("memberSearch").value = state.memberSearch;
     let lastStats = null;
 
-    function syncUrl() {
-      if (currentTab === "reports") {
-        if (lastReport && history.replaceState) history.replaceState(null, "", getReportUrl());
-        return;
-      }
+    // Link that reopens the current (non-report) tab with the same filters applied
+    function getViewUrl() {
       const q = new URLSearchParams();
       if (KEY) q.set("key", KEY);
       q.set("range", state.range);
@@ -2086,7 +2089,19 @@
       if (state.channel) q.set("channel", state.channel);
       if (state.status) q.set("status", state.status);
       if (state.range === "custom") { q.set("from", state.from); q.set("to", state.to); }
-      history.replaceState(null, "", "?" + q.toString() + location.hash);
+      if (currentTab === "members") {
+        if (state.memberSort.key !== "seconds" || state.memberSort.dir !== -1) q.set("sort", state.memberSort.key + ":" + (state.memberSort.dir > 0 ? "asc" : "desc"));
+        if (state.memberSearch.trim()) q.set("q", state.memberSearch.trim());
+      }
+      return location.origin + location.pathname + "?" + q.toString() + "#" + currentTab;
+    }
+
+    function syncUrl() {
+      if (currentTab === "reports") {
+        if (lastReport && history.replaceState) history.replaceState(null, "", getReportUrl());
+        return;
+      }
+      history.replaceState(null, "", getViewUrl());
     }
 
     let TZ = "Africa/Cairo", DAY_START = 18, clockFmt, stampFmt, fullFmt, exactFmt, todFmt, csvStampFmt, dateKeyFmt;
@@ -3514,6 +3529,12 @@
     function openExcuseModal() {
       $("excuseFeedback").classList.add("hidden");
       $("excuseReason").value = "";
+      // Default to the next upcoming target start (today, or tomorrow if today's already passed)
+      const nowLocal = toLocalInput(Date.now());
+      const time = ($("rTargetTime") && $("rTargetTime").value) || "21:00";
+      let target = nowLocal.slice(0, 10) + "T" + time;
+      if (target <= nowLocal) target = toLocalInput(Date.now() + 24 * 3600e3).slice(0, 10) + "T" + time;
+      $("excuseTargetAt").value = target;
       $("excuseModal").classList.remove("hidden");
     }
     function hideExcuseModal() {
@@ -3525,10 +3546,14 @@
 
     $("submitExcuseBtn").onclick = async () => {
       const userId = $("excuseUser").value;
-      const targetTime = $("excuseTargetTime").value || "21:00";
+      const targetAt = $("excuseTargetAt").value.slice(0, 16);
       const delayMinutes = $("excuseDelay").value || "45";
       const reason = $("excuseReason").value.trim();
 
+      if (!targetAt) {
+        showExcuseFeedback("Please pick the target start date and time.", false);
+        return;
+      }
       if (!reason) {
         showExcuseFeedback("Please enter a reason/excuse.", false);
         return;
@@ -3541,15 +3566,16 @@
         const res = await fetch("/api/late-notice" + (KEY ? `?key=${KEY}` : ""), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId, targetTime, delayMinutes, reason })
+          body: JSON.stringify({ userId, targetAt, tz: TZ, delayMinutes, reason })
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed");
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Server returned ${res.status}`);
 
+        const chatNote = data.announced ? " Posted in chat." : " (Could not post it in chat.)";
         if (data.notice?.is_valid) {
-          showExcuseFeedback("✅ Notice submitted before target time! Late penalty will be excused.", true);
+          showExcuseFeedback("✅ Notice submitted before target time! Late penalty will be excused." + chatNote, true);
         } else {
-          showExcuseFeedback("⚠️ Submitted after target start time! Notice recorded, but cannot be excused.", false);
+          showExcuseFeedback("⚠️ Submitted after target start time! Notice recorded, but cannot be excused." + chatNote, false);
         }
         setTimeout(() => {
           hideExcuseModal();
@@ -3619,7 +3645,8 @@
           (state.channel ? `🎙️ **Channel:** ${$("fChannel").selectedOptions[0]?.text || state.channel}\n` : "") +
           (state.status ? `🟢 **Status:** ${state.status.toUpperCase()}\n` : "");
 
-        let reportUrl = window.location.href;
+        // Always build the link from the filters on screen; the address bar can be stale
+        let reportUrl = getViewUrl();
 
         if (currentTab === "reports" && lastReport) {
           const rm = lastReport.meta, rsm = lastReport.summary;

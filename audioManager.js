@@ -19,6 +19,15 @@ const state = {
 const activeSpeakers = new Map(); // userId -> start timestamp (ms)
 const sessionSpeakingTally = new Map(); // userId -> accumulated speaking duration (ms)
 
+function settleSpeaker(userId) {
+  const started = activeSpeakers.get(userId);
+  if (!started) return;
+  const elapsedMs = Math.max(0, Date.now() - started);
+  activeSpeakers.delete(userId);
+  const currentTotal = sessionSpeakingTally.get(userId) || 0;
+  sessionSpeakingTally.set(userId, currentTotal + elapsedMs);
+}
+
 function attachSpeakingTracker(conn) {
   if (!conn || !conn.receiver || !conn.receiver.speaking) return;
 
@@ -27,19 +36,31 @@ function attachSpeakingTracker(conn) {
 
   // Triggered when member opens mic (green circle appears)
   conn.receiver.speaking.on('start', (userId) => {
-    activeSpeakers.set(userId, Date.now());
+    if (!activeSpeakers.has(userId)) activeSpeakers.set(userId, Date.now());
   });
 
   // Triggered when member stops speaking
-  conn.receiver.speaking.on('end', (userId) => {
-    const started = activeSpeakers.get(userId);
-    if (started) {
-      const elapsedMs = Math.max(0, Date.now() - started);
-      activeSpeakers.delete(userId);
-      const currentTotal = sessionSpeakingTally.get(userId) || 0;
-      sessionSpeakingTally.set(userId, currentTotal + elapsedMs);
-    }
-  });
+  conn.receiver.speaking.on('end', settleSpeaker);
+
+  // No 'end' event arrives once the connection drops, so close out whoever was mid-sentence
+  if (!conn.__speakingSettleHooked) {
+    conn.__speakingSettleHooked = true;
+    conn.on('stateChange', (oldState, newState) => {
+      if (newState.status !== VoiceConnectionStatus.Ready) {
+        for (const userId of [...activeSpeakers.keys()]) settleSpeaker(userId);
+      }
+    });
+  }
+}
+
+// Carries talk time saved before a restart over to the still-open session
+function seedSpeakingSeconds(userId, seconds) {
+  if (!(seconds > 0)) return;
+  sessionSpeakingTally.set(userId, (sessionSpeakingTally.get(userId) || 0) + seconds * 1000);
+}
+
+function trackedSpeakerIds() {
+  return [...new Set([...sessionSpeakingTally.keys(), ...activeSpeakers.keys()])];
 }
 
 function flushSpeakingSeconds(userId) {
@@ -200,5 +221,7 @@ module.exports = {
   leaveEmptyVoiceChannel,
   attachSpeakingTracker,
   flushSpeakingSeconds,
-  getLiveSpeakingSeconds
+  getLiveSpeakingSeconds,
+  seedSpeakingSeconds,
+  trackedSpeakerIds
 };
