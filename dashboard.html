@@ -816,6 +816,144 @@
       background: rgba(128, 132, 142, 0.1);
     }
 
+    /* ---- Member picker (filter bar + reports) ---- */
+    .mpick {
+      position: relative;
+    }
+
+    .mpick-btn {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .5rem;
+      max-width: 16rem;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .mpick-btn.w-full {
+      max-width: none;
+    }
+
+    .mpick-panel {
+      position: absolute;
+      left: 0;
+      top: 100%;
+      margin-top: .25rem;
+      z-index: 60;
+      width: min(27rem, calc(100vw - 1.5rem));
+      padding: .65rem;
+      background: var(--surface);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
+      display: flex;
+      flex-direction: column;
+      gap: .5rem;
+      color: var(--text);
+    }
+
+    .mpick-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: .3rem;
+    }
+
+    .mpick-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: .3rem;
+      padding: .15rem .55rem;
+      font-size: .75rem;
+      border-radius: var(--chip-radius);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .mpick-chip:hover {
+      border-color: var(--accent);
+    }
+
+    .mpick-chip[aria-pressed="true"] {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--accent-fg);
+    }
+
+    .mpick-chip .n {
+      opacity: .7;
+    }
+
+    .mpick-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 2px;
+      max-height: min(21rem, 48vh);
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+
+    .mpick-item {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      min-width: 0;
+      padding: .35rem .5rem;
+      font-size: .8125rem;
+      text-align: left;
+      color: var(--text);
+      background: none;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+    }
+
+    .mpick-item:hover {
+      background: var(--surface-2);
+    }
+
+    .mpick-item[aria-pressed="true"] {
+      background: var(--accent-soft, var(--surface-2));
+      border-color: var(--accent);
+    }
+
+    .mpick-item .who {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .mpick-item .who-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .mpick-box {
+      flex: none;
+      width: 1rem;
+      height: 1rem;
+      border: 1px solid var(--muted);
+      border-radius: 3px;
+      font-size: .7rem;
+      line-height: 1rem;
+      text-align: center;
+      color: transparent;
+    }
+
+    .mpick-item[aria-pressed="true"] .mpick-box {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--accent-fg);
+    }
+
+    @media (max-width: 480px) {
+      .mpick-list {
+        grid-template-columns: 1fr;
+      }
+    }
+
     .bar-track {
       background: var(--surface-2);
       height: .5rem;
@@ -1448,9 +1586,18 @@
           <button id="cApply" class="btn">Apply</button>
           <span id="cMsg" class="text-xs b-dnd rounded px-2 hidden"></span>
         </div>
-        <select id="fUser" aria-label="Member" class="field max-w-[12rem]">
-          <option value="">All members</option>
-        </select>
+        <div id="fUser" class="mpick">
+          <button type="button" id="fUserBtn" class="field mpick-btn" aria-haspopup="dialog" aria-expanded="false"
+            aria-label="Members">
+            <span id="fUserSummary" class="truncate">All members</span>
+            <svg class="w-4 h-4 flex-none muted" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd"
+                d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                clip-rule="evenodd" />
+            </svg>
+          </button>
+          <div id="fUserPanel" class="mpick-panel card hidden"></div>
+        </div>
         <select id="fChannel" aria-label="Voice channel" class="field max-w-[15rem]">
           <option value="">Active voice channels (excl. AFK)</option>
           <option value="__all__">All channels (incl. AFK)</option>
@@ -1781,11 +1928,10 @@
               </label>
 
               <!-- Multi-Select Member Dropdown Component -->
-              <div class="block text-sm muted relative" style="z-index: 40;">
-                <span>Members (Multi-select)</span>
-                <button type="button" id="rUserBtn"
-                  class="field w-full mt-1 text-left flex items-center justify-between cursor-pointer"
-                  aria-haspopup="listbox" aria-expanded="false">
+              <div class="block text-sm muted mpick" style="z-index: 40;">
+                <span>Members</span>
+                <button type="button" id="rUserBtn" class="field mpick-btn w-full mt-1" aria-haspopup="dialog"
+                  aria-expanded="false">
                   <span id="rUserSummary" class="truncate text-sm text-[var(--text)]">All members</span>
                   <svg class="w-4 h-4 ml-1 flex-none muted" viewBox="0 0 20 20" fill="currentColor">
                     <path fill-rule="evenodd"
@@ -1793,19 +1939,7 @@
                       clip-rule="evenodd" />
                   </svg>
                 </button>
-                <div id="rUserDropdown"
-                  class="hidden absolute left-0 right-0 top-full mt-1 card p-2 shadow-2xl space-y-2 border"
-                  style="background:var(--surface); z-index: 50; min-width: 240px;">
-                  <div class="flex items-center justify-between gap-2 border-b pb-1.5 px-1 text-xs"
-                    style="border-color:var(--border);">
-                    <button type="button" id="rUserSelectAll" class="link text-xs">Select All</button>
-                    <span class="muted">|</span>
-                    <button type="button" id="rUserClearAll" class="link text-xs">Clear (All)</button>
-                  </div>
-                  <input type="text" id="rUserSearch" placeholder="Search members..."
-                    class="field w-full text-xs py-1 px-2" aria-label="Search members">
-                  <div id="rUserList" class="max-h-56 overflow-y-auto scroll-thin space-y-1 pr-1"></div>
-                </div>
+                <div id="rUserPanel" class="mpick-panel card hidden"></div>
               </div>
 
               <label id="rChannelWrap" class="block text-sm muted">Voice channel
@@ -2339,7 +2473,6 @@
       if (state.range === "custom") ensureCustomDefaults();
       applyFilters();
     });
-    $("fUser").onchange = (e) => setUser(e.target.value);
     $("fChannel").onchange = (e) => { state.channel = e.target.value; state.sessLimit = 25; applyFilters(); };
     $("fStatus").onchange = (e) => { state.status = e.target.value; state.logLimit = 30; applyFilters(); };
     $("fClear").onclick = () => { state.user = ""; state.channel = ""; state.status = ""; state.sessLimit = 25; state.logLimit = 30; applyFilters(); };
@@ -2373,8 +2506,7 @@
       }
     }
     function applyFilters() {
-      ensureOption($("fUser"), state.user, (people[state.user] && people[state.user].name) || state.user);
-      $("fUser").value = state.user;
+      userPicker.set(state.user ? state.user.split(",") : []);
       $("fChannel").value = state.channel;
       $("fStatus").value = state.status;
       if (state.range === "custom") { $("cFrom").value = state.from; $("cTo").value = state.to; }
@@ -2386,115 +2518,151 @@
     }
 
     // -------------------------------------------------------------
-    // MULTI-SELECT MEMBER DROPDOWN COMPONENT (FOR REPORTS)
+    // MULTI-SELECT MEMBER PICKER (FILTER BAR + REPORTS)
     // -------------------------------------------------------------
-    let reportMembersCache = [];
+    let memberRoles = [];
+    const inVoiceIds = () => ((lastOverview && lastOverview.in_voice) || []).flatMap((c) => c.members.map((m) => m.user_id));
 
-    function setupReportMemberMultiSelect() {
-      const btn = $("rUserBtn");
-      const dropdown = $("rUserDropdown");
-      const searchInput = $("rUserSearch");
-      const selectAll = $("rUserSelectAll");
-      const clearAll = $("rUserClearAll");
+    // One picker instance per button: prefix "fUser" (filter bar) and "rUser" (reports).
+    // Nothing ticked, or everyone ticked, both mean "all members" and get() returns [].
+    function createMemberPicker(prefix, onChange) {
+      const btn = $(prefix + "Btn"), panel = $(prefix + "Panel"), summary = $(prefix + "Summary");
+      let members = [], sel = new Set(), query = "";
+      panel.innerHTML = `
+        <input type="search" class="field w-full" placeholder="Type a name, press Enter to tick it" aria-label="Search members" data-search>
+        <div class="mpick-row" data-quick></div>
+        <div class="mpick-row" data-chosen></div>
+        <div class="mpick-list scroll-thin" data-list></div>
+        <div class="mpick-row justify-between">
+          <span class="mpick-row"><button type="button" class="link text-xs" data-all>Select all shown</button><span class="muted">|</span><button type="button" class="link text-xs" data-none>Clear</button></span>
+          <button type="button" class="btn" data-done>Done</button>
+        </div>`;
+      const part = (s) => panel.querySelector(s);
+      const search = part("[data-search]");
+      const known = () => new Set(members.map((m) => m.user_id));
+      const nameOf = (id) => (people[id] && people[id].name) || (members.find((m) => m.user_id === id) || {}).name || id;
+      const isAll = () => members.length > 0 && members.every((m) => sel.has(m.user_id));
+      const get = () => (sel.size === 0 || isAll() ? [] : [...sel]);
 
-      btn.onclick = (e) => {
+      // Quick groups: who is in voice right now, then each named Discord role
+      function groups() {
+        const have = known();
+        const voice = inVoiceIds().filter((id) => have.has(id));
+        return [
+          ...(voice.length ? [{ key: "voice", label: "🔊 In voice now", ids: voice }] : []),
+          ...memberRoles.map((r) => ({ key: r.id, label: r.name, color: r.color, ids: r.member_ids.filter((id) => have.has(id)) })).filter((g) => g.ids.length),
+        ];
+      }
+      function shown() {
+        const q = query.trim().toLowerCase();
+        const voice = new Set(inVoiceIds());
+        return members
+          .filter((m) => !q || nameOf(m.user_id).toLowerCase().includes(q) || m.name.toLowerCase().includes(q))
+          .sort((a, b) => voice.has(b.user_id) - voice.has(a.user_id));
+      }
+      function summaryText() {
+        const ids = get();
+        if (!ids.length) return "All members";
+        const g = groups().find((x) => x.ids.length === ids.length && x.ids.every((id) => sel.has(id)));
+        if (g) return g.label + " (" + ids.length + ")";
+        if (ids.length <= 2) return ids.map(nameOf).join(", ");
+        return ids.length + " members";
+      }
+      function render() {
+        summary.textContent = summaryText();
+        if (panel.classList.contains("hidden")) return;
+        part("[data-quick]").innerHTML = groups().map((g) =>
+          `<button type="button" class="mpick-chip" data-group="${esc(g.key)}" aria-pressed="${g.ids.every((id) => sel.has(id))}" title="Tick or untick everyone in this group">${g.color ? `<span class="dot" style="background:${esc(g.color)}"></span>` : ""}${esc(g.label)} <span class="n">${g.ids.length}</span></button>`).join("");
+        const ids = get();
+        part("[data-chosen]").innerHTML = ids.length
+          ? ids.slice(0, 14).map((id) => `<button type="button" class="mpick-chip" data-rm="${esc(id)}" aria-pressed="true" title="Remove">${esc(nameOf(id))} &times;</button>`).join("") + (ids.length > 14 ? `<span class="muted text-xs">+${ids.length - 14} more</span>` : "")
+          : `<span class="muted text-xs">Nobody ticked = everyone. Tick people or a group to narrow it down.</span>`;
+        const list = shown();
+        const voice = new Set(inVoiceIds());
+        const listEl = part("[data-list]"), scrollTop = listEl.scrollTop;
+        listEl.innerHTML = list.length
+          ? list.map((m) => `<button type="button" class="mpick-item" data-id="${esc(m.user_id)}" aria-pressed="${sel.has(m.user_id)}"><span class="mpick-box">&#10003;</span>${who(m.user_id, m.name, { plain: true })}${voice.has(m.user_id) ? `<span class="dot flex-none" style="background:var(--online)" title="In voice now"></span>` : ""}</button>`).join("")
+          : `<p class="muted text-xs p-2">No member matches "${esc(query)}".</p>`;
+        listEl.scrollTop = scrollTop; // redrawing must not jump the list back to the top
+      }
+      function change() { render(); onChange(get()); }
+      function toggle(id) { if (sel.has(id)) sel.delete(id); else sel.add(id); }
+      function close() { panel.classList.add("hidden"); btn.setAttribute("aria-expanded", "false"); }
+      function open() {
+        panel.classList.remove("hidden");
+        btn.setAttribute("aria-expanded", "true");
+        query = ""; search.value = "";
+        render();
+        // keep the panel on screen when its button sits near the right edge
+        panel.style.left = "0px";
+        const over = panel.getBoundingClientRect().right - (window.innerWidth - 12);
+        if (over > 0) panel.style.left = -over + "px";
+        search.focus();
+      }
+
+      btn.addEventListener("click", (e) => { e.stopPropagation(); if (panel.classList.contains("hidden")) open(); else close(); });
+      document.addEventListener("click", (e) => { if (!panel.contains(e.target) && !btn.contains(e.target)) close(); });
+      search.addEventListener("input", () => { query = search.value; render(); });
+      panel.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") { e.stopPropagation(); close(); btn.focus(); }
+        else if (e.key === "Enter" && e.target === search) {
+          // tick the top match and clear the box, so several people can be picked by typing alone
+          e.preventDefault();
+          const first = query.trim() && shown()[0];
+          if (first) { sel.add(first.user_id); query = ""; search.value = ""; change(); }
+        }
+      });
+      panel.addEventListener("click", (e) => {
         e.stopPropagation();
-        const open = !dropdown.classList.contains("hidden");
-        if (open) {
-          dropdown.classList.add("hidden");
-          btn.setAttribute("aria-expanded", "false");
-        } else {
-          dropdown.classList.remove("hidden");
-          btn.setAttribute("aria-expanded", "true");
-          searchInput.focus();
+        const t = e.target.closest("button");
+        if (!t) return;
+        if (t.dataset.id) toggle(t.dataset.id);
+        else if (t.dataset.rm) sel.delete(t.dataset.rm);
+        else if (t.dataset.group) {
+          const g = groups().find((x) => x.key === t.dataset.group);
+          if (!g) return;
+          const on = g.ids.every((id) => sel.has(id));
+          for (const id of g.ids) { if (on) sel.delete(id); else sel.add(id); }
         }
-      };
-
-      document.addEventListener("click", (e) => {
-        if (!dropdown.contains(e.target) && !btn.contains(e.target)) {
-          dropdown.classList.add("hidden");
-          btn.setAttribute("aria-expanded", "false");
-        }
+        else if ("all" in t.dataset) shown().forEach((m) => sel.add(m.user_id));
+        else if ("none" in t.dataset) sel.clear();
+        else if ("done" in t.dataset) { close(); return; }
+        else return;
+        change();
       });
 
-      searchInput.oninput = () => {
-        const q = searchInput.value.toLowerCase().trim();
-        document.querySelectorAll(".r-user-item").forEach((el) => {
-          const name = el.dataset.name.toLowerCase();
-          el.classList.toggle("hidden", q !== "" && !name.includes(q));
-        });
+      return {
+        get,
+        set(ids) { sel = new Set(ids || []); render(); },
+        setMembers(list) { members = list || []; render(); },
+        names: () => get().map(nameOf),
+        refresh: render,
+        close,
       };
-
-      selectAll.onclick = () => {
-        document.querySelectorAll(".r-user-check").forEach((cb) => (cb.checked = true));
-        updateReportMemberSummary();
-      };
-
-      clearAll.onclick = () => {
-        document.querySelectorAll(".r-user-check").forEach((cb) => (cb.checked = false));
-        updateReportMemberSummary();
-      };
-
-      $("rUserList").addEventListener("change", (e) => {
-        if (e.target.classList.contains("r-user-check")) {
-          updateReportMemberSummary();
-        }
-      });
     }
 
-    function updateReportMemberSummary() {
-      const checked = [...document.querySelectorAll(".r-user-check:checked")];
-      const summary = $("rUserSummary");
-      if (checked.length === 0 || (reportMembersCache.length && checked.length === reportMembersCache.length)) {
-        summary.textContent = "All members";
-      } else if (checked.length === 1) {
-        const uid = checked[0].value;
-        const p = reportMembersCache.find((m) => m.user_id === uid);
-        summary.textContent = p ? p.name : "1 member selected";
-      } else if (checked.length === 2) {
-        const n1 = reportMembersCache.find((m) => m.user_id === checked[0].value)?.name || "";
-        const n2 = reportMembersCache.find((m) => m.user_id === checked[1].value)?.name || "";
-        summary.textContent = `${n1}, ${n2}`;
-      } else {
-        summary.textContent = `${checked.length} members selected`;
-      }
-    }
-
-    function getSelectedReportUsers() {
-      const checked = [...document.querySelectorAll(".r-user-check:checked")];
-      if (checked.length === 0 || (reportMembersCache.length && checked.length === reportMembersCache.length)) {
-        return [];
-      }
-      return checked.map((cb) => cb.value);
-    }
-
-    function populateReportMemberMultiSelect(members) {
-      reportMembersCache = members;
-      const list = $("rUserList");
-      list.innerHTML = members
-        .map(
-          (m) => `
-    <label class="r-user-item flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-[var(--surface-2)] text-xs text-[var(--text)] transition-colors" data-name="${esc(m.name)}">
-      <input type="checkbox" value="${esc(m.user_id)}" class="rounded r-user-check cursor-pointer">
-      ${who(m.user_id, m.name, { plain: true })}
-    </label>`
-        )
-        .join("");
-      updateReportMemberSummary();
-    }
+    let userPickTimer;
+    const userPicker = createMemberPicker("fUser", (ids) => {
+      // several ticks in a row should cost one reload, not one each
+      clearTimeout(userPickTimer);
+      userPickTimer = setTimeout(() => { state.user = ids.join(","); state.sessLimit = 25; applyFilters(); }, 450);
+    });
+    const reportPicker = createMemberPicker("rUser", () => { });
+    const getSelectedReportUsers = () => reportPicker.get();
 
     async function loadFilterOptions() {
       try {
         const f = await api("filters");
-        $("fUser").innerHTML = `<option value="">All members</option>` + f.members.map((m) => `<option value="${esc(m.user_id)}">${esc(m.name)}</option>`).join("");
+        memberRoles = f.roles || [];
+        userPicker.setMembers(f.members);
+        userPicker.set(state.user ? state.user.split(",") : []);
         $("fChannel").innerHTML = `<option value="">Active voice channels (excl. AFK)</option><option value="__all__">All channels (incl. AFK)</option>` +
           f.channels.map((c) => `<option value="${esc(c.channel_id)}">${esc(c.name)}${c.is_afk ? " [AFK]" : ""}</option>`).join("");
-        $("fUser").value = state.user;
         $("fChannel").value = state.channel;
 
         $("rChannel").innerHTML = `<option value="">Active voice channels (excl. AFK)</option><option value="__all__">All channels (incl. AFK)</option>` +
           f.channels.map((c2) => `<option value="${esc(c2.channel_id)}">${esc(c2.name)}${c2.is_afk ? " [AFK]" : ""}</option>`).join("");
-        populateReportMemberMultiSelect(f.members);
+        reportPicker.setMembers(f.members);
         populateShareChannels(f.share_channels || []);
         populateExcuseUserSelect(f.members);
 
@@ -2560,11 +2728,7 @@
       if (initialReportParams.repRoster !== null && $("rRoster")) $("rRoster").checked = (initialReportParams.repRoster === "1");
 
       if (initialReportParams.repUsers && initialReportParams.repUsers.length > 0) {
-        const userIds = new Set(initialReportParams.repUsers);
-        document.querySelectorAll(".r-user-check").forEach((cb) => {
-          cb.checked = userIds.has(cb.value);
-        });
-        updateReportMemberSummary();
+        reportPicker.set(initialReportParams.repUsers);
       }
 
       updateReportForm();
@@ -2609,10 +2773,7 @@
     function filterByWho(el) {
       const id = el.dataset.who;
       if (el.closest("#rOut")) {
-        document.querySelectorAll(".r-user-check").forEach((cb) => {
-          cb.checked = (cb.value === id);
-        });
-        updateReportMemberSummary();
+        reportPicker.set([id]);
         generateReport();
       } else setUser(id);
     }
@@ -2681,7 +2842,7 @@
 
       if (total > 0) {
         const top = s.members[0];
-        if (top && !state.user) add("Most active in voice", top.name, hrsText(top.seconds) + " (" + Math.round((top.seconds / total) * 100) + "% of all voice time)", who(top.user_id, top.name, { lg: true }));
+        if (top && !(state.user && !state.user.includes(","))) add("Most active in voice", top.name, hrsText(top.seconds) + " (" + Math.round((top.seconds / total) * 100) + "% of all voice time)", who(top.user_id, top.name, { lg: true }));
 
         const topTalker = [...s.members].sort((a, b) => (b.speaking_seconds || 0) - (a.speaking_seconds || 0))[0];
         if (topTalker && topTalker.speaking_seconds > 0) {
@@ -2714,13 +2875,14 @@
 
       const sf = state.status || "online", sfLabel = STATUS[sf].label.toLowerCase();
       const pm = s.presence.per_member[0];
-      if (pm && (pm[sf] > 0 || state.user)) {
+      const oneMember = state.user && !state.user.includes(",");
+      if (pm && (pm[sf] > 0 || oneMember)) {
         const rest = "online " + hrsText(pm.online) + ", idle " + hrsText(pm.idle) + ", busy " + hrsText(pm.dnd) + ", offline " + hrsText(pm.offline);
-        if (state.user) add("Time " + sfLabel, hrsText(pm[sf]), "In total: " + rest);
+        if (oneMember) add("Time " + sfLabel, hrsText(pm[sf]), "In total: " + rest);
         else add(STATUS[sf].label + " the most", pm.name, hrsText(pm[sf]) + " with status " + sfLabel + (sf === "online" ? " (plus " + hrsText(pm.idle + pm.dnd) + " idle or busy)" : ""), who(pm.user_id, pm.name, { lg: true }));
       }
 
-      $("rangeLabel").textContent = "Based on " + rangeText() + (state.user ? ", one member" : "") + (state.channel ? ", one channel" : "") + ".";
+      $("rangeLabel").textContent = "Based on " + rangeText() + (state.user ? (state.user.includes(",") ? ", " + state.user.split(",").length + " members" : ", one member") : "") + (state.channel ? ", one channel" : "") + ".";
       $("insights").innerHTML = cards.length
         ? cards.map((c) => `<div class="card p-4"><p class="text-sm muted">${esc(c.title)}</p><p class="mt-1 text-lg font-semibold hd">${c.html || esc(c.value)}</p><p class="text-xs muted mt-1">${esc(c.detail)}</p></div>`).join("")
         : `<p class="muted">Nothing to highlight yet.</p>`;
@@ -3089,6 +3251,9 @@
       } catch (e) { }
     }
     function rerenderPeople() {
+      // the pickers are filled before avatars and name colours arrive, so redraw them too
+      userPicker.refresh();
+      reportPicker.refresh();
       if (lastOverview) renderOverview(lastOverview);
       if (lastLogs) renderLogs(lastLogs);
       if (lastSessions) renderSessions(lastSessions);
@@ -3226,8 +3391,7 @@
     }
 
     async function generateReport() {
-      $("rUserDropdown").classList.add("hidden");
-      $("rUserBtn").setAttribute("aria-expanded", "false");
+      reportPicker.close();
 
       const period = $("rPeriod").value;
       const [from, to] = presetDates(period);
@@ -3688,7 +3852,7 @@
       try {
         let title = `${$("tabTitle").textContent} Snapshot`;
         let summary = `📊 **Filter Scope:** ${rangeText()}\n` +
-          (state.user ? `👤 **Member:** ${$("fUser").selectedOptions[0]?.text || state.user}\n` : "") +
+          (state.user ? `👤 **Members:** ${userPicker.names().slice(0, 10).join(", ")}${userPicker.names().length > 10 ? ` +${userPicker.names().length - 10} more` : ""}\n` : "") +
           (state.channel ? `🎙️ **Channel:** ${$("fChannel").selectedOptions[0]?.text || state.channel}\n` : "") +
           (state.status ? `🟢 **Status:** ${state.status.toUpperCase()}\n` : "");
 
@@ -3756,7 +3920,6 @@
     renderAppearance();
     renderTzControls();
     updateTzLabels();
-    setupReportMemberMultiSelect();
     wireReports();
     if (state.range === "custom") { ensureCustomDefaults(); $("cFrom").value = state.from; $("cTo").value = state.to; }
     if (state.status) $("fStatus").value = state.status;

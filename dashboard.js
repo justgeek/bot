@@ -92,7 +92,8 @@ module.exports = function registerDashboard(app, client) {
       range = good ? "custom" : "7d";
       if (!good) fromMs = toMs = null;
     }
-    const user = ID_RE.test(req.query.user || "") ? req.query.user : "";
+    // One member id or a comma-separated list of them
+    const user = [...new Set(String(req.query.user || "").split(",").map((s) => s.trim()).filter((id) => ID_RE.test(id)))].slice(0, 200).sort().join(",");
     const rawChan = req.query.channel || "";
     let channel = "";
     let includeAfk = false;
@@ -216,10 +217,19 @@ module.exports = function registerDashboard(app, client) {
     const guild = getGuild();
     const members = [];
     const channels = [];
+    const roles = [];
     if (guild) {
       guild.members.cache.forEach((m) => {
         if (!m.user.bot) members.push({ user_id: m.id, name: m.displayName });
       });
+      // Roles with a real name only: skips @everyone and the "." roles that exist just to colour members
+      guild.roles.cache.forEach((r) => {
+        if (r.id === guild.id || !/[\p{L}\p{N}]/u.test(r.name)) return;
+        const memberIds = [];
+        r.members.forEach((m) => { if (!m.user.bot) memberIds.push(m.id); });
+        if (memberIds.length) roles.push({ id: r.id, name: r.name, color: r.color ? r.hexColor : null, member_ids: memberIds, pos: r.position });
+      });
+      roles.sort((a, b) => b.pos - a.pos);
       guild.channels.cache.forEach((c) => {
         if (c.isVoiceBased?.() && db.isTrackedChannel(c.id)) {
           const isAfk = db.isAfkChannel(c.id, c.name, client);
@@ -242,6 +252,7 @@ module.exports = function registerDashboard(app, client) {
     res.json({
       members,
       channels: channels.map(({ pos, ...c }) => c),
+      roles: roles.map(({ pos, ...r }) => r),
       share_channels: dynamicShareChannels
     });
   });
@@ -283,12 +294,13 @@ module.exports = function registerDashboard(app, client) {
   });
 
   async function sessionList(f) {
-    const { user, channel, includeAfk } = f;
+    const { channel, includeAfk } = f;
+    const user = f.user ? new Set(f.user.split(",")) : null;
     const d = await loadRange(f);
     const now = Date.now();
     const rows = d.sessionRows
       .filter((r) => {
-        if (user && r.user_id !== user) return false;
+        if (user && !user.has(r.user_id)) return false;
         if (channel && r.channel_id !== channel) return false;
         if (!includeAfk && !channel && db.isAfkChannel(r.channel_id, r.channel_name, client)) return false;
         return true;

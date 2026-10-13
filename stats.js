@@ -16,8 +16,11 @@ const HIST_BUCKETS = [
 
 const STATUSES = ["online", "idle", "dnd", "offline"];
 
-function computeStats({ sessionRows, presenceRows, now, since, user, channel, liveName, liveStatus, tz, status, dayStart = 18, includeAfk = false, client = null }) {
+function computeStats({ sessionRows, presenceRows, now, since, user: userInput, channel, liveName, liveStatus, tz, status, dayStart = 18, includeAfk = false, client = null }) {
   const z = makeTz(tz, dayStart);
+  // Member filter: one id, a comma list or an array -> Set (null = everyone)
+  const userIds = (Array.isArray(userInput) ? userInput : String(userInput || "").split(",")).map((s) => String(s).trim()).filter(Boolean);
+  const user = userIds.length ? new Set(userIds) : null;
   const eachHourSlice = z.eachHourSlice;
   const dateKey = z.dateOf;
 
@@ -74,7 +77,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
   }
 
   const scopedChan = channel ? win.filter((s) => s.channelId === channel) : win;
-  const scoped = user ? scopedChan.filter((s) => s.userId === user) : scopedChan;
+  const scoped = user ? scopedChan.filter((s) => user.has(s.userId)) : scopedChan;
 
   // ---- time distributions ----
   const hourly = new Array(24).fill(0);
@@ -167,12 +170,13 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
     let last = null;
 
     for (const [t, type, uid] of ev) {
-      if (last !== null && t > last && active.size && (!user || active.has(user))) {
+      const picked = user ? [...active.keys()].filter((id) => user.has(id)).length : 0;
+      if (last !== null && t > last && active.size && (!user || picked)) {
         const dt = (t - last) / 1000;
         const ids = [...active.keys()];
         if (user) {
-          personTotal += dt;
-          if (ids.length >= 2) personTogether += dt;
+          personTotal += dt * picked;
+          if (ids.length >= 2) personTogether += dt * picked;
         } else {
           personTotal += dt * ids.length;
           if (ids.length >= 2) personTogether += dt * ids.length;
@@ -227,7 +231,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
 
   // Real wall-clock voice channel occupancy (union of intervals) vs total person hours
   const scopedIntervals = scoped.map((s) => [s.cs, s.ce]);
-  const totalOccupancySeconds = user ? scoped.reduce((n, s) => n + s.secs, 0) : db.unionIntervals(scopedIntervals);
+  const totalOccupancySeconds = user && user.size === 1 ? scoped.reduce((n, s) => n + s.secs, 0) : db.unionIntervals(scopedIntervals);
   const personHoursTotal = scoped.reduce((n, s) => n + s.secs, 0);
   const totalSpeakingSeconds = scoped.reduce((n, s) => n + s.speakingSecs, 0);
   const totalStreamingSeconds = scoped.reduce((n, s) => n + s.streamingSecs, 0);
@@ -290,7 +294,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
 
   // ---- status (presence) analytics ----
   const prs = presenceRows
-    .filter((r) => !user || r.user_id === user)
+    .filter((r) => !user || user.has(r.user_id))
     .map((r) => ({
       id: Number(r.id) || 0,
       u: r.user_id,
@@ -360,7 +364,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user, channel, li
     meta: {
       since: new Date(sinceEff).toISOString(),
       until: new Date(now).toISOString(),
-      user: user || null,
+      user: user ? [...user].join(",") : null,
       channel: channel || null,
       tz: z.tz,
       dayStart: z.dayStartHour,

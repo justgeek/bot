@@ -367,7 +367,11 @@ async function getVoiceLeaderboard(days = null, limit = 10) {
 
 async function getRecentLogs(limit = 30, opts = {}) {
   if (!supabase) return [];
-  const { userId, channelId, status, sinceIso, untilIso } = opts;
+  const { channelId, status, sinceIso, untilIso } = opts;
+  // userId may be one id or a comma-separated list
+  const userIds = String(opts.userId || "").split(",").filter(Boolean);
+  const userId = userIds.length > 0;
+  const byUser = (q) => (userIds.length === 1 ? q.eq("user_id", userIds[0]) : q.in("user_id", userIds));
   let kind = opts.kind || "all";
   try {
     let wantPresence = kind === "all" || kind === "presence";
@@ -388,7 +392,7 @@ async function getRecentLogs(limit = 30, opts = {}) {
           .select("id, user_id, username, display_name, status, changed_at")
           .order("changed_at", { ascending: false })
           .limit(limit);
-        if (userId) q = q.eq("user_id", userId);
+        if (userId) q = byUser(q);
         if (status) q = q.eq("status", status);
         return window(q, "changed_at");
       })()
@@ -400,7 +404,7 @@ async function getRecentLogs(limit = 30, opts = {}) {
           .select("id, user_id, username, display_name, channel_name, joined_at")
           .order("joined_at", { ascending: false })
           .limit(limit);
-        if (userId) q = q.eq("user_id", userId);
+        if (userId) q = byUser(q);
         if (channelId) q = q.eq("channel_id", channelId);
         return window(q, "joined_at");
       })()
@@ -413,7 +417,7 @@ async function getRecentLogs(limit = 30, opts = {}) {
           .not("left_at", "is", null)
           .order("left_at", { ascending: false })
           .limit(limit);
-        if (userId) q = q.eq("user_id", userId);
+        if (userId) q = byUser(q);
         if (channelId) q = q.eq("channel_id", channelId);
         return window(q, "left_at");
       })()
