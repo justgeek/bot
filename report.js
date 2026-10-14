@@ -4,6 +4,15 @@ const db = require("./db");
 
 const STATUSES = ["online", "idle", "dnd"];
 
+// Devices = which Discord app: "desktop" (PC app), "mobile", "web". Rows from before device tracking have none.
+const devList = (devices) => String(devices || "").split(",").filter(Boolean);
+const DEVICE_GROUPS = ["desktop", "mobile", "web", "multi", "unknown"];
+const deviceGroup = (devices) => {
+  const l = devList(devices);
+  return !l.length ? "unknown" : l.length > 1 ? "multi" : DEVICE_GROUPS.includes(l[0]) ? l[0] : "unknown";
+};
+const roundAll = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v >= 1).map(([k, v]) => [k, Math.round(v)]));
+
 function computeReport(o) {
   const {
     type,
@@ -25,6 +34,7 @@ function computeReport(o) {
     client = null,
     targetTime = "21:00",
     graceMinutes = 15,
+    device = "", // only count voice joined from / time online on this device
   } = o;
 
   const z = makeTz(o.tz, dayStart);
@@ -75,6 +85,8 @@ function computeReport(o) {
         lastEnd: null,
         ch: new Map(),
         st: { online: 0, idle: 0, dnd: 0 },
+        jd: new Set(), // voice: devices they joined from
+        dv: {}, // online: seconds per device group
       };
       recs.set(key, r);
     }
@@ -113,6 +125,7 @@ function computeReport(o) {
       if (userFilter && !userFilter.has(r.user_id)) continue;
       if (channel && r.channel_id !== channel) continue;
       if (!includeAfk && !channel && db.isAfkChannel(r.channel_id, r.channel_name, client)) continue;
+      if (device && !devList(r.devices).includes(device)) continue;
 
       const start = Date.parse(r.joined_at);
       const end = r.left_at ? Date.parse(r.left_at) : now;
@@ -133,6 +146,7 @@ function computeReport(o) {
         R.mute += muteRate * (b - a);
         R.deaf += deafRate * (b - a);
         R.ch.set(chName, (R.ch.get(chName) || 0) + (b - a) / 1000);
+        for (const d of devList(r.devices).length ? devList(r.devices) : ["unknown"]) R.jd.add(d);
       });
     }
   } else {
@@ -142,7 +156,7 @@ function computeReport(o) {
       if (userFilter && !userFilter.has(r.user_id)) continue;
       if (r.status !== "offline" && !STATUSES.includes(r.status)) continue;
       if (!byUser.has(r.user_id)) byUser.set(r.user_id, []);
-      byUser.get(r.user_id).push({ id: Number(r.id) || 0, status: r.status, t: Date.parse(r.changed_at) });
+      byUser.get(r.user_id).push({ id: Number(r.id) || 0, status: r.status, devices: r.devices, t: Date.parse(r.changed_at) });
     }
 
     for (const [uid, arr] of byUser) {
@@ -161,10 +175,13 @@ function computeReport(o) {
         if (!(ce > cs)) continue;
         const status = arr[i].status;
         if (status === "offline") continue;
+        if (device && !devList(arr[i].devices).includes(device)) continue; // only time on that device
+        const grp = deviceGroup(arr[i].devices);
         const isLast = i + 1 >= arr.length;
         eachDaySeg(cs, ce, (date, a, b, ds, de) => {
           const R = rec(uid, date);
           R.st[status] += (b - a) / 1000;
+          R.dv[grp] = (R.dv[grp] || 0) + (b - a) / 1000;
           if (qualifies(status)) addQualifying(R, a, b, ds, de, start, end, isLast);
         });
       }
@@ -203,6 +220,7 @@ function computeReport(o) {
       let totalSecs = 0, totalSpk = 0, totalStrm = 0, totalMute = 0, totalDeaf = 0;
       let daysLate = 0;
       let daysExcused = 0;
+      const usedDevices = new Set();
       let daysOnTime = 0;
       let daysAbsent = 0;
       let totalLateMinutes = 0;
@@ -213,7 +231,7 @@ function computeReport(o) {
         if (date > today) continue;
 
         const R = recs.get(uid + "|" + date);
-        if (R) { totalSecs += R.seconds; totalSpk += R.spk; totalStrm += R.strm; totalMute += R.mute; totalDeaf += R.deaf; }
+        if (R) { totalSecs += R.seconds; totalSpk += R.spk; totalStrm += R.strm; totalMute += R.mute; totalDeaf += R.deaf; R.jd.forEach((d) => usedDevices.add(d)); }
         const dayStartMs = z.startOfDate(date);
 
         let targetMs = dayStartMs;
@@ -317,6 +335,7 @@ function computeReport(o) {
         total_streaming_seconds: Math.round(totalStrm),
         total_muted_seconds: Math.round(totalMute),
         total_deafened_seconds: Math.round(totalDeaf),
+        devices: [...usedDevices],
         total_days: totalEvaluatedDays,
         punctuality_pct: punctualityPct,
         avg_late_minutes: avgLateMin,
@@ -331,6 +350,7 @@ function computeReport(o) {
       l.streaming_seconds = R ? Math.round(R.strm) : 0;
       l.muted_seconds = R ? Math.round(R.mute) : 0;
       l.deafened_seconds = R ? Math.round(R.deaf) : 0;
+      l.devices = R ? [...R.jd] : [];
     };
     slackerLog.forEach(dayExtras);
     slackerMembers.sort((a, b) => b.penalty_points - a.penalty_points || b.days_late - a.days_late || b.total_late_minutes - a.total_late_minutes);
@@ -387,6 +407,7 @@ function computeReport(o) {
   const members = [];
   for (const uid of ids) {
     let days = 0, total = 0, sessions = 0, spk = 0, strm = 0, mute = 0, deaf = 0;
+    const usedDevices = new Set(), deviceSecs = {};
     const firstMins = [];
     let earliest = null, latest = null, firstAt = Infinity, lastAt = -Infinity, stillIn = false;
     for (const date of dates) {
@@ -397,6 +418,8 @@ function computeReport(o) {
       strm += R.strm;
       mute += R.mute;
       deaf += R.deaf;
+      R.jd.forEach((d) => usedDevices.add(d));
+      for (const [k, v] of Object.entries(R.dv)) deviceSecs[k] = (deviceSecs[k] || 0) + v;
       sessions += R.n;
       if (!attended(R)) continue;
       days += 1;
@@ -435,6 +458,8 @@ function computeReport(o) {
       total_streaming_seconds: Math.round(strm),
       total_muted_seconds: Math.round(mute),
       total_deafened_seconds: Math.round(deaf),
+      devices: [...usedDevices], // voice: apps they joined from
+      device_seconds: roundAll(deviceSecs), // online: time per app
       avg_seconds_per_day: days ? Math.round(total / days) : 0,
       sessions,
       avg_first_min: firstMins.length ? Math.round(firstMins.reduce((a, b) => a + b, 0) / firstMins.length) : null,
@@ -453,7 +478,7 @@ function computeReport(o) {
 
   const cellOf = (R) =>
     R && R.seconds > 0
-      ? { s: Math.round(R.seconds), spk: Math.round(R.spk), ratio: Math.round((R.spk / R.seconds) * 1000) / 10, strm: Math.round(R.strm), mute: Math.round(R.mute), deaf: Math.round(R.deaf), f: R.first, l: R.last, n: R.n, ci: R.ci, co: R.co, op: R.op, i: Math.round(R.st.idle), d: Math.round(R.st.dnd) }
+      ? { s: Math.round(R.seconds), spk: Math.round(R.spk), ratio: Math.round((R.spk / R.seconds) * 1000) / 10, strm: Math.round(R.strm), mute: Math.round(R.mute), deaf: Math.round(R.deaf), dev: [...R.jd], dvs: roundAll(R.dv), f: R.first, l: R.last, n: R.n, ci: R.ci, co: R.co, op: R.op, i: Math.round(R.st.idle), d: Math.round(R.st.dnd) }
       : null;
   const grid = members.map((m) => ({
     user_id: m.user_id,
@@ -474,6 +499,8 @@ function computeReport(o) {
       streaming_seconds: Math.round(R.strm),
       muted_seconds: Math.round(R.mute),
       deafened_seconds: Math.round(R.deaf),
+      devices: [...R.jd],
+      device_seconds: roundAll(R.dv),
       first: R.first,
       last: R.last,
       count: R.n,

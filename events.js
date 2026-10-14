@@ -405,7 +405,9 @@ module.exports = (client) => {
         db.endVoiceSession(dbUserId, speakingSecs, audio.flushFlagSeconds(dbUserId));
       }
       if (after.channelId && db.isTrackedChannel(after.channelId)) {
-        db.startVoiceSession(dbUserId, dbUsername, after.channelId, after.channel?.name, after.member?.displayName);
+        // remember which app(s) they joined from (empty when they show as invisible)
+        const joinDevices = Object.keys(after.member?.presence?.clientStatus || {}).sort().join(",");
+        db.startVoiceSession(dbUserId, dbUsername, after.channelId, after.channel?.name, after.member?.displayName, joinDevices);
       }
     }
     // Screen share, mute or deafen toggled (all of them end when the member leaves voice)

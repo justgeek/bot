@@ -1617,6 +1617,13 @@
           <option value="dnd">Busy</option>
           <option value="offline">Offline</option>
         </select>
+        <select id="fDevice" aria-label="Device" class="field max-w-[11rem]"
+          title="Voice: the app they joined from. Status: only time spent on that app.">
+          <option value="">All devices</option>
+          <option value="desktop">🖥️ PC app</option>
+          <option value="mobile">📱 Phone</option>
+          <option value="web">🌐 Browser</option>
+        </select>
         <button id="fClear" class="link hidden">Clear filters</button>
         <div class="ml-auto flex items-center gap-3 text-xs muted">
           <button id="shareDiscordBtn" class="btn-ghost flex items-center gap-1.5"
@@ -1963,6 +1970,15 @@
                   <option value="__all__">All channels (incl. AFK)</option>
                 </select>
               </label>
+              <label class="block text-sm muted"
+                title="Voice reports: the app they joined voice from. Online reports: only time spent on that app.">Device
+                <select id="rDevice" class="field w-full mt-1">
+                  <option value="">All devices</option>
+                  <option value="desktop">🖥️ PC app</option>
+                  <option value="mobile">📱 Phone</option>
+                  <option value="web">🌐 Browser</option>
+                </select>
+              </label>
               <label id="rModeWrap" class="hidden block text-sm muted">Counts as present when
                 <select id="rMode" class="field w-full mt-1">
                   <option value="online">Status is online</option>
@@ -2122,6 +2138,7 @@
       targetTime: rawUrlParams.get("targetTime"),
       grace: rawUrlParams.get("grace"),
       repChan: rawUrlParams.get("repChan"),
+      repDevice: rawUrlParams.get("repDevice"),
       repMin: rawUrlParams.get("repMin"),
       repMode: rawUrlParams.get("repMode"),
       repRoster: rawUrlParams.get("repRoster"),
@@ -2187,7 +2204,7 @@
       ["overview", "Overview"], ["voice", "Voice"], ["status", "Status"], ["members", "Members"],
       ["sessions", "Sessions"], ["activity", "Activity"], ["reports", "Reports"], ["appearance", "Appearance"],
     ];
-    const TAB_FILTERS = { overview: "rucs", voice: "ruc", status: "rus", members: "ruc", sessions: "ruc", activity: "rucs", reports: "s" };
+    const TAB_FILTERS = { overview: "rucsd", voice: "rucd", status: "rusd", members: "rucd", sessions: "rucd", activity: "rucsd", reports: "s" };
     let currentTab = "overview";
 
     $("nav").innerHTML = TABS.map(([id, label]) =>
@@ -2224,8 +2241,9 @@
       $("fUser").classList.toggle("hidden", !use.includes("u"));
       $("fChannel").classList.toggle("hidden", !use.includes("c"));
       $("fStatus").classList.toggle("hidden", !use.includes("s"));
+      $("fDevice").classList.toggle("hidden", !use.includes("d"));
       $("customRange").classList.toggle("hidden", !(use.includes("r") && state.range === "custom"));
-      $("fClear").classList.toggle("hidden", !(state.user || state.channel || state.status) || !use);
+      $("fClear").classList.toggle("hidden", !(state.user || state.channel || state.status || state.device) || !use);
     }
 
     const openDrawer = () => { $("sidebar").classList.add("open"); $("backdrop").classList.add("show"); };
@@ -2245,6 +2263,7 @@
       user: params.get("user") || "",
       channel: params.get("channel") || "",
       status: ["online", "idle", "dnd", "offline"].includes(params.get("status")) ? params.get("status") : "",
+      device: ["desktop", "mobile", "web"].includes(params.get("device")) ? params.get("device") : "",
       from: params.get("from") || "",
       to: params.get("to") || "",
       logType: "all",
@@ -2266,6 +2285,7 @@
       if (state.user) q.set("user", state.user);
       if (state.channel) q.set("channel", state.channel);
       if (state.status) q.set("status", state.status);
+      if (state.device) q.set("device", state.device);
       if (state.range === "custom") { q.set("from", state.from); q.set("to", state.to); }
       if (currentTab === "members") {
         if (state.memberSort.key !== "seconds" || state.memberSort.dir !== -1) q.set("sort", state.memberSort.key + ":" + (state.memberSort.dir > 0 ? "asc" : "desc"));
@@ -2504,7 +2524,8 @@
     });
     $("fChannel").onchange = (e) => { state.channel = e.target.value; state.sessLimit = 25; applyFilters(); };
     $("fStatus").onchange = (e) => { state.status = e.target.value; state.logLimit = 30; applyFilters(); };
-    $("fClear").onclick = () => { state.user = ""; state.channel = ""; state.status = ""; state.sessLimit = 25; state.logLimit = 30; applyFilters(); };
+    $("fDevice").onchange = (e) => { state.device = e.target.value; state.sessLimit = 25; state.logLimit = 30; applyFilters(); };
+    $("fClear").onclick = () => { state.user = ""; state.channel = ""; state.status = ""; state.device = ""; state.sessLimit = 25; state.logLimit = 30; applyFilters(); };
     $("logMore").onclick = () => { state.logLimit = Math.min(300, state.logLimit + 50); refreshLogs(); };
     $("cApply").onclick = () => {
       const f = $("cFrom").value, t = $("cTo").value, msg = $("cMsg");
@@ -2538,6 +2559,7 @@
       userPicker.set(state.user ? state.user.split(",") : []);
       $("fChannel").value = state.channel;
       $("fStatus").value = state.status;
+      $("fDevice").value = state.device;
       if (state.range === "custom") { $("cFrom").value = state.from; $("cTo").value = state.to; }
       renderRangeButtons();
       updateFilterBar();
@@ -2730,6 +2752,7 @@
       if ($("rChannel") && $("rChannel").value) {
         q.set("repChan", $("rChannel").value);
       }
+      if ($("rDevice") && $("rDevice").value) q.set("repDevice", $("rDevice").value);
 
       if ($("rType") && $("rType").value === "slackers") {
         if ($("rTargetTime")) q.set("targetTime", $("rTargetTime").value);
@@ -2756,6 +2779,7 @@
       if (initialReportParams.targetTime && $("rTargetTime")) $("rTargetTime").value = initialReportParams.targetTime;
       if (initialReportParams.grace && $("rGrace")) $("rGrace").value = initialReportParams.grace;
       if (initialReportParams.repChan && $("rChannel")) $("rChannel").value = initialReportParams.repChan;
+      if (initialReportParams.repDevice && $("rDevice")) $("rDevice").value = initialReportParams.repDevice;
       if (initialReportParams.repMin && $("rMin")) $("rMin").value = initialReportParams.repMin;
       if (initialReportParams.repMode && $("rMode")) $("rMode").value = initialReportParams.repMode;
       if (initialReportParams.repRoster !== null && $("rRoster")) $("rRoster").checked = (initialReportParams.repRoster === "1");
@@ -2834,7 +2858,7 @@
           if (l.devices) extra = deviceIcons(l.devices.split(",")) + ` <span class="muted text-xs">${esc(l.devices.split(",").map((d) => (DEVICES[d] || { label: d }).label).join(" + "))}</span>`;
         } else if (l.type === "voice_join") {
           b = badge("b-accent", "Joined voice");
-          extra = esc(l.channel_name || "Voice channel");
+          extra = esc(l.channel_name || "Voice channel") + (l.devices ? " " + deviceIcons(l.devices.split(",")) : "");
         } else {
           b = badge("b-accent-dim", "Left voice");
           extra = esc(l.channel_name || "Voice channel") + (l.duration_seconds != null ? ` <span class="muted">after ${esc(dur(l.duration_seconds))}</span>` : "");
@@ -3193,6 +3217,7 @@
       const q = new URLSearchParams({ range: state.range, tz: TZ, dayStart: DAY_START });
       if (state.range === "custom") { q.set("from", state.from); q.set("to", state.to); }
       if (state.status) q.set("status", state.status);
+      if (state.device) q.set("device", state.device);
       if (state.user) q.set("user", state.user);
       if (state.channel) q.set("channel", state.channel);
       if (KEY) q.set("key", KEY);
@@ -3203,7 +3228,7 @@
       $("csvLink").href = csvUrl();
       $("sessEmpty").classList.toggle("hidden", data.rows.length > 0);
       $("sessRows").innerHTML = data.rows.map((r) => `<tr>
-    <td class="whitespace-nowrap" title="Username: ${esc(r.username)}">${who(r.user_id, r.name)}</td>
+    <td class="whitespace-nowrap" title="Username: ${esc(r.username)}">${who(r.user_id, r.name)} ${r.devices ? deviceIcons(r.devices.split(",")) : ""}</td>
     <td class="whitespace-nowrap">${esc(r.channel_name)}</td>
     <td class="whitespace-nowrap muted">${esc(stamp(r.joined_at))}</td>
     <td class="whitespace-nowrap">${r.open ? badge("b-online", "In voice now") : `<span class="muted">${esc(stamp(r.left_at))}</span>`}</td>
@@ -3245,7 +3270,7 @@
     async function refreshLogs() {
       const seq = ++logSeq;
       try {
-        const d = await api("recent-logs", { ...rangeParams(), limit: state.logLimit, user: state.user, channel: state.channel, status: state.status, type: state.logType });
+        const d = await api("recent-logs", { ...rangeParams(), limit: state.logLimit, user: state.user, channel: state.channel, status: state.status, device: state.device, type: state.logType });
         if (seq === logSeq) renderLogs(d.logs);
       } catch (e) { }
     }
@@ -3253,7 +3278,7 @@
     async function refreshSessions() {
       const seq = ++sessSeq;
       try {
-        const d = await api("sessions", { ...rangeParams(), user: state.user, channel: state.channel, limit: state.sessLimit });
+        const d = await api("sessions", { ...rangeParams(), user: state.user, channel: state.channel, device: state.device, limit: state.sessLimit });
         if (seq === sessSeq) renderSessions(d);
       } catch (e) { }
     }
@@ -3262,7 +3287,7 @@
       const seq = ++statsSeq;
       refreshSessions();
       try {
-        const s = await api("stats", { ...rangeParams(), user: state.user, channel: state.channel, status: state.status });
+        const s = await api("stats", { ...rangeParams(), user: state.user, channel: state.channel, status: state.status, device: state.device });
         if (seq !== statsSeq) return;
         lastStats = s;
         $("truncBanner").classList.toggle("hidden", !s.meta.truncated);
@@ -3520,6 +3545,7 @@
           roster: $("rRoster").checked ? "1" : "0",
           targetTime: $("rTargetTime") ? $("rTargetTime").value : "21:00",
           grace: $("rGrace") ? $("rGrace").value : "15",
+          device: $("rDevice").value,
         });
         repLogLimit = 100;
         renderReport();
@@ -3617,7 +3643,7 @@
       <td class="r num muted">${x.days_absent}</td>
       <td class="r num text-amber-400">${dur(x.total_speaking_seconds || 0)} (${x.talk_ratio_pct || 0}%)</td>
       <td class="r num text-purple-400">${x.total_streaming_seconds ? dur(x.total_streaming_seconds) : "-"}</td>
-      <td class="r num text-sky-400">${muteDeaf(x.total_muted_seconds, x.total_deafened_seconds)}</td>
+      <td class="r num text-sky-400">${muteDeaf(x.total_muted_seconds, x.total_deafened_seconds)}</td><td class="whitespace-nowrap text-xs">${devCell(x, r.meta.type)}</td>
       <td class="r num">${x.punctuality_pct}%</td>
       <td class="r num">${x.avg_late_minutes ? `+${x.avg_late_minutes}m` : "-"}</td>
       <td class="whitespace-nowrap">${x.worst_late ? `+${x.worst_late.minutes}m (${fmtDay(x.worst_late.date)})` : "-"}</td>
@@ -3639,7 +3665,7 @@
       <td class="num">${l.actual_time ? esc(tod(l.actual_time)) : '<span class="muted">-</span>'}</td>
       <td class="r num text-amber-400 font-semibold">${dur(l.speaking_seconds || 0)}</td>
       <td class="r num text-purple-400 font-semibold">${l.streaming_seconds ? dur(l.streaming_seconds) : "-"}</td>
-      <td class="r num text-sky-400">${muteDeaf(l.muted_seconds, l.deafened_seconds)}</td>
+      <td class="r num text-sky-400">${muteDeaf(l.muted_seconds, l.deafened_seconds)}</td><td class="whitespace-nowrap text-xs">${devCell(l, r.meta.type)}</td>
       <td>${stBadge}${l.excuse ? ` <span class="muted text-xs">(${esc(l.excuse)})</span>` : ""}</td>
       <td class="r num font-bold ${l.penalty_points > 0 ? 'text-red-400' : 'text-green-400'}">${l.penalty_points > 0 ? `+${l.penalty_points} pts` : '0'}</td>
     </tr>`;
@@ -3664,14 +3690,14 @@
     <div class="card p-5 mt-4">
       <h3 class="font-bold text-lg mb-2">Tardiness Leaderboard</h3>
       <div class="overflow-x-auto scroll-thin"><table class="t">
-        <thead><tr><th>#</th><th>Member</th><th class="r">Penalties</th><th class="r">Days Late</th><th class="r">On Time</th><th class="r text-blue-400">Excused</th><th class="r">Absent</th><th class="r text-amber-400">Mic Talk Time</th><th class="r text-purple-400">Stream Time</th>${MUTE_TH}<th class="r">Punctuality</th><th class="r">Avg Delay</th><th>Worst Delay</th></tr></thead>
+        <thead><tr><th>#</th><th>Member</th><th class="r">Penalties</th><th class="r">Days Late</th><th class="r">On Time</th><th class="r text-blue-400">Excused</th><th class="r">Absent</th><th class="r text-amber-400">Mic Talk Time</th><th class="r text-purple-400">Stream Time</th>${MUTE_TH}${DEV_TH}<th class="r">Punctuality</th><th class="r">Avg Delay</th><th>Worst Delay</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
     </div>
     <div class="card p-5 mt-4">
       <h3 class="font-bold text-lg mb-2">Daily Penalty Log</h3>
       <div class="overflow-x-auto scroll-thin"><table class="t">
-        <thead><tr><th>Date</th><th>Member</th><th>Target Time</th><th>Actual Join</th><th class="r text-amber-400">Mic Talk</th><th class="r text-purple-400">Stream</th>${MUTE_TH}<th>Status</th><th class="r">Penalty Points</th></tr></thead>
+        <thead><tr><th>Date</th><th>Member</th><th>Target Time</th><th>Actual Join</th><th class="r text-amber-400">Mic Talk</th><th class="r text-purple-400">Stream</th>${MUTE_TH}${DEV_TH}<th>Status</th><th class="r">Penalty Points</th></tr></thead>
         <tbody>${logRows}</tbody>
       </table></div>
     </div>`;
@@ -3682,6 +3708,21 @@
       return muted || deafened ? (muted ? dur(muted) : "-") + " / " + (deafened ? dur(deafened) : "-") : "-";
     }
     const MUTE_TH = `<th class="r text-sky-400" title="Muted while still listening / deafened">Muted / Deaf</th>`;
+    const DEV_TH = `<th title="Voice reports: the Discord app(s) they joined from. Online reports: time on each app.">Devices</th>`;
+    // Voice / slackers rows carry the apps they joined from; online rows carry time per app
+    function devCell(x, type) {
+      if (type === "presence") {
+        const e = Object.entries(x.device_seconds || {}).sort((a, b) => b[1] - a[1]);
+        return e.length ? e.map(([k, v]) => `<span title="${esc((DEVICES[k] || { label: k }).label)}">${(DEVICES[k] || {}).icon || ""} ${esc(dur(v))}</span>`).join(" ") : "-";
+      }
+      const list = (x.devices || []).filter((d) => d !== "unknown");
+      return list.length ? deviceIcons(list) : `<span class="muted" title="Joined before device tracking, or while invisible">-</span>`;
+    }
+    // same thing as plain text for CSV
+    function devText(x, type) {
+      if (type === "presence") return Object.entries(x.device_seconds || {}).map(([k, v]) => k + " " + hoursNum(v) + "h").join("; ");
+      return (x.devices || []).filter((d) => d !== "unknown").join("; ");
+    }
 
     function leaderboardHtml(r, L) {
       const m = r.meta;
@@ -3698,7 +3739,7 @@
       <td class="r num text-amber-400 font-bold">${hrsText(x.total_speaking_seconds || 0)}</td>
       <td class="r num font-bold">${x.talk_ratio_pct || 0}%</td>
       <td class="r num text-purple-400 font-bold">${x.total_streaming_seconds ? hrsText(x.total_streaming_seconds) : "-"}</td>
-      <td class="r num text-sky-400">${muteDeaf(x.total_muted_seconds, x.total_deafened_seconds)}</td>
+      <td class="r num text-sky-400">${muteDeaf(x.total_muted_seconds, x.total_deafened_seconds)}</td><td class="whitespace-nowrap text-xs">${devCell(x, r.meta.type)}</td>
       <td class="r num">${x.days_attended ? dur(x.avg_seconds_per_day) : "-"}</td>
       <td class="r num">${x.sessions}</td>
       <td class="num">${fmtMin(x.avg_first_min)}</td>
@@ -3709,7 +3750,7 @@
     </tr>`;
       }).join("");
       return `<div class="overflow-x-auto scroll-thin"><table class="t">
-    <thead><tr><th>#</th><th>Member</th><th>Days present</th><th>Attendance</th><th class="r">${L.time}</th><th class="r text-amber-400">Mic Talk Time</th><th class="r">Talk %</th><th class="r text-purple-400">Stream Time</th>${MUTE_TH}<th class="r">Avg per day</th><th class="r">${L.spells}</th><th>${L.first}</th><th>${L.early}</th><th>${L.late}</th><th class="r">Best streak</th><th class="r">Streak now</th></tr></thead>
+    <thead><tr><th>#</th><th>Member</th><th>Days present</th><th>Attendance</th><th class="r">${L.time}</th><th class="r text-amber-400">Mic Talk Time</th><th class="r">Talk %</th><th class="r text-purple-400">Stream Time</th>${MUTE_TH}${DEV_TH}<th class="r">Avg per day</th><th class="r">${L.spells}</th><th>${L.first}</th><th>${L.early}</th><th>${L.late}</th><th class="r">Best streak</th><th class="r">Streak now</th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
     }
 
@@ -3736,6 +3777,8 @@
             c.strm ? "Stream Time: " + dur(c.strm) : "",
             c.mute ? "Muted (listening): " + dur(c.mute) : "",
             c.deaf ? "Deafened: " + dur(c.deaf) : "",
+            c.dev && c.dev.filter((d) => d !== "unknown").length ? "Joined from: " + c.dev.filter((d) => d !== "unknown").map((d) => DEVICES[d].label).join(" + ") : "",
+            c.dvs && Object.keys(c.dvs).length ? "On: " + Object.entries(c.dvs).map(([k, v]) => (DEVICES[k] || { label: k }).label + " " + dur(v)).join(", ") : "",
             L.firstCol + " " + tod(c.f),
             L.lastCol + " " + (c.op ? "still here" : tod(c.l)),
             c.n + " " + L.unit + (c.n === 1 ? "" : "s"),
@@ -3743,10 +3786,10 @@
           ].filter(Boolean).join("\n");
           return `<td class="cell ${present ? "" : "low"}" style="${style}" title="${esc(tip)}">${compact(c.s)}</td>`;
         }).join("");
-        return `<tr><td class="stick">${who(row.user_id, mem.name)}</td>${cells}<td class="r num">${mem.days_attended}</td><td class="r num">${hrsText(mem.total_seconds)}</td><td class="r num text-amber-400 font-semibold">${hrsText(mem.total_speaking_seconds || 0)}</td><td class="r num text-purple-400 font-semibold">${mem.total_streaming_seconds ? hrsText(mem.total_streaming_seconds) : "-"}</td><td class="r num text-sky-400">${muteDeaf(mem.total_muted_seconds, mem.total_deafened_seconds)}</td></tr>`;
+        return `<tr><td class="stick">${who(row.user_id, mem.name)}</td>${cells}<td class="r num">${mem.days_attended}</td><td class="r num">${hrsText(mem.total_seconds)}</td><td class="r num text-amber-400 font-semibold">${hrsText(mem.total_speaking_seconds || 0)}</td><td class="r num text-purple-400 font-semibold">${mem.total_streaming_seconds ? hrsText(mem.total_streaming_seconds) : "-"}</td><td class="r num text-sky-400">${muteDeaf(mem.total_muted_seconds, mem.total_deafened_seconds)}</td><td class="whitespace-nowrap text-xs">${devCell(mem, r.meta.type)}</td></tr>`;
       }).join("");
       return `<div class="overflow-x-auto scroll-thin"><table class="sheet">
-    <thead><tr><th class="stick">Member</th>${head}<th class="r">Days</th><th class="r">Total Voice</th><th class="r text-amber-400">Total Mic</th><th class="r text-purple-400">Total Stream</th>${MUTE_TH}</tr></thead>
+    <thead><tr><th class="stick">Member</th>${head}<th class="r">Days</th><th class="r">Total Voice</th><th class="r text-amber-400">Total Mic</th><th class="r text-purple-400">Total Stream</th>${MUTE_TH}${DEV_TH}</tr></thead>
     <tbody>${rows}</tbody></table></div>`;
     }
 
@@ -3761,14 +3804,14 @@
       <td class="r num text-amber-400 font-bold">${dur(x.speaking_seconds || 0)}</td>
       <td class="r num font-bold">${x.talk_ratio_pct || 0}%</td>
       <td class="r num text-purple-400 font-bold">${x.streaming_seconds ? dur(x.streaming_seconds) : "-"}</td>
-      <td class="r num text-sky-400">${muteDeaf(x.muted_seconds, x.deafened_seconds)}</td>
+      <td class="r num text-sky-400">${muteDeaf(x.muted_seconds, x.deafened_seconds)}</td><td class="whitespace-nowrap text-xs">${devCell(x, r.meta.type)}</td>
       <td class="r num">${x.count}</td>
       <td>${esc(r.meta.type === "voice" ? x.channels.join(", ") : "Idle " + compact(x.idle || 0) + ", busy " + compact(x.dnd || 0))}</td>
       <td>${x.attended ? badge("b-online", "Present") : badge("b-offline", "Below minimum")}</td>
     </tr>`).join("");
       const more = r.log.length > repLogLimit ? `<div class="mt-3 no-print"><button class="btn-ghost" data-act="more">Show more (${r.log.length - repLogLimit} left)</button></div>` : "";
       return `<div class="overflow-x-auto scroll-thin"><table class="t">
-    <thead><tr><th>Date</th><th>Member</th><th>${L.firstCol}</th><th>${L.lastCol}</th><th class="r">Voice Time</th><th class="r text-amber-400">Mic Talk Time</th><th class="r">Talk %</th><th class="r text-purple-400">Stream Time</th>${MUTE_TH}<th class="r">${L.spells}</th><th>${r.meta.type === "voice" ? "Channels" : "Idle and busy"}</th><th>Counted</th></tr></thead>
+    <thead><tr><th>Date</th><th>Member</th><th>${L.firstCol}</th><th>${L.lastCol}</th><th class="r">Voice Time</th><th class="r text-amber-400">Mic Talk Time</th><th class="r">Talk %</th><th class="r text-purple-400">Stream Time</th>${MUTE_TH}${DEV_TH}<th class="r">${L.spells}</th><th>${r.meta.type === "voice" ? "Channels" : "Idle and busy"}</th><th>Counted</th></tr></thead>
     <tbody>${rows}</tbody></table></div>${more}`;
     }
 
@@ -3790,8 +3833,8 @@
       const m = r.meta, L = reportLabels(m);
       if (kind === "slackers-lb") {
         downloadCsv(`slackers_report_${m.from}_to_${m.to}.csv`, [
-          ["rank", "member", "penalty_points", "days_late", "days_on_time", "days_excused", "days_absent", "mic_talk_hours", "punctuality_pct", "avg_late_minutes", "total_late_minutes", "stream_hours", "muted_hours", "deafened_hours"],
-          ...r.members.map((x) => [x.rank, x.name, x.penalty_points, x.days_late, x.days_on_time, x.days_excused || 0, x.days_absent, hoursNum(x.total_speaking_seconds || 0), x.punctuality_pct, x.avg_late_minutes, x.total_late_minutes, hoursNum(x.total_streaming_seconds || 0), hoursNum(x.total_muted_seconds || 0), hoursNum(x.total_deafened_seconds || 0)]),
+          ["rank", "member", "penalty_points", "days_late", "days_on_time", "days_excused", "days_absent", "mic_talk_hours", "punctuality_pct", "avg_late_minutes", "total_late_minutes", "stream_hours", "muted_hours", "deafened_hours", "devices"],
+          ...r.members.map((x) => [x.rank, x.name, x.penalty_points, x.days_late, x.days_on_time, x.days_excused || 0, x.days_absent, hoursNum(x.total_speaking_seconds || 0), x.punctuality_pct, x.avg_late_minutes, x.total_late_minutes, hoursNum(x.total_streaming_seconds || 0), hoursNum(x.total_muted_seconds || 0), hoursNum(x.total_deafened_seconds || 0), devText(x, "slackers")]),
         ]);
         return;
       }
@@ -3799,19 +3842,19 @@
       const minTxt = (v) => (v == null ? "" : pad2(Math.floor(v / 60)) + ":" + pad2(v % 60));
       if (kind === "lb") {
         downloadCsv(tag + "_leaderboard.csv", [
-          ["rank", "member", "days_present", "days_in_period", "attendance_pct", "total_voice_hours", "mic_talk_hours", "talk_pct", "avg_hours_per_present_day", L.spells.toLowerCase(), "usual_first (" + m.tz + ")", "earliest_first", "latest_last", "best_streak", "current_streak", "first_at (" + m.tz + ")", "last_at (" + m.tz + ")", "stream_hours", "muted_hours", "deafened_hours"],
-          ...r.members.map((x) => [x.rank, x.name, x.days_attended, m.period_days, x.attendance_pct ?? "", hoursNum(x.total_seconds), hoursNum(x.total_speaking_seconds || 0), (x.talk_ratio_pct || 0) + "%", x.days_attended ? hoursNum(x.avg_seconds_per_day) : "", x.sessions, minTxt(x.avg_first_min), x.earliest ? minTxt(x.earliest.min) : "", x.latest ? minTxt(x.latest.min) : "", x.longest_streak, x.current_streak, csvStamp(x.first_at), csvStamp(x.last_at), hoursNum(x.total_streaming_seconds || 0), hoursNum(x.total_muted_seconds || 0), hoursNum(x.total_deafened_seconds || 0)]),
+          ["rank", "member", "days_present", "days_in_period", "attendance_pct", "total_voice_hours", "mic_talk_hours", "talk_pct", "avg_hours_per_present_day", L.spells.toLowerCase(), "usual_first (" + m.tz + ")", "earliest_first", "latest_last", "best_streak", "current_streak", "first_at (" + m.tz + ")", "last_at (" + m.tz + ")", "stream_hours", "muted_hours", "deafened_hours", "devices"],
+          ...r.members.map((x) => [x.rank, x.name, x.days_attended, m.period_days, x.attendance_pct ?? "", hoursNum(x.total_seconds), hoursNum(x.total_speaking_seconds || 0), (x.talk_ratio_pct || 0) + "%", x.days_attended ? hoursNum(x.avg_seconds_per_day) : "", x.sessions, minTxt(x.avg_first_min), x.earliest ? minTxt(x.earliest.min) : "", x.latest ? minTxt(x.latest.min) : "", x.longest_streak, x.current_streak, csvStamp(x.first_at), csvStamp(x.last_at), hoursNum(x.total_streaming_seconds || 0), hoursNum(x.total_muted_seconds || 0), hoursNum(x.total_deafened_seconds || 0), devText(x, m.type)]),
         ]);
       } else if (kind === "sheet") {
         const byId = new Map(r.members.map((x) => [x.user_id, x]));
         downloadCsv(tag + "_sheet.csv", [
-          ["member", ...m.dates, "days_present", "total_voice_hours", "total_mic_hours", "total_stream_hours", "total_muted_hours", "total_deafened_hours"],
-          ...r.grid.map((row) => { const mem = byId.get(row.user_id); return [mem.name, ...row.cells.map((c) => (c ? hoursNum(c.s) : "")), mem.days_attended, hoursNum(mem.total_seconds), hoursNum(mem.total_speaking_seconds || 0), hoursNum(mem.total_streaming_seconds || 0), hoursNum(mem.total_muted_seconds || 0), hoursNum(mem.total_deafened_seconds || 0)]; }),
+          ["member", ...m.dates, "days_present", "total_voice_hours", "total_mic_hours", "total_stream_hours", "total_muted_hours", "total_deafened_hours", "devices"],
+          ...r.grid.map((row) => { const mem = byId.get(row.user_id); return [mem.name, ...row.cells.map((c) => (c ? hoursNum(c.s) : "")), mem.days_attended, hoursNum(mem.total_seconds), hoursNum(mem.total_speaking_seconds || 0), hoursNum(mem.total_streaming_seconds || 0), hoursNum(mem.total_muted_seconds || 0), hoursNum(mem.total_deafened_seconds || 0), devText(mem, m.type)]; }),
         ]);
       } else {
         downloadCsv(tag + "_day-by-day.csv", [
-          ["date", "member", L.firstCol.toLowerCase() + " (" + m.tz + ")", L.lastCol.toLowerCase() + " (" + m.tz + ")", "voice_hours", "mic_talk_hours", "talk_pct", L.spells.toLowerCase(), m.type === "voice" ? "channels" : "idle_hours", m.type === "voice" ? "" : "busy_hours", "counted_as_present", "stream_hours", "muted_hours", "deafened_hours"],
-          ...r.log.map((x) => [x.date, x.name, csvStamp(x.first), x.still_in ? "still here" : csvStamp(x.last), hoursNum(x.seconds), hoursNum(x.speaking_seconds || 0), (x.talk_ratio_pct || 0) + "%", x.count, m.type === "voice" ? x.channels.join("; ") : hoursNum(x.idle || 0), m.type === "voice" ? "" : hoursNum(x.dnd || 0), x.attended ? "yes" : "no", hoursNum(x.streaming_seconds || 0), hoursNum(x.muted_seconds || 0), hoursNum(x.deafened_seconds || 0)]),
+          ["date", "member", L.firstCol.toLowerCase() + " (" + m.tz + ")", L.lastCol.toLowerCase() + " (" + m.tz + ")", "voice_hours", "mic_talk_hours", "talk_pct", L.spells.toLowerCase(), m.type === "voice" ? "channels" : "idle_hours", m.type === "voice" ? "" : "busy_hours", "counted_as_present", "stream_hours", "muted_hours", "deafened_hours", "devices"],
+          ...r.log.map((x) => [x.date, x.name, csvStamp(x.first), x.still_in ? "still here" : csvStamp(x.last), hoursNum(x.seconds), hoursNum(x.speaking_seconds || 0), (x.talk_ratio_pct || 0) + "%", x.count, m.type === "voice" ? x.channels.join("; ") : hoursNum(x.idle || 0), m.type === "voice" ? "" : hoursNum(x.dnd || 0), x.attended ? "yes" : "no", hoursNum(x.streaming_seconds || 0), hoursNum(x.muted_seconds || 0), hoursNum(x.deafened_seconds || 0), devText(x, m.type)]),
         ]);
       }
     }
@@ -3974,7 +4017,8 @@
         let summary = `📊 **Filter Scope:** ${rangeText()}\n` +
           (state.user ? `👤 **Members:** ${userPicker.names().slice(0, 10).join(", ")}${userPicker.names().length > 10 ? ` +${userPicker.names().length - 10} more` : ""}\n` : "") +
           (state.channel ? `🎙️ **Channel:** ${$("fChannel").selectedOptions[0]?.text || state.channel}\n` : "") +
-          (state.status ? `🟢 **Status:** ${state.status.toUpperCase()}\n` : "");
+          (state.status ? `🟢 **Status:** ${state.status.toUpperCase()}\n` : "") +
+          (state.device ? `📟 **Device:** ${DEVICES[state.device].label}\n` : "");
 
         // Always build the link from the filters on screen; the address bar can be stale
         let reportUrl = getViewUrl();
@@ -4043,6 +4087,7 @@
     wireReports();
     if (state.range === "custom") { ensureCustomDefaults(); $("cFrom").value = state.from; $("cTo").value = state.to; }
     if (state.status) $("fStatus").value = state.status;
+    if (state.device) $("fDevice").value = state.device;
     applyTheme(themePref(), false);
     renderRangeButtons();
 

@@ -98,7 +98,8 @@ async function logPresence(userId, username, status, displayName, devices = "") 
 // Stream / muted / deafened time live in columns added by schema.sql. Until that has been run,
 // carry on without whichever of them is missing.
 const EXTRA_KINDS = ["streaming", "muted", "deafened"];
-const extraCols = new Set(EXTRA_KINDS.map((k) => k + "_seconds"));
+// "devices" = which Discord app(s) they joined voice from, e.g. "mobile" or "desktop,web"
+const extraCols = new Set([...EXTRA_KINDS.map((k) => k + "_seconds"), "devices"]);
 const isMissingColumn = (error) => !!error && (error.code === "42703" || error.code === "PGRST204");
 // true when the error was about one of the optional columns (which is then dropped, so a retry can work)
 function dropMissingCol(error) {
@@ -149,11 +150,11 @@ async function _endVoiceSession(userId, speakingSeconds = 0, extras = null) {
   }
 }
 
-async function _startVoiceSession(userId, username, channelId, channelName, displayName) {
+async function _startVoiceSession(userId, username, channelId, channelName, displayName, devices) {
   if (!supabase) return;
   try {
     await _endVoiceSession(userId, 0);
-    const { error } = await supabase.from("voice_sessions").insert({
+    const row = {
       user_id: String(userId),
       username,
       display_name: displayName || null,
@@ -161,7 +162,13 @@ async function _startVoiceSession(userId, username, channelId, channelName, disp
       channel_name: channelName || null,
       left_at: null,
       speaking_seconds: 0,
-    });
+    };
+    if (extraCols.has("devices")) row.devices = devices || null;
+    let { error } = await supabase.from("voice_sessions").insert(row);
+    if (error && dropMissingCol(error)) {
+      delete row.devices;
+      ({ error } = await supabase.from("voice_sessions").insert(row));
+    }
     if (error) throw error;
   } catch (err) {
     console.error("[DB] startVoiceSession failed:", err.message || err);
@@ -171,9 +178,9 @@ async function _startVoiceSession(userId, username, channelId, channelName, disp
 const endVoiceSession = (userId, speakingSeconds = 0, extras = null) =>
   serialize(String(userId), () => _endVoiceSession(userId, speakingSeconds, extras));
 
-const startVoiceSession = (userId, username, channelId, channelName, displayName) =>
+const startVoiceSession = (userId, username, channelId, channelName, displayName, devices) =>
   serialize(String(userId), () =>
-    _startVoiceSession(userId, username, channelId, channelName, displayName)
+    _startVoiceSession(userId, username, channelId, channelName, displayName, devices)
   );
 
 // Saves the running mic talk / stream / muted / deafened time on a still-open session, so it survives a bot restart.
@@ -210,6 +217,7 @@ async function reconcileVoiceSessions(client) {
         username: user.username,
         displayName: vs.member.displayName,
         channelName: vs.channel?.name,
+        devices: Object.keys(vs.member.presence?.clientStatus || {}).sort().join(","),
       });
     });
 
@@ -232,7 +240,7 @@ async function reconcileVoiceSessions(client) {
 
     for (const [userId, info] of current) {
       if (!stillValid.has(userId)) {
-        await startVoiceSession(userId, info.username, info.channelId, info.channelName, info.displayName);
+        await startVoiceSession(userId, info.username, info.channelId, info.channelName, info.displayName, info.devices);
       }
     }
     console.log(`[DB] Voice sessions reconciled (${current.size} user(s) in voice).`);
@@ -408,6 +416,11 @@ async function getRecentLogs(limit = 30, opts = {}) {
     let wantVoice = kind === "all" || kind === "voice";
     if (status) wantVoice = false;
     if (channelId) wantPresence = false;
+    // Device filter ("desktop" / "mobile" / "web"): rows logged without device info can't match it
+    const device = ["desktop", "mobile", "web"].includes(opts.device) ? opts.device : "";
+    if (device && !hasDevicesCol) wantPresence = false;
+    if (device && !extraCols.has("devices")) wantVoice = false;
+    const byDevice = (q) => (device ? q.ilike("devices", `%${device}%`) : q);
     const none = Promise.resolve({ data: [], error: null });
     const window = (q, col) => {
       if (sinceIso) q = q.gte(col, sinceIso);
@@ -424,19 +437,19 @@ async function getRecentLogs(limit = 30, opts = {}) {
           .limit(limit);
         if (userId) q = byUser(q);
         if (status) q = q.eq("status", status);
-        return window(q, "changed_at");
+        return window(byDevice(q), "changed_at");
       })()
       : none;
     const joinsQ = wantVoice
       ? (() => {
         let q = supabase
           .from("voice_sessions")
-          .select("id, user_id, username, display_name, channel_name, joined_at")
+          .select("id, user_id, username, display_name, channel_name, joined_at" + (extraCols.has("devices") ? ", devices" : ""))
           .order("joined_at", { ascending: false })
           .limit(limit);
         if (userId) q = byUser(q);
         if (channelId) q = q.eq("channel_id", channelId);
-        return window(q, "joined_at");
+        return window(byDevice(q), "joined_at");
       })()
       : none;
     const leavesQ = wantVoice
@@ -449,7 +462,7 @@ async function getRecentLogs(limit = 30, opts = {}) {
           .limit(limit);
         if (userId) q = byUser(q);
         if (channelId) q = q.eq("channel_id", channelId);
-        return window(q, "left_at");
+        return window(byDevice(q), "left_at");
       })()
       : none;
 
@@ -458,7 +471,7 @@ async function getRecentLogs(limit = 30, opts = {}) {
 
     const events = [
       ...presence.data.map((r) => ({ id: r.id, type: "presence", user_id: r.user_id, username: r.username, display_name: r.display_name, status: r.status, devices: r.devices || null, at: r.changed_at })),
-      ...joins.data.map((r) => ({ id: r.id, type: "voice_join", user_id: r.user_id, username: r.username, display_name: r.display_name, channel_name: r.channel_name, at: r.joined_at })),
+      ...joins.data.map((r) => ({ id: r.id, type: "voice_join", user_id: r.user_id, username: r.username, display_name: r.display_name, channel_name: r.channel_name, devices: r.devices || null, at: r.joined_at })),
       ...leaves.data.map((r) => ({ id: r.id, type: "voice_leave", user_id: r.user_id, username: r.username, display_name: r.display_name, channel_name: r.channel_name, duration_seconds: r.duration_seconds, speaking_seconds: r.speaking_seconds, at: r.left_at })),
     ];
 

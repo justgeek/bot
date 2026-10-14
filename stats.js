@@ -18,13 +18,14 @@ const STATUSES = ["online", "idle", "dnd", "offline"];
 
 // Which Discord app(s) a member was on. Rows logged before device tracking have no devices -> "unknown".
 const DEVICE_GROUPS = ["desktop", "mobile", "web", "multi", "unknown"];
+const hasDevice = (devices, d) => String(devices || "").split(",").includes(d);
 function deviceGroup(devices) {
   const list = String(devices || "").split(",").filter(Boolean);
   if (!list.length) return "unknown";
   return list.length > 1 ? "multi" : DEVICE_GROUPS.includes(list[0]) ? list[0] : "unknown";
 }
 
-function computeStats({ sessionRows, presenceRows, now, since, user: userInput, channel, liveName, liveStatus, tz, status, dayStart = 18, includeAfk = false, client = null }) {
+function computeStats({ sessionRows, presenceRows, now, since, user: userInput, channel, liveName, liveStatus, tz, status, dayStart = 18, includeAfk = false, client = null, device = "" }) {
   const z = makeTz(tz, dayStart);
   // Member filter: one id, a comma list or an array -> Set (null = everyone)
   const userIds = (Array.isArray(userInput) ? userInput : String(userInput || "").split(",")).map((s) => String(s).trim()).filter(Boolean);
@@ -48,6 +49,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
 
   for (const r of sessionRows) {
     if (!includeAfk && !channel && db.isAfkChannel(r.channel_id, r.channel_name, client)) continue;
+    if (device && !hasDevice(r.devices, device)) continue; // device filter: the app they joined voice from
     const start = Date.parse(r.joined_at);
     const end = r.left_at ? Date.parse(r.left_at) : now;
     const cs = Math.max(start, since == null ? start : since);
@@ -332,6 +334,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
       u: r.user_id,
       status: r.status,
       dev: deviceGroup(r.devices),
+      devices: r.devices,
       t: Date.parse(r.changed_at)
     }))
     .filter((r) => r.t <= now && (since == null || r.t >= since) && STATUSES.includes(r.status));
@@ -371,6 +374,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
 
       if (!(end > start)) continue;
       const secs = (end - start) / 1000;
+      if (device && !hasDevice(cleanArr[i].devices, device)) continue; // only time spent on that device
       row[cleanArr[i].status] += secs;
       totals[cleanArr[i].status] += secs;
       if (cleanArr[i].status !== "offline") {
@@ -393,7 +397,8 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
 
   const changesMap = new Map();
   const changesByStatus = { online: 0, idle: 0, dnd: 0, offline: 0 };
-  const realChanges = prs.filter((r) => r.change !== false); // device-only rows are not status changes
+  // device-only rows are not status changes; with a device filter only changes made on that device count
+  const realChanges = prs.filter((r) => r.change !== false && (!device || hasDevice(r.devices, device)));
   const prsShown = STATUSES.includes(status) ? realChanges.filter((r) => r.status === status) : realChanges;
   for (const r of realChanges) changesByStatus[r.status] += 1;
   for (const r of prsShown) {
@@ -456,4 +461,4 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
   };
 }
 
-module.exports = { computeStats };
+module.exports = { computeStats, hasDevice };

@@ -3,7 +3,7 @@ const path = require("path");
 const express = require("express");
 const Discord = require("discord.js");
 const db = require("./db");
-const { computeStats } = require("./stats");
+const { computeStats, hasDevice } = require("./stats");
 const { computeReport } = require("./report");
 const { makeTz, validTz, DEFAULT_TZ } = require("./tz");
 const config = require("./config");
@@ -17,6 +17,7 @@ const DAY = 86400e3;
 const RANGES = { "24h": 1, "7d": 7, "30d": 30, "90d": 90, "365d": 365, all: null };
 const ID_RE = /^\d{5,25}$/;
 const STATUS_ORDER = { online: 0, idle: 1, dnd: 2 };
+const DEVICES = ["desktop", "mobile", "web"]; // device filter values (Discord app: PC / phone / browser)
 
 let lastShareTimestamp = 0;
 const SHARE_COOLDOWN_MS = 60 * 1000;
@@ -106,7 +107,8 @@ module.exports = function registerDashboard(app, client) {
     }
 
     const status = ["online", "idle", "dnd", "offline"].includes(req.query.status) ? req.query.status : "";
-    return { range, user, channel, rawChan, includeAfk, tz, dayStart, status, fromMs, toMs };
+    const device = DEVICES.includes(req.query.device) ? req.query.device : "";
+    return { range, user, channel, rawChan, includeAfk, tz, dayStart, status, fromMs, toMs, device };
   }
 
   function windowOf({ range, fromMs, toMs }) {
@@ -262,8 +264,8 @@ module.exports = function registerDashboard(app, client) {
   app.get("/api/stats", guard, async (req, res) => {
     try {
       const f = parseFilters(req);
-      const { range, user, channel, includeAfk, tz, dayStart, status } = f;
-      const key = `stats:${range}:${f.fromMs}:${f.toMs}:${user}:${channel}:${includeAfk}:${tz}:${dayStart}:${status}`;
+      const { range, user, channel, includeAfk, tz, dayStart, status, device } = f;
+      const key = `stats:${range}:${f.fromMs}:${f.toMs}:${user}:${channel}:${includeAfk}:${tz}:${dayStart}:${status}:${device}`;
       const out = await cached(key, 20000, async () => {
         const d = await loadRange(f);
         const result = computeStats({
@@ -280,6 +282,7 @@ module.exports = function registerDashboard(app, client) {
           dayStart,
           status,
           client,
+          device,
         });
         result.meta.range = range;
         result.meta.truncated = d.truncated;
@@ -304,6 +307,7 @@ module.exports = function registerDashboard(app, client) {
         if (user && !user.has(r.user_id)) return false;
         if (channel && r.channel_id !== channel) return false;
         if (!includeAfk && !channel && db.isAfkChannel(r.channel_id, r.channel_name, client)) return false;
+        if (f.device && !hasDevice(r.devices, f.device)) return false;
         return true;
       })
       .map((r) => {
@@ -319,6 +323,7 @@ module.exports = function registerDashboard(app, client) {
           duration_seconds: Math.max(0, Math.round((end - start) / 1000)),
           speaking_seconds: Number(r.speaking_seconds) || 0,
           streaming_seconds: Number(r.streaming_seconds) || 0,
+          devices: r.devices || null,
           muted_seconds: Number(r.muted_seconds) || 0,
           deafened_seconds: Number(r.deafened_seconds) || 0,
           open: !r.left_at,
@@ -352,10 +357,10 @@ module.exports = function registerDashboard(app, client) {
         if (/^[=+\-@]/.test(s)) s = "'" + s;
         return `"${s.replace(/"/g, '""')}"`;
       };
-      const lines = [`member,username,user_id,channel,joined_local (${filters.tz}),left_local (${filters.tz}),joined_at_utc,left_at_utc,duration_seconds,speaking_seconds,streaming_seconds,muted_seconds,deafened_seconds`];
+      const lines = [`member,username,user_id,channel,joined_local (${filters.tz}),left_local (${filters.tz}),joined_at_utc,left_at_utc,duration_seconds,speaking_seconds,streaming_seconds,muted_seconds,deafened_seconds,joined_from`];
       for (const r of rows) {
         lines.push(
-          [r.name, r.username, r.user_id, r.channel_name, fmtLocal(r.joined_at), fmtLocal(r.left_at), r.joined_at, r.left_at || "", r.duration_seconds, r.speaking_seconds, r.streaming_seconds, r.muted_seconds, r.deafened_seconds]
+          [r.name, r.username, r.user_id, r.channel_name, fmtLocal(r.joined_at), fmtLocal(r.left_at), r.joined_at, r.left_at || "", r.duration_seconds, r.speaking_seconds, r.streaming_seconds, r.muted_seconds, r.deafened_seconds, r.devices || ""]
             .map(cell)
             .join(",")
         );
@@ -437,8 +442,9 @@ module.exports = function registerDashboard(app, client) {
       const roster = req.query.roster !== "0";
       const targetTime = req.query.targetTime || "21:00";
       const graceMinutes = parseInt(req.query.grace, 10) || 15;
+      const device = DEVICES.includes(req.query.device) ? req.query.device : "";
 
-      const key = `report:${type}:${from}:${to}:${tz}:${dayStart}:${userParam}:${channel}:${includeAfk}:${minMinutes}:${mode}:${roster}:${targetTime}:${graceMinutes}`;
+      const key = `report:${type}:${from}:${to}:${tz}:${dayStart}:${userParam}:${channel}:${includeAfk}:${minMinutes}:${mode}:${roster}:${targetTime}:${graceMinutes}:${device}`;
       const out = await cached(key, 20000, async () => {
         const fromMs = z.startOfDate(from);
         const toMs = z.startOfDate(z.addDays(to, 1));
@@ -458,7 +464,7 @@ module.exports = function registerDashboard(app, client) {
           type, sessionRows: s.rows, presenceRows: p.rows, from, to, tz, dayStart,
           user: userList, channel, includeAfk,
           minSeconds: minMinutes * 60, mode, roster, rosterIds, now: Date.now(), liveName, liveStatus, client,
-          targetTime, graceMinutes, notices,
+          targetTime, graceMinutes, notices, device,
         });
         result.meta.truncated = s.truncated || p.truncated;
         return result;
@@ -496,6 +502,7 @@ module.exports = function registerDashboard(app, client) {
         userId: f.user,
         channelId: f.channel,
         status: f.status,
+        device: f.device,
         kind,
         sinceIso: since ? new Date(since).toISOString() : null,
         untilIso: until ? new Date(until).toISOString() : null,

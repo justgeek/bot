@@ -27,6 +27,7 @@ alter table voice_sessions add column if not exists display_name text;
 alter table presence_logs  add column if not exists display_name text;
 alter table presence_logs  add column if not exists devices text; -- "desktop", "mobile", "web" or a comma list; null for offline/older rows
 alter table voice_sessions add column if not exists speaking_seconds integer not null default 0;
+alter table voice_sessions add column if not exists devices text; -- Discord app(s) they joined voice from, e.g. "mobile" or "desktop,web"
 alter table voice_sessions add column if not exists streaming_seconds integer not null default 0; -- screen share ("Go Live") time
 alter table voice_sessions add column if not exists muted_seconds     integer not null default 0; -- mic muted, still listening
 alter table voice_sessions add column if not exists deafened_seconds  integer not null default 0; -- deafened (always muted too)
