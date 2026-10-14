@@ -350,12 +350,18 @@ module.exports = (client) => {
 
     const dbStatusBefore = before?.status || "offline";
     const dbStatusAfter = after?.status || "offline";
-    if (dbStatusBefore !== dbStatusAfter && !user?.bot) {
+    // Which apps they're on: "desktop", "mobile", "web" or a mix like "desktop,mobile"
+    const devicesOf = (p) => Object.keys(p?.clientStatus || {}).sort().join(",");
+    const devicesAfter = dbStatusAfter === "offline" ? "" : devicesOf(after);
+    const devicesChanged = dbStatusAfter !== "offline" && devicesOf(before) !== devicesAfter;
+    // A row also goes in when only the device changes (e.g. left the PC, still online on the phone)
+    if ((dbStatusBefore !== dbStatusAfter || devicesChanged) && !user?.bot) {
       db.logPresence(
         userID,
         user?.username || after.user?.username || userID,
         dbStatusAfter,
-        after.member?.displayName
+        after.member?.displayName,
+        devicesAfter
       );
     }
 

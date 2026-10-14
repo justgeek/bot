@@ -16,6 +16,14 @@ const HIST_BUCKETS = [
 
 const STATUSES = ["online", "idle", "dnd", "offline"];
 
+// Which Discord app(s) a member was on. Rows logged before device tracking have no devices -> "unknown".
+const DEVICE_GROUPS = ["desktop", "mobile", "web", "multi", "unknown"];
+function deviceGroup(devices) {
+  const list = String(devices || "").split(",").filter(Boolean);
+  if (!list.length) return "unknown";
+  return list.length > 1 ? "multi" : DEVICE_GROUPS.includes(list[0]) ? list[0] : "unknown";
+}
+
 function computeStats({ sessionRows, presenceRows, now, since, user: userInput, channel, liveName, liveStatus, tz, status, dayStart = 18, includeAfk = false, client = null }) {
   const z = makeTz(tz, dayStart);
   // Member filter: one id, a comma list or an array -> Set (null = everyone)
@@ -323,6 +331,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
       id: Number(r.id) || 0,
       u: r.user_id,
       status: r.status,
+      dev: deviceGroup(r.devices),
       t: Date.parse(r.changed_at)
     }))
     .filter((r) => r.t <= now && (since == null || r.t >= since) && STATUSES.includes(r.status));
@@ -336,6 +345,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
   const totals = { online: 0, idle: 0, dnd: 0, offline: 0 };
   const hourlyBy = Object.fromEntries(STATUSES.map((k) => [k, new Array(24).fill(0)]));
   const perMember = [];
+  const deviceTotals = Object.fromEntries(DEVICE_GROUPS.map((k) => [k, 0])); // time not offline, by device
 
   for (const [uid, arr] of byUser) {
     arr.sort((a, b) => a.t - b.t || a.id - b.id);
@@ -344,10 +354,12 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
       if (cleanArr.length > 0 && cleanArr[cleanArr.length - 1].status === item.status && cleanArr[cleanArr.length - 1].t === item.t) {
         continue;
       }
+      // same status as before = only the device changed, which is not a status change
+      item.change = !cleanArr.length || cleanArr[cleanArr.length - 1].status !== item.status;
       cleanArr.push(item);
     }
 
-    const row = { user_id: uid, name: nameOf(uid), online: 0, idle: 0, dnd: 0, offline: 0 };
+    const row = { user_id: uid, name: nameOf(uid), online: 0, idle: 0, dnd: 0, offline: 0, devices: Object.fromEntries(DEVICE_GROUPS.map((k) => [k, 0])) };
     for (let i = 0; i < cleanArr.length; i++) {
       const start = cleanArr[i].t;
       let end = i + 1 < cleanArr.length ? cleanArr[i + 1].t : now;
@@ -361,6 +373,10 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
       const secs = (end - start) / 1000;
       row[cleanArr[i].status] += secs;
       totals[cleanArr[i].status] += secs;
+      if (cleanArr[i].status !== "offline") {
+        row.devices[cleanArr[i].dev] += secs;
+        deviceTotals[cleanArr[i].dev] += secs;
+      }
 
       const target = hourlyBy[cleanArr[i].status];
       eachHourSlice(start, end, (b, sec) => {
@@ -368,6 +384,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
       });
     }
     for (const k of STATUSES) row[k] = Math.round(row[k]);
+    for (const k of DEVICE_GROUPS) row.devices[k] = Math.round(row.devices[k]);
     perMember.push(row);
   }
 
@@ -376,8 +393,9 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
 
   const changesMap = new Map();
   const changesByStatus = { online: 0, idle: 0, dnd: 0, offline: 0 };
-  const prsShown = STATUSES.includes(status) ? prs.filter((r) => r.status === status) : prs;
-  for (const r of prs) changesByStatus[r.status] += 1;
+  const realChanges = prs.filter((r) => r.change !== false); // device-only rows are not status changes
+  const prsShown = STATUSES.includes(status) ? realChanges.filter((r) => r.status === status) : realChanges;
+  for (const r of realChanges) changesByStatus[r.status] += 1;
   for (const r of prsShown) {
     const k = dateKey(r.t);
     changesMap.set(k, (changesMap.get(k) || 0) + 1);
@@ -433,6 +451,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
       hourly_by_status: Object.fromEntries(STATUSES.map((k) => [k, hourlyBy[k].map(round)])),
       daily_changes: days.map((date) => ({ date, count: changesMap.get(date) || 0 })),
       changes_by_status: changesByStatus,
+      device_totals: Object.fromEntries(DEVICE_GROUPS.map((k) => [k, round(deviceTotals[k])])),
     },
   };
 }

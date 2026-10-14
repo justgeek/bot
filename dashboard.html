@@ -1758,6 +1758,26 @@
               </div>
             </div>
           </div>
+          <div class="grid lg:grid-cols-3 gap-4 mt-4">
+            <div class="card p-5">
+              <h3 class="font-semibold">Where people are online</h3>
+              <p class="text-xs muted mb-3">Time not offline, split by the Discord app they were on: PC, phone,
+                browser, or several at once.</p>
+              <div class="relative h-64"><canvas id="cDevices"></canvas>
+                <p class="empty hidden absolute inset-0 flex items-center justify-center muted">No device data in this
+                  range yet.</p>
+              </div>
+            </div>
+            <div class="card p-5 lg:col-span-2">
+              <h3 class="font-semibold">Devices per member</h3>
+              <p class="text-xs muted mb-3">Top 10 by time not offline. "Unknown" is time logged before device
+                tracking started.</p>
+              <div class="relative h-64"><canvas id="cDeviceMembers"></canvas>
+                <p class="empty hidden absolute inset-0 flex items-center justify-center muted">No device data in this
+                  range yet.</p>
+              </div>
+            </div>
+          </div>
           <div class="grid lg:grid-cols-2 gap-4 mt-4">
             <div class="card p-5">
               <h3 id="hActive" class="font-semibold">When people are online</h3>
@@ -2765,6 +2785,9 @@
         $("viewerCount").textContent = o.active_viewers || 1;
       }
 
+      liveDevices = new Map(o.members_online.map((m) => [m.user_id, m.devices || []]));
+      if (lastStats) renderMembers();
+
       $("voiceList").innerHTML = o.in_voice.length
         ? o.in_voice.map((c) => `
         <div>
@@ -2773,13 +2796,13 @@
             <span class="text-xs muted">${c.members.length} in channel</span>
           </div>
           <div class="flex flex-wrap gap-2">
-            ${c.members.map((m) => `<button data-user="${esc(m.user_id)}" class="chip" title="Username: ${esc(m.username)}">${who(m.user_id, m.name, { plain: true })}</button>`).join("")}
+            ${c.members.map((m) => `<button data-user="${esc(m.user_id)}" class="chip" title="Username: ${esc(m.username)}">${who(m.user_id, m.name, { plain: true })}${deviceIcons(m.devices)}</button>`).join("")}
           </div>
         </div>`).join("")
         : `<p class="muted">Nobody is in voice right now.</p>`;
 
       $("onlineList").innerHTML = o.members_online.length
-        ? o.members_online.map((m) => `<button data-user="${esc(m.user_id)}" class="chip"><span class="dot" style="background:var(--${m.status})"></span>${who(m.user_id, m.name, { plain: true })}</button>`).join("")
+        ? o.members_online.map((m) => `<button data-user="${esc(m.user_id)}" class="chip"><span class="dot" style="background:var(--${m.status})"></span>${who(m.user_id, m.name, { plain: true })}${deviceIcons(m.devices)}</button>`).join("")
         : `<p class="muted">Everyone is offline.</p>`;
     }
 
@@ -2808,6 +2831,7 @@
         if (l.type === "presence") {
           const st = STATUS[l.status] || STATUS.offline;
           b = badge(st.cls, st.label);
+          if (l.devices) extra = deviceIcons(l.devices.split(",")) + ` <span class="muted text-xs">${esc(l.devices.split(",").map((d) => (DEVICES[d] || { label: d }).label).join(" + "))}</span>`;
         } else if (l.type === "voice_join") {
           b = badge("b-accent", "Joined voice");
           extra = esc(l.channel_name || "Voice channel");
@@ -2958,7 +2982,7 @@
         });
       $("memberEmpty").classList.toggle("hidden", rows.length > 0);
       $("memberRows").innerHTML = rows.map((m) => `<tr class="click" data-user="${esc(m.user_id)}">
-    <td class="whitespace-nowrap">${who(m.user_id, m.name, { plain: true })}</td>
+    <td class="whitespace-nowrap">${who(m.user_id, m.name, { plain: true })} ${deviceIcons(liveDevices.get(m.user_id))}</td>
     <td class="r num">${hrsText(m.seconds)}</td>
     <td class="r num text-amber-400 font-semibold">${hrsText(m.speaking_seconds || 0)}</td>
     <td class="r num font-bold">${m.talk_ratio_pct || 0}%</td>
@@ -3130,6 +3154,33 @@
         data: { labels: p.daily_changes.map((d) => dayLabel(d.date)), datasets: [{ label: sf ? "Changes to " + lbl : "Status changes", data: p.daily_changes.map((d) => d.count), backgroundColor: sf ? T[sf] : T.idle, borderRadius: 3 }] },
         options: { plugins: { legend: false }, scales: { y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: T.grid } }, x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true } } } },
       }, noChanges);
+
+      const dt = p.device_totals || {};
+      const devKeys = Object.keys(DEVICES).filter((k) => dt[k] > 0);
+      upsert("cDevices", {
+        type: "doughnut",
+        data: { labels: devKeys.map((k) => DEVICES[k].icon + " " + DEVICES[k].label), datasets: [{ data: devKeys.map((k) => hrs(dt[k])), backgroundColor: devKeys.map((k) => DEVICES[k].color), borderColor: T.surface }] },
+        options: { plugins: { legend: { position: "bottom", labels: { color: T.text } }, tooltip: hoursTip } },
+      }, !devKeys.length);
+
+      const dm = [...p.per_member]
+        .map((m) => ({ ...m, on: Object.values(m.devices || {}).reduce((a, b) => a + b, 0) }))
+        .filter((m) => m.on > 0)
+        .sort((a, b) => b.on - a.on)
+        .slice(0, 10);
+      chartUsers.cDeviceMembers = dm.map((m) => m.user_id);
+      sizeChart("cDeviceMembers", dm.length, 256);
+      upsert("cDeviceMembers", {
+        type: "bar",
+        data: { labels: dm.map((m) => m.name), datasets: Object.keys(DEVICES).filter((k) => dm.some((m) => m.devices[k] > 0)).map((k) => ({ label: DEVICES[k].icon + " " + DEVICES[k].label, data: dm.map((m) => hrs(m.devices[k] || 0)), backgroundColor: DEVICES[k].color })) },
+        options: {
+          indexAxis: "y",
+          plugins: { legend, tooltip: hoursTip },
+          scales: { x: { stacked: true, beginAtZero: true, title: axisTitle("Hours"), grid: { color: T.grid } }, y: { stacked: true, grid: { display: false }, ticks: { autoSkip: false, color: (c) => chartColor("cDeviceMembers", c.index) } } },
+          onClick: (_e, els) => { const u = els.length && chartUsers.cDeviceMembers[els[0].index]; if (u) setUser(u); },
+          onHover: (e, els) => { e.native.target.style.cursor = els.length ? "pointer" : "default"; },
+        },
+      }, !dm.length);
     }
 
     function sizeChart(id, rows, min) {
@@ -3266,6 +3317,20 @@
         ? `<img class="av" src="${esc(avatar)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
         : `<span class="av av-ph" aria-hidden="true">${esc(([...String(name)][0] || "?").toUpperCase())}</span>`;
       return `<span class="who${opts.lg ? " who-lg" : ""}"${opts.plain ? "" : ` data-who="${esc(id)}" role="button" tabindex="0" title="Filter by ${esc(name)}"`}>${av}<span class="who-name"${rawColor ? ` style="color:${rawColor}${outlineStyle}"` : ""}>${esc(name)}</span></span>`;
+    }
+
+    // Which Discord app(s) someone is on. Live data comes from the overview poll.
+    const DEVICES = {
+      desktop: { icon: "🖥️", label: "PC app", color: "#5865F2" },
+      mobile: { icon: "📱", label: "Phone", color: "#23a55a" },
+      web: { icon: "🌐", label: "Browser", color: "#f0b232" },
+      multi: { icon: "🔀", label: "Several at once", color: "#a855f7" },
+      unknown: { icon: "❔", label: "Unknown (before tracking)", color: "#80848e" },
+    };
+    let liveDevices = new Map(); // user id -> ["desktop", "mobile", ...] for members not offline
+    function deviceIcons(list) {
+      if (!list || !list.length) return "";
+      return `<span class="whitespace-nowrap text-xs" title="On ${esc(list.map((d) => (DEVICES[d] || { label: d }).label).join(" + "))}">${list.map((d) => (DEVICES[d] || {}).icon || "").join("")}</span>`;
     }
 
     function chartColor(id, i) {

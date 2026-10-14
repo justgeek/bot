@@ -153,7 +153,8 @@ module.exports = function registerDashboard(app, client) {
           const key = status in counts ? status : "offline";
           counts[key]++;
           if (key !== "offline") {
-            membersOnline.push({ user_id: m.id, name: m.displayName, status: key });
+            // devices: which Discord apps they're on right now ("desktop", "mobile", "web")
+            membersOnline.push({ user_id: m.id, name: m.displayName, status: key, devices: Object.keys(m.presence?.clientStatus || {}).sort() });
           }
         });
 
@@ -174,6 +175,7 @@ module.exports = function registerDashboard(app, client) {
             user_id: user.id,
             username: user.username,
             name: vs.member.displayName,
+            devices: Object.keys(vs.member.presence?.clientStatus || {}).sort(),
           });
         });
       }

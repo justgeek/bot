@@ -69,15 +69,26 @@ function unionIntervals(intervals) {
 }
 
 // ---------- Writes ----------
-async function logPresence(userId, username, status, displayName) {
+// presence_logs.devices ("desktop", "mobile", "web" or a comma list) is added by schema.sql;
+// until it exists, presence is logged and read without it.
+let hasDevicesCol = true;
+function devicesColMissing(error) {
+  if (!hasDevicesCol || !error || !["42703", "PGRST204"].includes(error.code) || !String(error.message || "").includes("devices")) return false;
+  hasDevicesCol = false;
+  console.warn("[DB] presence_logs.devices is missing - run schema.sql to record which device members are on.");
+  return true;
+}
+
+async function logPresence(userId, username, status, displayName, devices = "") {
   if (!supabase) return;
   try {
-    const { error } = await supabase.from("presence_logs").insert({
-      user_id: String(userId),
-      username,
-      display_name: displayName || null,
-      status,
-    });
+    const row = { user_id: String(userId), username, display_name: displayName || null, status };
+    if (hasDevicesCol) row.devices = devices || null;
+    let { error } = await supabase.from("presence_logs").insert(row);
+    if (error && devicesColMissing(error)) {
+      delete row.devices;
+      ({ error } = await supabase.from("presence_logs").insert(row));
+    }
     if (error) throw error;
   } catch (err) {
     console.error("[DB] logPresence failed:", err.message || err);
@@ -318,16 +329,23 @@ async function getSessionRows(sinceIso, untilIso) {
 
 async function getPresenceRows(sinceIso, untilIso) {
   if (!supabase) return { rows: [], truncated: false };
-  try {
-    return await fetchAll(() => {
+  const load = () =>
+    fetchAll(() => {
       let q = supabase
         .from("presence_logs")
-        .select("id, user_id, username, display_name, status, changed_at")
+        .select("id, user_id, username, display_name, status, changed_at" + (hasDevicesCol ? ", devices" : ""))
         .order("id", { ascending: true });
       if (sinceIso) q = q.gte("changed_at", sinceIso);
       if (untilIso) q = q.lte("changed_at", untilIso);
       return q;
     });
+  try {
+    try {
+      return await load();
+    } catch (err) {
+      if (!devicesColMissing(err)) throw err;
+      return await load();
+    }
   } catch (err) {
     console.error("[DB] getPresenceRows failed:", err.message || err);
     return { rows: [], truncated: false };
@@ -401,7 +419,7 @@ async function getRecentLogs(limit = 30, opts = {}) {
       ? (() => {
         let q = supabase
           .from("presence_logs")
-          .select("id, user_id, username, display_name, status, changed_at")
+          .select("*") // includes devices once schema.sql has added it
           .order("changed_at", { ascending: false })
           .limit(limit);
         if (userId) q = byUser(q);
@@ -439,7 +457,7 @@ async function getRecentLogs(limit = 30, opts = {}) {
     for (const r of [presence, joins, leaves]) if (r.error) throw r.error;
 
     const events = [
-      ...presence.data.map((r) => ({ id: r.id, type: "presence", user_id: r.user_id, username: r.username, display_name: r.display_name, status: r.status, at: r.changed_at })),
+      ...presence.data.map((r) => ({ id: r.id, type: "presence", user_id: r.user_id, username: r.username, display_name: r.display_name, status: r.status, devices: r.devices || null, at: r.changed_at })),
       ...joins.data.map((r) => ({ id: r.id, type: "voice_join", user_id: r.user_id, username: r.username, display_name: r.display_name, channel_name: r.channel_name, at: r.joined_at })),
       ...leaves.data.map((r) => ({ id: r.id, type: "voice_leave", user_id: r.user_id, username: r.username, display_name: r.display_name, channel_name: r.channel_name, duration_seconds: r.duration_seconds, speaking_seconds: r.speaking_seconds, at: r.left_at })),
     ];

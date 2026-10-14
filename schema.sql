@@ -25,6 +25,7 @@ create table if not exists presence_logs (
 -- Upgrade path for tables created by the first version
 alter table voice_sessions add column if not exists display_name text;
 alter table presence_logs  add column if not exists display_name text;
+alter table presence_logs  add column if not exists devices text; -- "desktop", "mobile", "web" or a comma list; null for offline/older rows
 alter table voice_sessions add column if not exists speaking_seconds integer not null default 0;
 alter table voice_sessions add column if not exists streaming_seconds integer not null default 0; -- screen share ("Go Live") time
 alter table voice_sessions add column if not exists muted_seconds     integer not null default 0; -- mic muted, still listening
