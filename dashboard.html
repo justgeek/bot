@@ -1147,6 +1147,20 @@
       border-top: var(--border-w) solid var(--border);
     }
 
+    .notice-btn {
+      cursor: pointer;
+      margin-bottom: .35rem;
+      font-weight: 600;
+      color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+      border: var(--border-w, 1px) solid color-mix(in srgb, var(--accent) 45%, transparent);
+    }
+
+    .notice-btn:hover {
+      background: var(--accent);
+      color: var(--accent-fg);
+    }
+
     .sticky-head {
       position: sticky;
       top: 0;
@@ -1564,6 +1578,14 @@
     </div>
     <nav class="nav" id="nav"></nav>
     <div class="sidebar-foot">
+      <button id="sideNoticeBtn" class="nav-item notice-btn w-full" title="Late / absence notice - submit before the start time">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+          stroke-linejoin="round">
+          <circle cx="12" cy="13" r="8" />
+          <path d="M12 9v4l2 2M5 3L2 6M22 6l-3-3" />
+        </svg>
+        <span class="nav-label">Late / Absence Notice</span>
+      </button>
       <button id="collapseBtn" class="nav-item collapse-btn w-full" style="background:none;border:0;cursor:pointer"
         aria-label="Collapse sidebar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -2095,7 +2117,7 @@
   <div id="excuseModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="excuseModalTitle">
     <div class="card p-6 w-full max-w-md mx-4 space-y-4 shadow-2xl">
       <div class="flex items-center justify-between">
-        <h3 id="excuseModalTitle" class="text-lg font-bold hd">📝 Submit Late Notice</h3>
+        <h3 id="excuseModalTitle" class="text-lg font-bold hd">📝 Late / Absence Notice</h3>
         <button id="closeExcuseModal" class="icon-btn" aria-label="Close modal">&times;</button>
       </div>
       <p class="text-xs muted">Must be submitted <b>before the target time</b> to waive slacker penalty points. The
@@ -2105,11 +2127,11 @@
         <select id="excuseUser" class="field w-full"></select>
       </div>
       <div class="grid grid-cols-3 gap-2">
-        <div class="col-span-2">
+        <div id="excuseTargetWrap" class="col-span-2">
           <label class="block text-xs font-semibold uppercase muted mb-1">Target Start (date &amp; time)</label>
           <input type="datetime-local" id="excuseTargetAt" class="field w-full">
         </div>
-        <div>
+        <div id="excuseDelayWrap">
           <label class="block text-xs font-semibold uppercase muted mb-1">Delay (Mins)</label>
           <input type="number" id="excuseDelay" min="1" max="720" value="45" class="field w-full">
         </div>
@@ -3909,7 +3931,7 @@
       $("excuseFeedback").classList.add("hidden");
       $("excuseReason").value = "";
       $("excuseAbsent").checked = false;
-      $("excuseDelay").disabled = false;
+      syncExcuseAbsent();
       // Default to the next upcoming target start (today, or tomorrow if today's already passed)
       const nowLocal = toLocalInput(Date.now());
       const time = ($("rTargetTime") && $("rTargetTime").value) || "21:00";
@@ -3922,9 +3944,17 @@
       $("excuseModal").classList.add("hidden");
     }
     $("openExcuseModalBtn").onclick = openExcuseModal;
+    $("sideNoticeBtn").onclick = () => { closeDrawer(); openExcuseModal(); };
     $("closeExcuseModal").onclick = hideExcuseModal;
     $("cancelExcuseBtn").onclick = hideExcuseModal;
-    $("excuseAbsent").onchange = () => { $("excuseDelay").disabled = $("excuseAbsent").checked; };
+    // Absent hides the delay and lets the start time take the full row
+    function syncExcuseAbsent() {
+      const absent = $("excuseAbsent").checked;
+      $("excuseDelayWrap").classList.toggle("hidden", absent);
+      $("excuseTargetWrap").classList.toggle("col-span-2", !absent);
+      $("excuseTargetWrap").classList.toggle("col-span-3", absent);
+    }
+    $("excuseAbsent").onchange = syncExcuseAbsent;
 
     $("submitExcuseBtn").onclick = async () => {
       const userId = $("excuseUser").value;

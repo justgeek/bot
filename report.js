@@ -217,7 +217,8 @@ function computeReport(o) {
       const at = serverTz.localToMs(`${raw.target_date}T${String(raw.target_time || "").slice(0, 5)}`);
       if (!Number.isFinite(at)) continue;
       const sentAt = Date.parse(raw.submitted_at);
-      const n = { ...raw, is_valid: Number.isFinite(sentAt) ? sentAt < at : !!raw.is_valid };
+      // A late notice is a promise to arrive by its own start + delay, whatever target the report uses
+      const n = { ...raw, at, sentAt, expectedAt: at + (Number(raw.delay_minutes) || 0) * 60000, is_valid: Number.isFinite(sentAt) ? sentAt < at : !!raw.is_valid };
       const key = n.user_id + "|" + z.dateOf(at);
       const prev = noticeOf.get(key);
       if (!prev || n.is_valid || !prev.is_valid) noticeOf.set(key, n);
@@ -265,10 +266,17 @@ function computeReport(o) {
 
         const attendedDay = R && R.seconds >= (minSeconds || 300);
         const notice = noticeOf.get(uid + "|" + date);
+        // Must be sent before both its own start time and this report's target
+        const noticeValid = !!notice && notice.is_valid && !(notice.sentAt >= targetMs);
         // delay_minutes = 0 is an "absent all night" notice
-        const absentNotice = notice && notice.is_valid && !(notice.delay_minutes > 0);
-        const excuse = notice ? `${notice.delay_minutes > 0 ? notice.delay_minutes + "m late" : "absence"} notice: ${notice.reason}${notice.is_valid ? "" : " - sent too late"}` : undefined;
-        const excusedMs = absentNotice ? Infinity : notice && notice.is_valid ? notice.delay_minutes * 60000 : 0;
+        const isAbsence = notice && !(notice.delay_minutes > 0);
+        const absentNotice = noticeValid && isAbsence;
+        const hhmm = (ms) => { const p = z.partsOf(ms); return String(p.hour).padStart(2, "0") + ":" + String(p.minute).padStart(2, "0"); };
+        const excuse = notice
+          ? `${isAbsence ? "absence notice" : `${notice.delay_minutes}m late notice from ${hhmm(notice.at)} (expected ${hhmm(notice.expectedAt)})`}: ${notice.reason}${noticeValid ? "" : " - sent too late"}`
+          : undefined;
+        // Late notice: excused up to its promised arrival time, measured from this report's target
+        const excusedMs = absentNotice ? Infinity : noticeValid ? Math.max(0, notice.expectedAt - targetMs) : 0;
 
         // Arrival counts from the target time onward: already in voice at the target = arrived at the target,
         // otherwise the first join after it. Time spent before the target (and left) doesn't count.
