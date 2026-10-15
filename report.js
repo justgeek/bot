@@ -83,6 +83,7 @@ function computeReport(o) {
         co: false,
         op: false,
         lastEnd: null,
+        iv: [], // qualifying [start, end] intervals, for arrival at the target time
         ch: new Map(),
         st: { online: 0, idle: 0, dnd: 0 },
         jd: new Set(), // voice: devices they joined from
@@ -109,6 +110,7 @@ function computeReport(o) {
     R.seconds += (b - a) / 1000;
     if (a !== R.lastEnd) R.n += 1;
     R.lastEnd = b;
+    R.iv.push([a, b]);
     if (a < R.first) {
       R.first = a;
       R.ci = realStart < ds;
@@ -246,7 +248,16 @@ function computeReport(o) {
         const excuse = notice ? `${notice.delay_minutes}m notice: ${notice.reason}${notice.is_valid ? "" : " - sent too late"}` : undefined;
         const excusedMs = notice && notice.is_valid ? notice.delay_minutes * 60000 : 0;
 
-        if (!attendedDay) {
+        // Arrival counts from the target time onward: already in voice at the target = arrived at the target,
+        // otherwise the first join after it. Time spent before the target (and left) doesn't count.
+        let arrival = Infinity;
+        if (R) for (const [a, b] of R.iv) if (b > targetMs) arrival = Math.min(arrival, Math.max(a, targetMs));
+        const hasArrival = attendedDay && Number.isFinite(arrival);
+
+        // Target (plus grace / announced delay) hasn't passed yet and they're not in: nothing to judge yet
+        if (!hasArrival && now < targetMs + graceMs + excusedMs) continue;
+
+        if (!hasArrival) {
           daysAbsent += 1;
           totalPenaltyPoints += 3;
           slackerLog.push({
@@ -261,7 +272,7 @@ function computeReport(o) {
             excuse,
           });
         } else {
-          const firstJoin = R.first;
+          const firstJoin = arrival;
           const diffMs = firstJoin - targetMs;
 
           if (diffMs <= graceMs) {
