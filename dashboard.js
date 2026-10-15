@@ -523,6 +523,40 @@ module.exports = function registerDashboard(app, client) {
     }
   });
 
+  // ---------- Submitted late / absence notices ----------
+  app.get("/api/late-notices", guard, async (req, res) => {
+    try {
+      const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 300, 1), 1000);
+      const serverTz = makeTz(DEFAULT_TZ, 0);
+      const rows = await db.listLateNotices(limit);
+      const notices = rows.map((r) => {
+        // Targets are stored on the server clock; send absolute ms so the viewer formats them in their own timezone
+        const targetMs = serverTz.localToMs(`${r.target_date}T${String(r.target_time || "").slice(0, 5)}`);
+        const submittedMs = Date.parse(r.submitted_at);
+        const delay = Number(r.delay_minutes) || 0;
+        return {
+          id: r.id,
+          user_id: r.user_id,
+          name: liveName(r.user_id) || r.display_name || r.username,
+          username: r.username,
+          type: delay > 0 ? "late" : "absent",
+          delay_minutes: delay,
+          reason: r.reason,
+          target_ms: Number.isFinite(targetMs) ? targetMs : null,
+          expected_ms: Number.isFinite(targetMs) && delay > 0 ? targetMs + delay * 60000 : null,
+          submitted_ms: Number.isFinite(submittedMs) ? submittedMs : null,
+          // same rule the slacker report uses: valid only if sent before its own start time
+          is_valid: Number.isFinite(submittedMs) && Number.isFinite(targetMs) ? submittedMs < targetMs : !!r.is_valid,
+        };
+      });
+      res.set("Cache-Control", "no-store");
+      res.json({ notices });
+    } catch (err) {
+      console.error("[API] /api/late-notices failed:", err);
+      res.status(500).json({ error: err.message || "late_notices_failed" });
+    }
+  });
+
   // ---------- Late notice: "I'll be X minutes late", announced in chat ----------
   // Only waives slacker penalties when it is submitted before the target start time.
   app.post("/api/late-notice", guard, express.json({ limit: "20kb" }), async (req, res) => {

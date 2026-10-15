@@ -295,6 +295,18 @@ async function getLateNotices(fromDate, toDate) {
   }
 }
 
+// Newest submissions first, for the dashboard's notice list
+async function listLateNotices(limit = 300) {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("late_notices")
+    .select("id, user_id, username, display_name, target_date, target_time, delay_minutes, reason, is_valid, submitted_at")
+    .order("submitted_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(error.message || "read failed");
+  return data || [];
+}
+
 // ---------- Reads ----------
 // Earliest recorded voice join / presence change, in ms (null when there is nothing yet)
 async function getFirstActivityMs() {
@@ -570,6 +582,7 @@ module.exports = {
   checkpointSpeaking,
   addLateNotice,
   getLateNotices,
+  listLateNotices,
   getFirstActivityMs,
   getSessionRows,
   getPresenceRows,

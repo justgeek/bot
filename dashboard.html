@@ -1931,10 +1931,16 @@
           <div class="card p-5 no-print relative" style="z-index: 30;">
             <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
               <h2 class="text-lg font-semibold">Generate a report</h2>
-              <button type="button" id="openExcuseModalBtn" class="btn-ghost text-xs flex items-center gap-1.5"
-                title="Submit late excuse before start time">
-                📝 Submit Late Notice / Excuse
-              </button>
+              <div class="flex flex-wrap items-center gap-2">
+                <button type="button" id="openNoticesBtn" class="btn-ghost text-xs flex items-center gap-1.5"
+                  title="View submitted late / absence notices">
+                  📋 View Notices
+                </button>
+                <button type="button" id="openExcuseModalBtn" class="btn-ghost text-xs flex items-center gap-1.5"
+                  title="Submit late excuse before start time">
+                  📝 Submit Late Notice / Excuse
+                </button>
+              </div>
             </div>
             <p class="text-sm muted mb-4">Attendance and Slacker reports. Gaming days rotate automatically based on your
               rollover hour.</p>
@@ -2152,6 +2158,49 @@
     </div>
   </div>
 
+  <!-- ============ Submitted Notices Modal ============ -->
+  <div id="noticesModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="noticesModalTitle">
+    <div class="card p-6 w-full max-w-5xl mx-4 space-y-4 shadow-2xl flex flex-col" style="max-height: 90vh;">
+      <div class="flex items-center justify-between">
+        <h3 id="noticesModalTitle" class="text-lg font-bold hd">📋 Submitted Notices</h3>
+        <button id="closeNoticesModal" class="icon-btn" aria-label="Close modal">&times;</button>
+      </div>
+      <p class="text-xs muted">A notice is <b>valid</b> only when it was submitted before its target start time. Times
+        are shown in your timezone.</p>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <select id="noticesUser" aria-label="Member" class="field w-full"></select>
+        <select id="noticesType" aria-label="Type" class="field w-full">
+          <option value="">All types</option>
+          <option value="late">Late notices</option>
+          <option value="absent">Absence notices</option>
+        </select>
+        <select id="noticesValid" aria-label="Validity" class="field w-full">
+          <option value="">Valid and invalid</option>
+          <option value="1">Valid only</option>
+          <option value="0">Sent too late only</option>
+        </select>
+      </div>
+      <div class="overflow-auto scroll-thin min-h-0">
+        <table class="t">
+          <thead>
+            <tr>
+              <th>Member</th>
+              <th>Type</th>
+              <th>Target start</th>
+              <th>Expected arrival</th>
+              <th>Reason</th>
+              <th>Submitted</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="noticesRows"></tbody>
+        </table>
+      </div>
+      <p id="noticesEmpty" class="hidden muted py-6 text-center text-sm"></p>
+      <div id="noticesCount" class="text-xs muted"></div>
+    </div>
+  </div>
+
   <script>
     // Capture initial report query parameters in memory BEFORE any tab restoration can wipe them
     const rawUrlParams = new URLSearchParams(window.location.search);
@@ -2276,7 +2325,7 @@
     const closeDrawer = () => { $("sidebar").classList.remove("open"); $("backdrop").classList.remove("show"); };
     $("hamburger").onclick = openDrawer;
     $("backdrop").onclick = closeDrawer;
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDrawer(); hideShareModal(); hideExcuseModal(); } });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDrawer(); hideShareModal(); hideExcuseModal(); hideNoticesModal(); } });
     $("collapseBtn").onclick = () => {
       const on = document.documentElement.classList.toggle("collapsed");
       store.set("banha-collapsed", on ? "1" : "0");
@@ -4002,6 +4051,63 @@
         btn.disabled = false;
       }
     };
+
+    // Submitted notices list
+    let noticesData = [];
+    function fmtGap(ms) {
+      const m = Math.round(Math.abs(ms) / 60000);
+      if (m < 60) return m + "m";
+      const h = Math.floor(m / 60), d = Math.floor(h / 24);
+      return d ? d + "d " + (h % 24) + "h" : h + "h" + (m % 60 ? " " + (m % 60) + "m" : "");
+    }
+    function renderNotices() {
+      const u = $("noticesUser").value, t = $("noticesType").value, v = $("noticesValid").value;
+      const rows = noticesData.filter((n) => (!u || n.user_id === u) && (!t || n.type === t) && (!v || String(+n.is_valid) === v));
+      const when = (ms) => (ms == null ? "-" : esc(fullFmt.format(ms)));
+      $("noticesRows").innerHTML = rows.map((n) => {
+        const gap = n.submitted_ms != null && n.target_ms != null ? n.target_ms - n.submitted_ms : null;
+        const gapText = gap == null ? "" : `<div class="text-xs muted">${fmtGap(gap)} ${gap > 0 ? "before" : "after"} start</div>`;
+        return `<tr>
+          <td title="${esc(n.username)}">${esc(n.name)}</td>
+          <td>${n.type === "absent" ? '<span class="badge b-offline">Absent</span>' : `<span class="badge b-idle">Late ${esc(n.delay_minutes)}m</span>`}</td>
+          <td class="whitespace-nowrap">${when(n.target_ms)}</td>
+          <td class="whitespace-nowrap">${n.type === "absent" ? '<span class="muted">Not coming</span>' : when(n.expected_ms)}</td>
+          <td style="min-width: 12rem;">${esc(n.reason)}</td>
+          <td class="whitespace-nowrap">${when(n.submitted_ms)}${gapText}</td>
+          <td>${n.is_valid ? '<span class="badge b-online">Valid</span>' : '<span class="badge b-dnd">Sent too late</span>'}</td>
+        </tr>`;
+      }).join("");
+      $("noticesEmpty").textContent = noticesData.length ? "No notices match these filters." : "No notices have been submitted yet.";
+      $("noticesEmpty").classList.toggle("hidden", rows.length > 0);
+      const valid = rows.filter((n) => n.is_valid).length;
+      $("noticesCount").textContent = rows.length ? `${rows.length} notice${rows.length === 1 ? "" : "s"} - ${valid} valid, ${rows.length - valid} sent too late` : "";
+    }
+    async function openNoticesModal() {
+      $("noticesModal").classList.remove("hidden");
+      $("noticesRows").innerHTML = "";
+      $("noticesCount").textContent = "";
+      $("noticesEmpty").textContent = "Loading...";
+      $("noticesEmpty").classList.remove("hidden");
+      try {
+        noticesData = (await api("late-notices")).notices || [];
+        const prev = $("noticesUser").value;
+        const people = new Map();
+        for (const n of noticesData) if (!people.has(n.user_id)) people.set(n.user_id, n.name);
+        $("noticesUser").innerHTML = '<option value="">All members</option>' +
+          [...people].sort((a, b) => a[1].localeCompare(b[1])).map(([id, name]) => `<option value="${esc(id)}">${esc(name)}</option>`).join("");
+        $("noticesUser").value = people.has(prev) ? prev : "";
+        renderNotices();
+      } catch (err) {
+        $("noticesEmpty").textContent = "Could not load notices" + (err.body?.error ? ": " + err.body.error : ".");
+      }
+    }
+    function hideNoticesModal() {
+      $("noticesModal").classList.add("hidden");
+    }
+    $("openNoticesBtn").onclick = openNoticesModal;
+    $("closeNoticesModal").onclick = hideNoticesModal;
+    $("noticesModal").onclick = (e) => { if (e.target === $("noticesModal")) hideNoticesModal(); };
+    ["noticesUser", "noticesType", "noticesValid"].forEach((id) => { $(id).onchange = renderNotices; });
 
     function showExcuseFeedback(msg, isSuccess) {
       const el = $("excuseFeedback");
