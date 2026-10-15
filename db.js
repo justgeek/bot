@@ -322,7 +322,7 @@ async function getSessionRows(sinceIso, untilIso) {
       return q;
     });
   try {
-    for (;;) {
+    for (; ;) {
       try {
         return await load();
       } catch (err) {
@@ -333,6 +333,46 @@ async function getSessionRows(sinceIso, untilIso) {
     console.error("[DB] getSessionRows failed:", err.message || err);
     return { rows: [], truncated: false };
   }
+}
+
+// Coming online for a few seconds then straight back offline (a reconnect flicker) is noise in the
+// stats. The rows stay in the table (and the status channel still posts them); the dashboard just
+// skips both rows of such an offline > online > offline blip.
+const PRESENCE_BLIP_MS = 4000;
+
+// ids of the rows that are part of a blip. Rows must hold every change of their users over the
+// span checked; a blip's earlier row is looked up when it isn't in them.
+async function presenceBlipIds(rows) {
+  const byUser = new Map();
+  for (const r of [...rows].sort((a, b) => Number(a.id) - Number(b.id))) {
+    if (!byUser.has(r.user_id)) byUser.set(r.user_id, []);
+    byUser.get(r.user_id).push(r);
+  }
+  const ids = new Set();
+  const lookups = [];
+  for (const list of byUser.values()) {
+    for (let i = 0; i + 1 < list.length; i++) {
+      const on = list[i], off = list[i + 1];
+      if (on.status === "offline" || off.status !== "offline") continue;
+      if (Date.parse(off.changed_at) - Date.parse(on.changed_at) > PRESENCE_BLIP_MS) continue;
+      const mark = () => { ids.add(on.id); ids.add(off.id); };
+      // Only a flicker up from offline counts, not e.g. idle > online > offline
+      if (i > 0) {
+        if (list[i - 1].status === "offline") mark();
+        continue;
+      }
+      lookups.push(
+        supabase.from("presence_logs").select("status").eq("user_id", on.user_id).lt("id", on.id)
+          .order("id", { ascending: false }).limit(1)
+          .then(({ data, error }) => {
+            if (error) throw error;
+            if (!data.length || data[0].status === "offline") mark();
+          })
+      );
+    }
+  }
+  await Promise.all(lookups);
+  return ids;
 }
 
 async function getPresenceRows(sinceIso, untilIso) {
@@ -348,12 +388,15 @@ async function getPresenceRows(sinceIso, untilIso) {
       return q;
     });
   try {
+    let res;
     try {
-      return await load();
+      res = await load();
     } catch (err) {
       if (!devicesColMissing(err)) throw err;
-      return await load();
+      res = await load();
     }
+    const blips = await presenceBlipIds(res.rows);
+    return { ...res, rows: res.rows.filter((r) => !blips.has(r.id)) };
   } catch (err) {
     console.error("[DB] getPresenceRows failed:", err.message || err);
     return { rows: [], truncated: false };
@@ -434,7 +477,7 @@ async function getRecentLogs(limit = 30, opts = {}) {
           .from("presence_logs")
           .select("*") // includes devices once schema.sql has added it
           .order("changed_at", { ascending: false })
-          .limit(limit);
+          .limit(limit * 2); // headroom for the blips dropped below
         if (userId) q = byUser(q);
         if (status) q = q.eq("status", status);
         return window(byDevice(q), "changed_at");
@@ -468,6 +511,23 @@ async function getRecentLogs(limit = 30, opts = {}) {
 
     const [presence, joins, leaves] = await Promise.all([presenceQ, joinsQ, leavesQ]);
     for (const r of [presence, joins, leaves]) if (r.error) throw r.error;
+
+    // Drop blips. The page may be filtered (status/device), so check against every change those
+    // members made over its span.
+    if (presence.data.length) {
+      const times = presence.data.map((r) => Date.parse(r.changed_at));
+      const { rows: around } = await fetchAll(() =>
+        supabase
+          .from("presence_logs")
+          .select("id, user_id, status, changed_at")
+          .in("user_id", [...new Set(presence.data.map((r) => r.user_id))])
+          .gte("changed_at", new Date(Math.min(...times) - PRESENCE_BLIP_MS).toISOString())
+          .lte("changed_at", new Date(Math.max(...times) + PRESENCE_BLIP_MS).toISOString())
+          .order("id", { ascending: true })
+      );
+      const blips = await presenceBlipIds(around);
+      presence.data = presence.data.filter((r) => !blips.has(r.id));
+    }
 
     const events = [
       ...presence.data.map((r) => ({ id: r.id, type: "presence", user_id: r.user_id, username: r.username, display_name: r.display_name, status: r.status, devices: r.devices || null, at: r.changed_at })),
