@@ -21,6 +21,8 @@ const DEVICE_GROUPS = ["desktop", "mobile", "web", "multi", "unknown"];
 const hasDevice = (devices, d) => String(devices || "").split(",").includes(d);
 // A presence row's status on one app; rows logged before per-app statuses only have the overall one
 const statusOn = (r, device) => (device && r.devStatus?.[device]) || r.status;
+// One app's status on a row, offline when they weren't on it
+const appState = (r, device) => (hasDevice(r.devices, device) ? statusOn(r, device) : "offline");
 function deviceGroup(devices) {
   const list = String(devices || "").split(",").filter(Boolean);
   if (!list.length) return "unknown";
@@ -357,11 +359,13 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
     arr.sort((a, b) => a.t - b.t || a.id - b.id);
     const cleanArr = [];
     for (const item of arr) {
-      if (cleanArr.length > 0 && cleanArr[cleanArr.length - 1].status === item.status && cleanArr[cleanArr.length - 1].t === item.t) {
+      const prev = cleanArr[cleanArr.length - 1];
+      if (prev && prev.status === item.status && prev.devices === item.devices && prev.t === item.t) {
         continue;
       }
-      // same status as before = only the device changed, which is not a status change
-      item.change = !cleanArr.length || cleanArr[cleanArr.length - 1].status !== item.status;
+      // same status as before = only the device changed, which is not a status change; with a
+      // device filter it's a change when that app's own status changed
+      item.change = device ? appState(item, device) !== (prev ? appState(prev, device) : "offline") : !prev || prev.status !== item.status;
       cleanArr.push(item);
     }
 
@@ -403,8 +407,9 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
 
   const changesMap = new Map();
   const changesByStatus = { online: 0, idle: 0, dnd: 0, offline: 0 };
-  // device-only rows are not status changes; with a device filter only changes made on that device count
-  const realChanges = prs.filter((r) => r.change !== false && (!device || hasDevice(r.devices, device)));
+  // device-only rows are not status changes; with a device filter only changes made on that device
+  // count, as the status that app changed to
+  const realChanges = prs.filter((r) => r.change !== false).map((r) => (device ? { ...r, status: appState(r, device) } : r));
   const prsShown = STATUSES.includes(status) ? realChanges.filter((r) => r.status === status) : realChanges;
   for (const r of realChanges) changesByStatus[r.status] += 1;
   for (const r of prsShown) {

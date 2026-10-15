@@ -755,6 +755,25 @@
       display: inline-block;
     }
 
+    /* Activity: one app's status ("🖥️ ●→●"); apps that didn't change on that row are dimmed */
+    .app-st {
+      display: inline-flex;
+      align-items: center;
+      gap: .3rem;
+      margin-right: .9rem;
+      font-size: .8rem;
+      white-space: nowrap;
+    }
+
+    .app-st .dot {
+      width: .6rem;
+      height: .6rem;
+    }
+
+    .app-same {
+      opacity: .45;
+    }
+
     .badge {
       display: inline-block;
       border-radius: calc(var(--radius-sm) * .6);
@@ -2925,33 +2944,28 @@
     function renderLogs(logs) {
       lastLogs = logs;
       $("logEmpty").classList.toggle("hidden", logs.length > 0);
-      // Each app's own status ({ desktop: "idle", mobile: "online" }; offline = none), and what it
-      // was on that member's previous row in the list (logs are newest first). A status or device
-      // filter hides rows in between, so no "before" then. Rows from before per-app statuses were
-      // logged have none.
+      // Each app's own status ({ desktop: "idle", mobile: "online" }; offline = none) and what it
+      // was on the member's previous row (device_before, from the server). Rows from before
+      // per-app statuses were logged have no device_status.
       const appStatus = (l) => l.device_status || (l.status === "offline" ? {} : null);
-      const prevApps = new Map(), lastApps = new Map();
-      for (let i = logs.length - 1; i >= 0 && !state.status && !state.device; i--) {
-        const l = logs[i];
-        if (l.type !== "presence") continue;
-        prevApps.set(l, lastApps.get(l.user_id));
-        lastApps.set(l.user_id, appStatus(l));
-      }
-      const stText = (s) => `<span style="color:var(--${STATUS[s] ? s : "offline"})">${esc((STATUS[s] || STATUS.offline).label)}</span>`;
+      const stDot = (s) => `<span class="dot" style="background:var(--${STATUS[s] ? s : "offline"})"></span>`;
+      const stLabel = (s) => (STATUS[s] || STATUS.offline).label;
       $("logRows").innerHTML = logs.map((l) => {
         let b, extra = "";
         if (l.type === "presence") {
           const st = STATUS[l.status] || STATUS.offline;
           b = badge(st.cls, st.label);
-          const now = appStatus(l), was = prevApps.get(l);
+          const now = appStatus(l), was = l.device_before;
           if (now) {
-            // "🖥️ PC app Online → Idle · 📱 Phone Online"; the badge is the top status across apps
+            // "🖥️ ●→●  📱 ●": the app that changed gets before → after, the rest are dimmed;
+            // the badge is the top status across apps
             const apps = Object.keys(DEVICES).filter((d) => now[d] || (was && was[d]));
             extra = apps.map((d) => {
               const s = now[d] || "offline", before = was ? was[d] || "offline" : null;
               const changed = before && before !== s;
-              return `<span class="whitespace-nowrap text-xs${changed ? " font-semibold" : ""}">${DEVICES[d].icon} ${esc(DEVICES[d].label)} ${changed ? stText(before) + " → " : ""}${stText(s)}</span>`;
-            }).join(` <span class="muted">·</span> `);
+              const title = `${DEVICES[d].label}: ${changed ? stLabel(before) + " → " : ""}${stLabel(s)}`;
+              return `<span class="app-st${changed ? "" : " app-same"}" title="${esc(title)}">${DEVICES[d].icon}${changed ? stDot(before) + `<span class="muted">→</span>` : ""}${stDot(s)}</span>`;
+            }).join("");
           } else if (l.devices) extra = deviceIcons(l.devices.split(",")) + ` <span class="muted text-xs">${esc(l.devices.split(",").map((d) => (DEVICES[d] || { label: d }).label).join(" + "))}</span>`;
         } else if (l.type === "voice_join") {
           b = badge("b-accent", "Joined voice");

@@ -343,13 +343,13 @@ module.exports = (client) => {
     const statusAfter = !after ? " " : after.status;
 
     // Each device has its own status (e.g. idle on PC while online on the phone), so the channel
-    // gets one line per device that changed: "PC: online > idle". A device not listed is offline.
-    const deviceNames = { desktop: "PC", mobile: "phone", web: "web" };
+    // gets one line per device that changed: "🖥️ online > idle". A device not listed is offline.
+    const deviceNames = { desktop: "🖥️", mobile: "📱", web: "🌐" };
     const devStatus = (p, d) => p?.clientStatus?.[d] || "offline";
     const changedDevices = before
       ? Object.keys(deviceNames).filter((d) => devStatus(before, d) !== devStatus(after, d))
       : [];
-    const lines = changedDevices.map((d) => `${deviceNames[d]}: ${devStatus(before, d)}\t>\t${devStatus(after, d)}`);
+    const lines = changedDevices.map((d) => `${deviceNames[d]} ${devStatus(before, d)}\t>\t${devStatus(after, d)}`);
     // Without the earlier presence (not cached) only the overall status is known
     if (!lines.length && statusBefore != statusAfter) lines.push(statusBefore + "\t>\t" + statusAfter);
     for (const line of lines) {

@@ -412,6 +412,14 @@ function splitDevices(r) {
   const device_status = parts.length && parts.every((p) => p[1]) ? Object.fromEntries(parts) : null;
   return { ...r, devices, device_status };
 }
+// Each app's status on a split row ({} when offline), or null for an older row that doesn't say
+const appStatuses = (r) => r.device_status || (r.status === "offline" ? {} : null);
+// One app's status on a split row; older rows count the overall status for each app listed
+function statusOnApp(r, d) {
+  if (!r) return "offline";
+  if (r.device_status) return r.device_status[d] || "offline";
+  return r.status !== "offline" && String(r.devices || "").split(",").includes(d) ? r.status : "offline";
+}
 
 async function getPresenceRows(sinceIso, untilIso) {
   if (!supabase) return { rows: [], truncated: false };
@@ -515,10 +523,12 @@ async function getRecentLogs(limit = 30, opts = {}) {
           .from("presence_logs")
           .select("*") // includes devices once schema.sql has added it
           .order("changed_at", { ascending: false })
-          .limit(limit * 2); // headroom for the blips dropped below
+          // headroom for the blips dropped below; with a device filter the rows are picked
+          // below (that app's own status changed), so status/device can't be queried here
+          .limit(device ? limit * 5 : limit * 2);
         if (userId) q = byUser(q);
-        if (status) q = q.eq("status", status);
-        return window(byDevice(q), "changed_at");
+        if (status && !device) q = q.eq("status", status);
+        return window(q, "changed_at");
       })()
       : none;
     const joinsQ = wantVoice
@@ -550,25 +560,49 @@ async function getRecentLogs(limit = 30, opts = {}) {
     const [presence, joins, leaves] = await Promise.all([presenceQ, joinsQ, leavesQ]);
     for (const r of [presence, joins, leaves]) if (r.error) throw r.error;
 
-    // Drop blips. The page may be filtered (status/device), so check against every change those
-    // members made over its span.
+    // Each status row gets its member's previous row, so the page can show what changed on each
+    // app however the list is filtered. Every change those members made over the page's span (and
+    // the one before it) is loaded for that; blips are dropped here too.
     if (presence.data.length) {
       const times = presence.data.map((r) => Date.parse(r.changed_at));
+      const cols = "id, user_id, status, changed_at" + (hasDevicesCol ? ", devices" : "");
       const { rows: around } = await fetchAll(() =>
         supabase
           .from("presence_logs")
-          .select("id, user_id, status, changed_at")
+          .select(cols)
           .in("user_id", [...new Set(presence.data.map((r) => r.user_id))])
           .gte("changed_at", new Date(Math.min(...times) - PRESENCE_BLIP_MS).toISOString())
           .lte("changed_at", new Date(Math.max(...times) + PRESENCE_BLIP_MS).toISOString())
           .order("id", { ascending: true })
       );
       const blips = await presenceBlipIds(around);
-      presence.data = presence.data.filter((r) => !blips.has(r.id));
+      const firstId = new Map();
+      for (const r of around) if (!firstId.has(r.user_id)) firstId.set(r.user_id, r.id);
+      const earlier = await Promise.all(
+        [...firstId].map(([uid, id]) =>
+          supabase.from("presence_logs").select(cols).eq("user_id", uid).lt("id", id).order("id", { ascending: false }).limit(1)
+            .then(({ data, error }) => {
+              if (error) throw error;
+              return data;
+            })
+        )
+      );
+      const prevOf = new Map(), last = new Map();
+      const ordered = [...earlier.flat(), ...around].filter((r) => !blips.has(r.id)).map(splitDevices).sort((a, b) => Number(a.id) - Number(b.id));
+      for (const r of ordered) {
+        prevOf.set(r.id, last.get(r.user_id) || null);
+        last.set(r.user_id, r);
+      }
+      presence.data = presence.data.filter((r) => !blips.has(r.id)).map(splitDevices).map((r) => ({ ...r, prev: prevOf.get(r.id) || null }));
+      // Device filter: only rows where that app's own status changed (incl. it going offline)
+      if (device) presence.data = presence.data.filter((r) => {
+        const s = statusOnApp(r, device);
+        return s !== statusOnApp(r.prev, device) && (!status || s === status);
+      });
     }
 
     const events = [
-      ...presence.data.map(splitDevices).map((r) => ({ id: r.id, type: "presence", user_id: r.user_id, username: r.username, display_name: r.display_name, status: r.status, devices: r.devices, device_status: r.device_status, at: r.changed_at })),
+      ...presence.data.map((r) => ({ id: r.id, type: "presence", user_id: r.user_id, username: r.username, display_name: r.display_name, status: r.status, devices: r.devices, device_status: r.device_status, device_before: r.prev ? appStatuses(r.prev) : {}, at: r.changed_at })),
       ...joins.data.map((r) => ({ id: r.id, type: "voice_join", user_id: r.user_id, username: r.username, display_name: r.display_name, channel_name: r.channel_name, devices: r.devices || null, at: r.joined_at })),
       ...leaves.data.map((r) => ({ id: r.id, type: "voice_leave", user_id: r.user_id, username: r.username, display_name: r.display_name, channel_name: r.channel_name, duration_seconds: r.duration_seconds, speaking_seconds: r.speaking_seconds, at: r.left_at })),
     ];
