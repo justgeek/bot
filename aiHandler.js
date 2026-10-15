@@ -58,8 +58,25 @@ async function handleAICommand(msg, userPrompt, options = {}) {
   const audioParts = [];
   const skippedNotes = [];
 
-  if (msg.attachments && msg.attachments.size > 0) {
-    for (const [id, attachment] of msg.attachments) {
+  // If this "!!" message is a Discord reply, pull in the message it's
+  // replying to so the AI sees its text, embeds, attachments and author.
+  let quoted = null;
+  if (msg.reference?.messageId) {
+    try {
+      quoted = await msg.fetchReference();
+    } catch (err) {
+      console.error("Error fetching replied-to message:", err);
+    }
+  }
+
+  const promptText = buildPromptText(msg, userPrompt, quoted);
+
+  await collectAttachments(quoted?.attachments);
+  await collectAttachments(msg.attachments);
+
+  async function collectAttachments(attachments) {
+    if (!attachments || attachments.size === 0) return;
+    for (const [id, attachment] of attachments) {
       const { category, mimeType } = resolveAttachmentType(attachment);
       if (!category) continue; // not image/video/audio - ignore (e.g. .txt, .zip)
 
@@ -91,7 +108,7 @@ async function handleAICommand(msg, userPrompt, options = {}) {
   // Text prompt used for Groq: images are attached as image_url parts below,
   // but video/audio can't be represented for Groq at all, so just tell it
   // what was there in case the reply seems to be missing context.
-  let groqPromptText = userPrompt;
+  let groqPromptText = promptText;
   const groqUnsupportedNotes = [];
   if (videoParts.length > 0) groqUnsupportedNotes.push(`${videoParts.length} video attachment(s)`);
   if (audioParts.length > 0) groqUnsupportedNotes.push(`${audioParts.length} audio attachment(s)`);
@@ -133,7 +150,7 @@ async function handleAICommand(msg, userPrompt, options = {}) {
   }));
 
   const geminiCurrentParts = [];
-  let geminiPromptText = userPrompt;
+  let geminiPromptText = promptText;
   if (skippedNotes.length > 0) {
     geminiPromptText = `${geminiPromptText}\n\n${skippedNotes.join("\n")}`;
   }
@@ -149,7 +166,7 @@ async function handleAICommand(msg, userPrompt, options = {}) {
   // exchange for the next "!!" message in this channel, and to let the
   // caller (e.g. events.js) know what the AI actually said, if it wants to.
   function recordExchange(assistantText) {
-    addToHistory(msg, "user", userPrompt);
+    addToHistory(msg, "user", promptText);
     addToHistory(msg, "assistant", assistantText);
     if (typeof onReply === "function") {
       try {
@@ -277,6 +294,43 @@ async function handleAICommand(msg, userPrompt, options = {}) {
       }
     }
   }
+}
+
+// "Nickname (@username)" so the AI knows who is talking and can match
+// people mentioned by either name.
+function describeAuthor(message) {
+  const username = message.author.username;
+  const name = message.member?.displayName || message.author.globalName || username;
+  const label = name === username ? `@${username}` : `${name} (@${username})`;
+  return message.author.id === message.client.user.id ? `${label} [you, the bot]` : label;
+}
+
+function describeEmbeds(message) {
+  return [...(message.embeds || [])]
+    .map((e) => [e.title, e.description, e.url].filter(Boolean).join(" - "))
+    .filter(Boolean)
+    .map((text) => `[Embed: ${text}]`);
+}
+
+// Wraps the prompt with who sent it and, if it's a reply, the quoted
+// message. This is also what gets saved to history, so follow-up "!!"
+// messages keep the names/quote context.
+function buildPromptText(msg, userPrompt, quoted) {
+  const lines = [];
+  if (quoted) {
+    const quotedLines = [quoted.content, ...describeEmbeds(quoted)].filter(Boolean);
+    if (quoted.attachments?.size > 0) {
+      const names = [...quoted.attachments.values()].map((a) => a.name).join(", ");
+      quotedLines.push(`[Attachments (included below if supported): ${names}]`);
+    }
+    if (quotedLines.length === 0) quotedLines.push("(no text)");
+    lines.push(`[Replying to a message from ${describeAuthor(quoted)}:]`);
+    lines.push(...quotedLines.map((l) => `> ${l.replace(/\n/g, "\n> ")}`));
+    lines.push("");
+  }
+  lines.push(`[${describeAuthor(msg)} says:]`);
+  lines.push(userPrompt || "(no text)");
+  return lines.join("\n");
 }
 
 module.exports = { handleAICommand };
