@@ -298,7 +298,9 @@ module.exports = (client) => {
       message = message.replace("!", "").trim();
       let lang = "ja";
       try {
-        const audioPath = await audio.textToSpeech(message);
+        // ElevenLabs glitches on long runs of the same letter, so cap repeats at 2
+        const ttsText = message.replace(/(.)\1{2,}/gu, "$1$1");
+        const audioPath = await audio.textToSpeech(ttsText);
         const resource = createAudioResource(audioPath);
         await audio.ensureVoiceReady(client, msg);
         audio.playVoice(resource);
