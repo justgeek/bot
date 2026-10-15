@@ -38,9 +38,9 @@ create table if not exists late_notices (
   user_id       text        not null,
   username      text        not null,
   display_name  text,
-  target_date   date        not null,          -- target start on the submitter's clock
+  target_date   date        not null,          -- target start on the server clock (DEFAULT_TZ, Africa/Cairo)
   target_time   text        not null,          -- "HH:mm"
-  delay_minutes integer     not null,
+  delay_minutes integer     not null,          -- 0 = absence notice (not coming that night)
   reason        text        not null,
   is_valid      boolean     not null default false,
   submitted_at  timestamptz not null default now()

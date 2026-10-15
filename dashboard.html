@@ -1934,6 +1934,7 @@
                   <option value="last30">Last 30 days</option>
                   <option value="this_month">This month</option>
                   <option value="last_month">Last month</option>
+                  <option value="all">All time</option>
                   <option value="custom">Custom dates</option>
                 </select>
               </label>
@@ -2113,6 +2114,9 @@
           <input type="number" id="excuseDelay" min="1" max="720" value="45" class="field w-full">
         </div>
       </div>
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" id="excuseAbsent"> Absent - won't come at all that night
+      </label>
       <div>
         <label class="block text-xs font-semibold uppercase muted mb-1">Reason / Excuse</label>
         <input type="text" id="excuseReason" placeholder="e.g. Overtime at work / Traffic / Dinner"
@@ -3527,9 +3531,10 @@
       reportPicker.close();
 
       const period = $("rPeriod").value;
-      const [from, to] = presetDates(period);
-      if (period !== "custom") { $("rFrom").value = from; $("rTo").value = to; }
-      if (from > to) { $("rStatus").textContent = "The start date must be before the end date."; return; }
+      // "all" is resolved server-side to the first recorded day
+      const [from, to] = period === "all" ? ["all", dateKeyOf(Date.now())] : presetDates(period);
+      if (period !== "custom" && period !== "all") { $("rFrom").value = from; $("rTo").value = to; }
+      if (period !== "all" && from > to) { $("rStatus").textContent = "The start date must be before the end date."; return; }
       const type = $("rType").value;
       const selectedUsers = getSelectedReportUsers();
 
@@ -3625,7 +3630,7 @@
       const scope = m.user_count ? `Comparing ${m.user_count} selected member(s)` : "All members";
       const kpis = [
         kpiCard("🚨 Slacker King", sm.chief_slacker ? sm.chief_slacker.name : "Nobody!", sm.chief_slacker ? `${sm.chief_slacker.penalty_points} penalty pts (${sm.chief_slacker.days_late} days late)` : "Everyone was on time!"),
-        kpiCard("Total Penalty Points", sm.total_penalties.toLocaleString(), "1 pt per 15m delay, 3 pts for no-show"),
+        kpiCard("Total Penalty Points", sm.total_penalties.toLocaleString(), "1 pt per 15m delay; no-show: 1 pt per 15m of the session (min 3)"),
         kpiCard("Total Late Arrivals", sm.total_late_occurrences.toLocaleString(), "Times someone missed the target time"),
         kpiCard("Average Punctuality", sm.avg_punctuality + "%", `Target: ${m.target_time} (Grace: ${m.grace_minutes}m)`),
       ].join("");
@@ -3655,7 +3660,7 @@
         if (l.status === "late") stBadge = `<span class="badge b-dnd font-bold">Late by ${l.late_minutes}m</span>`;
         if (l.status === "late_excess") stBadge = `<span class="badge b-dnd font-bold">Exceeded Excuse (+${l.late_minutes}m)</span>`;
         if (l.status === "excused") stBadge = `<span class="badge b-accent font-bold">Excused Notice</span>`;
-        if (l.status === "absent") stBadge = `<span class="badge b-offline">No-Show / Absent</span>`;
+        if (l.status === "absent") stBadge = `<span class="badge b-offline">No-Show / Absent${l.late_minutes ? ` (missed ${dur(l.late_minutes * 60)})` : ""}</span>`;
         if (l.status === "silent_ontime") stBadge = `<span class="badge b-idle font-bold">🤐 Silent / Muted Lurker</span>`;
 
         return `<tr>
@@ -3903,6 +3908,8 @@
     function openExcuseModal() {
       $("excuseFeedback").classList.add("hidden");
       $("excuseReason").value = "";
+      $("excuseAbsent").checked = false;
+      $("excuseDelay").disabled = false;
       // Default to the next upcoming target start (today, or tomorrow if today's already passed)
       const nowLocal = toLocalInput(Date.now());
       const time = ($("rTargetTime") && $("rTargetTime").value) || "21:00";
@@ -3917,11 +3924,13 @@
     $("openExcuseModalBtn").onclick = openExcuseModal;
     $("closeExcuseModal").onclick = hideExcuseModal;
     $("cancelExcuseBtn").onclick = hideExcuseModal;
+    $("excuseAbsent").onchange = () => { $("excuseDelay").disabled = $("excuseAbsent").checked; };
 
     $("submitExcuseBtn").onclick = async () => {
       const userId = $("excuseUser").value;
       const targetAt = $("excuseTargetAt").value.slice(0, 16);
       const delayMinutes = $("excuseDelay").value || "45";
+      const absent = $("excuseAbsent").checked;
       const reason = $("excuseReason").value.trim();
 
       if (!targetAt) {
@@ -3940,14 +3949,14 @@
         const res = await fetch("/api/late-notice" + (KEY ? `?key=${KEY}` : ""), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId, targetAt, tz: TZ, delayMinutes, reason })
+          body: JSON.stringify({ userId, targetAt, tz: TZ, delayMinutes, absent, reason })
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || `Server returned ${res.status}`);
 
         const chatNote = data.announced ? " Posted in chat." : " (Could not post it in chat.)";
         if (data.notice?.is_valid) {
-          showExcuseFeedback("✅ Notice submitted before target time! Late penalty will be excused." + chatNote, true);
+          showExcuseFeedback((absent ? "✅ Absence notice submitted before target time! The day will be excused." : "✅ Notice submitted before target time! Late penalty will be excused.") + chatNote, true);
         } else {
           showExcuseFeedback("⚠️ Submitted after target start time! Notice recorded, but cannot be excused." + chatNote, false);
         }

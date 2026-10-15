@@ -1,5 +1,5 @@
 // report.js - attendance and slacker/penalty reports for voice channels and online status.
-const { makeTz } = require("./tz");
+const { makeTz, DEFAULT_TZ } = require("./tz");
 const db = require("./db");
 
 const STATUSES = ["online", "idle", "dnd"];
@@ -208,15 +208,35 @@ function computeReport(o) {
     const slackerMembers = [];
     const slackerLog = [];
 
-    // Late notices per member per gaming day; one submitted in time beats one that wasn't
+    // Late notices per member per gaming day; one submitted in time beats one that wasn't.
+    // Targets are stored on the server clock (DEFAULT_TZ), and validity is re-checked against
+    // submitted_at so the viewer's timezone setting can't make a late notice count.
     const noticeOf = new Map();
-    for (const n of o.notices || []) {
-      const at = z.localToMs(`${n.target_date}T${String(n.target_time || "").slice(0, 5)}`);
+    const serverTz = makeTz(DEFAULT_TZ, 0);
+    for (const raw of o.notices || []) {
+      const at = serverTz.localToMs(`${raw.target_date}T${String(raw.target_time || "").slice(0, 5)}`);
       if (!Number.isFinite(at)) continue;
+      const sentAt = Date.parse(raw.submitted_at);
+      const n = { ...raw, is_valid: Number.isFinite(sentAt) ? sentAt < at : !!raw.is_valid };
       const key = n.user_id + "|" + z.dateOf(at);
       const prev = noticeOf.get(key);
       if (!prev || n.is_valid || !prev.is_valid) noticeOf.set(key, n);
     }
+
+    // When the group's voice session ended each gaming day (last leave among everyone, or now if
+    // still going). A no-show is charged as if late for that whole session.
+    const sessionEnd = new Map();
+    for (const r of sessionRows) {
+      if (channel && r.channel_id !== channel) continue;
+      if (!includeAfk && !channel && db.isAfkChannel(r.channel_id, r.channel_name, client)) continue;
+      const start = Date.parse(r.joined_at);
+      const end = r.left_at ? Date.parse(r.left_at) : now;
+      const cs = Math.max(start, fromMs);
+      const ce = Math.min(end, toMs);
+      if (!(ce > cs)) continue;
+      eachDaySeg(cs, ce, (date, a, b) => { if (b > (sessionEnd.get(date) || 0)) sessionEnd.set(date, b); });
+    }
+    const ABSENT_MIN_POINTS = 3;
 
     for (const uid of ids) {
       let totalSecs = 0, totalSpk = 0, totalStrm = 0, totalMute = 0, totalDeaf = 0;
@@ -245,8 +265,10 @@ function computeReport(o) {
 
         const attendedDay = R && R.seconds >= (minSeconds || 300);
         const notice = noticeOf.get(uid + "|" + date);
-        const excuse = notice ? `${notice.delay_minutes}m notice: ${notice.reason}${notice.is_valid ? "" : " - sent too late"}` : undefined;
-        const excusedMs = notice && notice.is_valid ? notice.delay_minutes * 60000 : 0;
+        // delay_minutes = 0 is an "absent all night" notice
+        const absentNotice = notice && notice.is_valid && !(notice.delay_minutes > 0);
+        const excuse = notice ? `${notice.delay_minutes > 0 ? notice.delay_minutes + "m late" : "absence"} notice: ${notice.reason}${notice.is_valid ? "" : " - sent too late"}` : undefined;
+        const excusedMs = absentNotice ? Infinity : notice && notice.is_valid ? notice.delay_minutes * 60000 : 0;
 
         // Arrival counts from the target time onward: already in voice at the target = arrived at the target,
         // otherwise the first join after it. Time spent before the target (and left) doesn't count.
@@ -255,11 +277,29 @@ function computeReport(o) {
         const hasArrival = attendedDay && Number.isFinite(arrival);
 
         // Target (plus grace / announced delay) hasn't passed yet and they're not in: nothing to judge yet
-        if (!hasArrival && now < targetMs + graceMs + excusedMs) continue;
+        if (!hasArrival && now < targetMs + graceMs + (absentNotice ? 0 : excusedMs)) continue;
 
-        if (!hasArrival) {
+        if (!hasArrival && absentNotice) {
+          // Announced the absence before the start time: excused, no penalty
+          daysExcused += 1;
+          slackerLog.push({
+            date,
+            user_id: uid,
+            name: nameOf(uid),
+            target_time: targetMs,
+            actual_time: null,
+            status: "excused",
+            late_minutes: 0,
+            penalty_points: 0,
+            excuse,
+          });
+        } else if (!hasArrival) {
+          // Missed the whole session: 1 pt per 15m from the target until the group left (at least 3)
+          const end = sessionEnd.get(date) || 0;
+          const missedMin = end > targetMs ? Math.round((end - targetMs) / 60000) : 0;
+          const points = Math.max(ABSENT_MIN_POINTS, Math.ceil(missedMin / 15));
           daysAbsent += 1;
-          totalPenaltyPoints += 3;
+          totalPenaltyPoints += points;
           slackerLog.push({
             date,
             user_id: uid,
@@ -267,8 +307,8 @@ function computeReport(o) {
             target_time: targetMs,
             actual_time: null,
             status: "absent",
-            late_minutes: 0,
-            penalty_points: 3,
+            late_minutes: missedMin,
+            penalty_points: points,
             excuse,
           });
         } else {

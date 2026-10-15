@@ -409,14 +409,21 @@ module.exports = function registerDashboard(app, client) {
       const tz = validTz(req.query.tz) || DEFAULT_TZ;
       const dayStart = Math.min(23, Math.max(0, parseInt(req.query.dayStart, 10) || 18));
       const type = ["presence", "slackers"].includes(req.query.type) ? req.query.type : "voice";
-      const from = String(req.query.from || "");
-      const to = String(req.query.to || "");
+      const z = makeTz(tz, dayStart);
+      // from=all: from the first recorded activity up to today, with no day cap
+      const allTime = req.query.from === "all";
+      let from = String(req.query.from || "");
+      let to = String(req.query.to || "");
+      if (allTime) {
+        to = z.dateOf(Date.now());
+        const firstMs = await db.getFirstActivityMs();
+        from = firstMs ? z.dateOf(firstMs) : to;
+      }
       if (!validDate(from) || !validDate(to) || from > to) return res.status(400).json({ error: "bad_dates" });
 
-      const z = makeTz(tz, dayStart);
       let days = 0;
       for (let d = from; d <= to && days <= MAX_REPORT_DAYS; d = z.addDays(d, 1)) days++;
-      if (days > MAX_REPORT_DAYS) return res.status(400).json({ error: "range_too_long", max_days: MAX_REPORT_DAYS });
+      if (!allTime && days > MAX_REPORT_DAYS) return res.status(400).json({ error: "range_too_long", max_days: MAX_REPORT_DAYS });
 
       const rawUser = req.query.user || req.query.users || "";
       let userList = [];
@@ -531,18 +538,22 @@ module.exports = function registerDashboard(app, client) {
       const now = Date.now();
       if (Math.abs(targetMs - now) > 30 * DAY) return res.status(400).json({ error: "Target time must be within 30 days" });
 
-      const delayMinutes = parseInt(body.delayMinutes, 10);
-      if (!(delayMinutes >= 1 && delayMinutes <= 720)) return res.status(400).json({ error: "Delay must be between 1 and 720 minutes" });
+      // absent = won't come at all that night, stored as delay 0
+      const absent = body.absent === true;
+      const delayMinutes = absent ? 0 : parseInt(body.delayMinutes, 10);
+      if (!absent && !(delayMinutes >= 1 && delayMinutes <= 720)) return res.status(400).json({ error: "Delay must be between 1 and 720 minutes" });
       const reason = String(body.reason || "").replace(/\s+/g, " ").trim().slice(0, 200);
       if (!reason) return res.status(400).json({ error: "Please enter a reason" });
 
       const isValid = now < targetMs;
+      // Store the target on the server clock so every report reads the same moment
+      const sp = makeTz(DEFAULT_TZ, 0).partsOf(targetMs);
       const notice = await db.addLateNotice({
         userId,
         username: member.user.username,
         displayName: member.displayName,
-        targetDate: body.targetAt.slice(0, 10),
-        targetTime: body.targetAt.slice(11, 16),
+        targetDate: sp.date,
+        targetTime: String(sp.hour).padStart(2, "0") + ":" + String(sp.minute).padStart(2, "0"),
         delayMinutes,
         reason,
         isValid,
@@ -551,11 +562,15 @@ module.exports = function registerDashboard(app, client) {
 
       const unix = (ms) => Math.floor(ms / 1000);
       const text =
-        `📝 **Late notice** - <@${userId}> will be about **${delayMinutes} min** late for <t:${unix(targetMs)}:F>` +
-        ` (expected around <t:${unix(targetMs + delayMinutes * 60000)}:t>).\n` +
+        (absent
+          ? `📝 **Absence notice** - <@${userId}> won't make it for <t:${unix(targetMs)}:F>.\n`
+          : `📝 **Late notice** - <@${userId}> will be about **${delayMinutes} min** late for <t:${unix(targetMs)}:F>` +
+            ` (expected around <t:${unix(targetMs + delayMinutes * 60000)}:t>).\n`) +
         `> ${reason.replace(/[\\*_~`|>@]/g, "\\$&")}\n` +
         (isValid
-          ? "✅ Submitted before the start time - late penalty waived up to that delay."
+          ? absent
+            ? "✅ Submitted before the start time - excused, no penalty."
+            : "✅ Submitted before the start time - late penalty waived up to that delay."
           : "⚠️ Submitted after the start time - recorded, but the penalty still counts.");
       let announced = false;
       try {

@@ -259,7 +259,7 @@ async function addLateNotice(n) {
       user_id: String(n.userId),
       username: n.username,
       display_name: n.displayName || null,
-      target_date: n.targetDate, // "YYYY-MM-DD" + "HH:mm" on the submitter's clock
+      target_date: n.targetDate, // "YYYY-MM-DD" + "HH:mm" on the server clock (DEFAULT_TZ)
       target_time: n.targetTime,
       delay_minutes: n.delayMinutes,
       reason: n.reason,
@@ -296,6 +296,22 @@ async function getLateNotices(fromDate, toDate) {
 }
 
 // ---------- Reads ----------
+// Earliest recorded voice join / presence change, in ms (null when there is nothing yet)
+async function getFirstActivityMs() {
+  if (!supabase) return null;
+  try {
+    const [v, p] = await Promise.all([
+      supabase.from("voice_sessions").select("joined_at").order("joined_at", { ascending: true }).limit(1),
+      supabase.from("presence_logs").select("changed_at").order("changed_at", { ascending: true }).limit(1),
+    ]);
+    const times = [v.data?.[0]?.joined_at, p.data?.[0]?.changed_at].map((t) => Date.parse(t)).filter(Number.isFinite);
+    return times.length ? Math.min(...times) : null;
+  } catch (err) {
+    console.error("[DB] getFirstActivityMs failed:", err.message || err);
+    return null;
+  }
+}
+
 const PAGE = 1000;
 const MAX_ROWS = 50000;
 async function fetchAll(makeQuery) {
@@ -554,6 +570,7 @@ module.exports = {
   checkpointSpeaking,
   addLateNotice,
   getLateNotices,
+  getFirstActivityMs,
   getSessionRows,
   getPresenceRows,
   getTotalVoiceSeconds,
