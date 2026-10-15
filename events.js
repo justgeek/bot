@@ -342,19 +342,37 @@ module.exports = (client) => {
     const statusBefore = !before ? " " : before.status;
     const statusAfter = !after ? " " : after.status;
 
-    if (statusBefore != statusAfter) {
-      const msg = now() + "\t**" + user.username + ":\t**" + statusBefore + "\t>\t" + statusAfter;
+    // Each device has its own status (e.g. idle on PC while online on the phone), so the channel
+    // gets one line per device that changed: "PC: online > idle". A device not listed is offline.
+    const deviceNames = { desktop: "PC", mobile: "phone", web: "web" };
+    const devStatus = (p, d) => p?.clientStatus?.[d] || "offline";
+    const changedDevices = before
+      ? Object.keys(deviceNames).filter((d) => devStatus(before, d) !== devStatus(after, d))
+      : [];
+    const lines = changedDevices.map((d) => `${deviceNames[d]}: ${devStatus(before, d)}\t>\t${devStatus(after, d)}`);
+    // Without the earlier presence (not cached) only the overall status is known
+    if (!lines.length && statusBefore != statusAfter) lines.push(statusBefore + "\t>\t" + statusAfter);
+    for (const line of lines) {
+      const msg = now() + "\t**" + user.username + ":\t**" + line;
       console.log(msg);
       sendToChannel(client, IDs.channelStatus, msg);
     }
 
-    const dbStatusBefore = before?.status || "offline";
-    const dbStatusAfter = after?.status || "offline";
-    // Which apps they're on: "desktop", "mobile", "web" or a mix like "desktop,mobile"
-    const devicesOf = (p) => Object.keys(p?.clientStatus || {}).sort().join(",");
+    // The status that gets timed is the top one across their devices (online > dnd > idle), so
+    // being online on PC and idle on the phone counts once, as online.
+    const rank = ["offline", "idle", "dnd", "online"];
+    const topStatus = (p) => {
+      const list = Object.values(p?.clientStatus || {});
+      if (!list.length) return p?.status || "offline";
+      return list.reduce((a, b) => (rank.indexOf(b) > rank.indexOf(a) ? b : a), "offline");
+    };
+    const dbStatusBefore = topStatus(before);
+    const dbStatusAfter = topStatus(after);
+    // Each app they're on with its own status: "desktop:idle,mobile:online"
+    const devicesOf = (p) => Object.entries(p?.clientStatus || {}).sort(([a], [b]) => a.localeCompare(b)).map(([d, s]) => `${d}:${s}`).join(",");
     const devicesAfter = dbStatusAfter === "offline" ? "" : devicesOf(after);
     const devicesChanged = dbStatusAfter !== "offline" && devicesOf(before) !== devicesAfter;
-    // A row also goes in when only the device changes (e.g. left the PC, still online on the phone)
+    // A row also goes in when only a device changes (e.g. PC went idle, still online on the phone)
     if ((dbStatusBefore !== dbStatusAfter || devicesChanged) && !user?.bot) {
       db.logPresence(
         userID,

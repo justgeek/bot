@@ -19,6 +19,8 @@ const STATUSES = ["online", "idle", "dnd", "offline"];
 // Which Discord app(s) a member was on. Rows logged before device tracking have no devices -> "unknown".
 const DEVICE_GROUPS = ["desktop", "mobile", "web", "multi", "unknown"];
 const hasDevice = (devices, d) => String(devices || "").split(",").includes(d);
+// A presence row's status on one app; rows logged before per-app statuses only have the overall one
+const statusOn = (r, device) => (device && r.devStatus?.[device]) || r.status;
 function deviceGroup(devices) {
   const list = String(devices || "").split(",").filter(Boolean);
   if (!list.length) return "unknown";
@@ -335,6 +337,7 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
       status: r.status,
       dev: deviceGroup(r.devices),
       devices: r.devices,
+      devStatus: r.device_status,
       t: Date.parse(r.changed_at)
     }))
     .filter((r) => r.t <= now && (since == null || r.t >= since) && STATUSES.includes(r.status));
@@ -375,14 +378,17 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
       if (!(end > start)) continue;
       const secs = (end - start) / 1000;
       if (device && !hasDevice(cleanArr[i].devices, device)) continue; // only time spent on that device
-      row[cleanArr[i].status] += secs;
-      totals[cleanArr[i].status] += secs;
-      if (cleanArr[i].status !== "offline") {
+      // With a device filter, that app's own status (idle on PC while online on the phone is idle);
+      // otherwise the top status across their apps, so time is never counted twice
+      const st = statusOn(cleanArr[i], device);
+      row[st] += secs;
+      totals[st] += secs;
+      if (st !== "offline") {
         row.devices[cleanArr[i].dev] += secs;
         deviceTotals[cleanArr[i].dev] += secs;
       }
 
-      const target = hourlyBy[cleanArr[i].status];
+      const target = hourlyBy[st];
       eachHourSlice(start, end, (b, sec) => {
         target[b.hour] += sec;
       });
@@ -461,4 +467,4 @@ function computeStats({ sessionRows, presenceRows, now, since, user: userInput, 
   };
 }
 
-module.exports = { computeStats, hasDevice };
+module.exports = { computeStats, hasDevice, statusOn };

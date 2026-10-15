@@ -2925,12 +2925,34 @@
     function renderLogs(logs) {
       lastLogs = logs;
       $("logEmpty").classList.toggle("hidden", logs.length > 0);
+      // Each app's own status ({ desktop: "idle", mobile: "online" }; offline = none), and what it
+      // was on that member's previous row in the list (logs are newest first). A status or device
+      // filter hides rows in between, so no "before" then. Rows from before per-app statuses were
+      // logged have none.
+      const appStatus = (l) => l.device_status || (l.status === "offline" ? {} : null);
+      const prevApps = new Map(), lastApps = new Map();
+      for (let i = logs.length - 1; i >= 0 && !state.status && !state.device; i--) {
+        const l = logs[i];
+        if (l.type !== "presence") continue;
+        prevApps.set(l, lastApps.get(l.user_id));
+        lastApps.set(l.user_id, appStatus(l));
+      }
+      const stText = (s) => `<span style="color:var(--${STATUS[s] ? s : "offline"})">${esc((STATUS[s] || STATUS.offline).label)}</span>`;
       $("logRows").innerHTML = logs.map((l) => {
         let b, extra = "";
         if (l.type === "presence") {
           const st = STATUS[l.status] || STATUS.offline;
           b = badge(st.cls, st.label);
-          if (l.devices) extra = deviceIcons(l.devices.split(",")) + ` <span class="muted text-xs">${esc(l.devices.split(",").map((d) => (DEVICES[d] || { label: d }).label).join(" + "))}</span>`;
+          const now = appStatus(l), was = prevApps.get(l);
+          if (now) {
+            // "🖥️ PC app Online → Idle · 📱 Phone Online"; the badge is the top status across apps
+            const apps = Object.keys(DEVICES).filter((d) => now[d] || (was && was[d]));
+            extra = apps.map((d) => {
+              const s = now[d] || "offline", before = was ? was[d] || "offline" : null;
+              const changed = before && before !== s;
+              return `<span class="whitespace-nowrap text-xs${changed ? " font-semibold" : ""}">${DEVICES[d].icon} ${esc(DEVICES[d].label)} ${changed ? stText(before) + " → " : ""}${stText(s)}</span>`;
+            }).join(` <span class="muted">·</span> `);
+          } else if (l.devices) extra = deviceIcons(l.devices.split(",")) + ` <span class="muted text-xs">${esc(l.devices.split(",").map((d) => (DEVICES[d] || { label: d }).label).join(" + "))}</span>`;
         } else if (l.type === "voice_join") {
           b = badge("b-accent", "Joined voice");
           extra = esc(l.channel_name || "Voice channel") + (l.devices ? " " + deviceIcons(l.devices.split(",")) : "");

@@ -1,6 +1,7 @@
 // report.js - attendance and slacker/penalty reports for voice channels and online status.
 const { makeTz, DEFAULT_TZ } = require("./tz");
 const db = require("./db");
+const { statusOn } = require("./stats");
 
 const STATUSES = ["online", "idle", "dnd"];
 
@@ -158,7 +159,7 @@ function computeReport(o) {
       if (userFilter && !userFilter.has(r.user_id)) continue;
       if (r.status !== "offline" && !STATUSES.includes(r.status)) continue;
       if (!byUser.has(r.user_id)) byUser.set(r.user_id, []);
-      byUser.get(r.user_id).push({ id: Number(r.id) || 0, status: r.status, devices: r.devices, t: Date.parse(r.changed_at) });
+      byUser.get(r.user_id).push({ id: Number(r.id) || 0, status: r.status, devices: r.devices, devStatus: r.device_status, t: Date.parse(r.changed_at) });
     }
 
     for (const [uid, arr] of byUser) {
@@ -175,9 +176,10 @@ function computeReport(o) {
         const cs = Math.max(start, fromMs);
         const ce = Math.min(end, toMs);
         if (!(ce > cs)) continue;
-        const status = arr[i].status;
-        if (status === "offline") continue;
         if (device && !devList(arr[i].devices).includes(device)) continue; // only time on that device
+        // That app's own status when filtered to one device, else the top status across apps
+        const status = statusOn(arr[i], device);
+        if (status === "offline") continue;
         const grp = deviceGroup(arr[i].devices);
         const isLast = i + 1 >= arr.length;
         eachDaySeg(cs, ce, (date, a, b, ds, de) => {

@@ -69,7 +69,7 @@ function unionIntervals(intervals) {
 }
 
 // ---------- Writes ----------
-// presence_logs.devices ("desktop", "mobile", "web" or a comma list) is added by schema.sql;
+// presence_logs.devices (each app with its status, see splitDevices) is added by schema.sql;
 // until it exists, presence is logged and read without it.
 let hasDevicesCol = true;
 function devicesColMissing(error) {
@@ -403,6 +403,16 @@ async function presenceBlipIds(rows) {
   return ids;
 }
 
+// presence_logs.devices holds each app's own status ("desktop:idle,mobile:online"); older rows
+// hold only the apps ("desktop,mobile"). Readers get devices as the plain app list plus
+// device_status { desktop: "idle", ... } (null for older rows).
+function splitDevices(r) {
+  const parts = String(r.devices || "").split(",").filter(Boolean).map((p) => p.split(":"));
+  const devices = parts.map(([d]) => d).join(",") || null;
+  const device_status = parts.length && parts.every((p) => p[1]) ? Object.fromEntries(parts) : null;
+  return { ...r, devices, device_status };
+}
+
 async function getPresenceRows(sinceIso, untilIso) {
   if (!supabase) return { rows: [], truncated: false };
   const load = () =>
@@ -424,7 +434,7 @@ async function getPresenceRows(sinceIso, untilIso) {
       res = await load();
     }
     const blips = await presenceBlipIds(res.rows);
-    return { ...res, rows: res.rows.filter((r) => !blips.has(r.id)) };
+    return { ...res, rows: res.rows.filter((r) => !blips.has(r.id)).map(splitDevices) };
   } catch (err) {
     console.error("[DB] getPresenceRows failed:", err.message || err);
     return { rows: [], truncated: false };
@@ -558,7 +568,7 @@ async function getRecentLogs(limit = 30, opts = {}) {
     }
 
     const events = [
-      ...presence.data.map((r) => ({ id: r.id, type: "presence", user_id: r.user_id, username: r.username, display_name: r.display_name, status: r.status, devices: r.devices || null, at: r.changed_at })),
+      ...presence.data.map(splitDevices).map((r) => ({ id: r.id, type: "presence", user_id: r.user_id, username: r.username, display_name: r.display_name, status: r.status, devices: r.devices, device_status: r.device_status, at: r.changed_at })),
       ...joins.data.map((r) => ({ id: r.id, type: "voice_join", user_id: r.user_id, username: r.username, display_name: r.display_name, channel_name: r.channel_name, devices: r.devices || null, at: r.joined_at })),
       ...leaves.data.map((r) => ({ id: r.id, type: "voice_leave", user_id: r.user_id, username: r.username, display_name: r.display_name, channel_name: r.channel_name, duration_seconds: r.duration_seconds, speaking_seconds: r.speaking_seconds, at: r.left_at })),
     ];
