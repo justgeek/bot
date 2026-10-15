@@ -137,34 +137,64 @@ function getLiveSpeakingSeconds(userId) {
   return Math.round(totalMs / 1000);
 }
 
+// Each suffix is one ElevenLabs account: '' = ELEVENLABS_*, '2' = ELEVENLABS_*2 (fallback).
+// Fallback values that are unset reuse the primary's, except the API key.
+const ELEVENLABS_ACCOUNT_SUFFIXES = ['', '2'];
+
+function getElevenLabsAccount(suffix) {
+  const env = (name) => process.env[`${name}${suffix}`] || process.env[name];
+  return {
+    label: suffix ? `account ${suffix}` : 'primary account',
+    apiKey: process.env[`ELEVENLABS_API_KEY${suffix}`],
+    voiceId: env('ELEVENLABS_VOICE_ID'),
+    voiceIdArabic: env('ELEVENLABS_VOICE_ID_ARABIC'),
+    modelId: env('ELEVENLABS_MODEL_ID'),
+    modelTestId: env('ELEVENLABS_MODEL_TEST_ID'),
+  };
+}
+
+function formatElevenLabsError(error) {
+  const data = error.response?.data;
+  if (data instanceof ArrayBuffer || Buffer.isBuffer(data)) {
+    return Buffer.from(data).toString('utf8');
+  }
+  return data || error.message;
+}
+
 async function textToSpeech(text) {
   const isArabic = /^[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u0660-\u0669\u066A-\u066F\u06D4\u060C\u061B\u061F\s]+$/.test(text);
-  const voiceId = isArabic ? process.env.ELEVENLABS_VOICE_ID_ARABIC : process.env.ELEVENLABS_VOICE_ID;
-  const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
-  const apiKey = process.env.ELEVENLABS_API_KEY;
-  const model = !text.includes("[") && !text.includes("]") ? process.env.ELEVENLABS_MODEL_ID : process.env.ELEVENLABS_MODEL_TEST_ID;
+  const useMainModel = !text.includes("[") && !text.includes("]");
+  const accounts = ELEVENLABS_ACCOUNT_SUFFIXES.map(getElevenLabsAccount).filter(account => account.apiKey);
 
-  try {
-    const response = await axios({
-      method: 'post',
-      url: url,
-      headers: {
-        'Accept': 'audio/mpeg',
-        'xi-api-key': apiKey,
-        'Content-Type': 'application/json',
-      },
-      data: { text: text, model_id: model },
-      responseType: 'arraybuffer'
-    });
+  let lastError;
+  for (const account of accounts) {
+    const voiceId = isArabic ? account.voiceIdArabic : account.voiceId;
+    const model = useMainModel ? account.modelId : account.modelTestId;
 
-    const outputPath = `output_${Date.now()}_${Math.floor(Math.random() * 1000)}.mp3`;
-    fs.writeFileSync(outputPath, response.data);
-    console.log(`Audio saved to ${outputPath}`);
-    return outputPath;
-  } catch (error) {
-    console.error('Error:', error.response?.data || error.message);
-    throw error;
+    try {
+      const response = await axios({
+        method: 'post',
+        url: `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+        headers: {
+          'Accept': 'audio/mpeg',
+          'xi-api-key': account.apiKey,
+          'Content-Type': 'application/json',
+        },
+        data: { text: text, model_id: model },
+        responseType: 'arraybuffer'
+      });
+
+      const outputPath = `output_${Date.now()}_${Math.floor(Math.random() * 1000)}.mp3`;
+      fs.writeFileSync(outputPath, response.data);
+      console.log(`Audio saved to ${outputPath} (ElevenLabs ${account.label})`);
+      return outputPath;
+    } catch (error) {
+      console.error(`ElevenLabs ${account.label} failed (${error.response?.status ?? 'no status'}):`, formatElevenLabsError(error));
+      lastError = error;
+    }
   }
+
+  throw lastError || new Error('No ElevenLabs API key configured');
 }
 
 function shouldJoinVoiceChannel(client, channelId) {
