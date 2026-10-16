@@ -14,7 +14,9 @@ const state = {
   player: null,
   connectionSubscription: null,
   // Set while a recording runs: the bot has one voice connection per server, so nothing may move it elsewhere
-  pinnedChannelId: null
+  pinnedChannelId: null,
+  nowPlaying: null // what playVoice is playing right now (see playVoice), for recordings
+
 };
 
 // Called with the connection each time it becomes ready (the recorder attaches to it)
@@ -272,6 +274,7 @@ const joinBanhaVoiceChannel = async (client, channelToJoin) => {
     state.player.on('error', (e) => console.error('AudioPlayer error:', e));
     state.player.on('stateChange', (oldState, newState) => {
       try { console.log(`AudioPlayer state: ${oldState.status} -> ${newState.status}`); } catch { }
+      if (newState.status === 'idle') state.nowPlaying = null;
     });
   }
 
@@ -301,8 +304,13 @@ async function ensureVoiceReady(client, msg) {
   }
 }
 
-const playVoice = (resourceToPlay) => {
-  if (state.player) state.player.play(resourceToPlay);
+// meta says what's playing and who asked for it, so a recording can credit the sound to them:
+// { kind: "meme" | "tts" | "announce", userId, text }
+let playCounter = 0;
+const playVoice = (resourceToPlay, meta = {}) => {
+  if (!state.player) return;
+  state.nowPlaying = { ...meta, playId: ++playCounter };
+  state.player.play(resourceToPlay);
 };
 
 function leaveEmptyVoiceChannel(client) {

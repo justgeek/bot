@@ -319,7 +319,7 @@
       }
 
       function transcriptItems() {
-        var items = current.lines.map(function (l) { return { t: l.start_ms, user: l.user_id, text: l.text }; });
+        var items = current.lines.map(function (l) { return { t: l.start_ms, user: l.user_id, text: l.text, label: l.name }; });
         (current.events || []).forEach(function (e) { if (e.type === "note") items.push({ t: e.t, user: e.user, text: e.text, note: true }); });
         return items.sort(function (a, b) { return a.t - b.t; });
       }
@@ -356,7 +356,7 @@
         };
         $("lines").innerHTML = shown.length ? shown.map(function (it, i) {
           return '<div class="line' + (it.note ? " note" : "") + '" data-i="' + i + '"><button class="t" data-t="' + it.t + '">' + hms(it.t) + "</button>" +
-            '<div class="txt"><span class="who" style="color:' + esc(colorOf(it.user)) + '">' + (it.note ? "📝 " : "") + esc(nameOf(it.user)) + "</span>" + mark(it.text) + "</div></div>";
+            '<div class="txt"><span class="who" style="color:' + esc(colorOf(it.user)) + '">' + (it.note ? "📝 " : "") + esc(/\((TTS|meme)\)$/.test(it.label || "") || it.user === "bot" ? it.label : nameOf(it.user)) + "</span>" + mark(it.text) + "</div></div>";
         }).join("") : '<div class="empty">No lines match.</div>';
         $("lines").onclick = function (e) { var b = e.target.closest(".t"); if (b) seek(Number(b.dataset.t)); };
         lastNow = -1;
@@ -431,6 +431,7 @@
             case "leave": return who + " left";
             case "note": return "📝 " + who + ": " + esc(e.text);
             case "clip": return "✂️ " + who + " clipped " + esc(String(e.text || "").replace(/`/g, ""));
+            case "sound": return e.kind === "tts" ? "🗣️ " + who + " (TTS): " + esc(e.text) : "🔊 " + who + " played " + esc(e.text);
             case "reconnect": return "🔁 Reconnected";
             case "restart": return "⚠️ Bot restarted (" + esc(e.text) + " gap)";
             case "toggle": return "⚙️ " + who + " turned " + esc(e.text);

@@ -234,6 +234,15 @@ async function transcribeBatch(batch, model, vocab) {
   }
 }
 
+// How a sound the bot played reads in the transcript:
+// "Mido (TTS): hello" · "Mido (meme): 🔊 !bruh" · "Bot: Mido joined" (automatic announcements)
+function soundLine(rec, e) {
+  const who = e.name || rec.speakers?.[e.user]?.name || "Someone";
+  if (!e.user) return { name: "Bot", text: e.text || "(sound)" };
+  if (e.kind === "tts") return { name: `${who} (TTS)`, text: e.text || "" };
+  return { name: `${who} (meme)`, text: `🔊 ${e.text || "sound"}` };
+}
+
 // ---------- Transcript step (called by processor.js) ----------
 async function transcriptStep(rec, ctx) {
   const out = rec.outputs;
@@ -310,14 +319,21 @@ async function transcriptStep(rec, ctx) {
     .map((s) => ({ s, text: (done[s.id] || "").trim() }))
     .filter(({ text }) => text && !/^(\[[^\]]*\]\s*)+$/.test(text))
     .map(({ s, text }) => ({ start_ms: s.start, end_ms: s.end, user_id: s.user, name: names[s.user] || s.user, text, norm: normalizeText(text) }));
-  ctx.lines = lines;
-
-  // Words per person for the report card
+  // Words per person for the report card (their own voice only, before the bot's sounds join the lines)
   if (rec.report?.speakers) {
     const words = {};
     for (const l of lines) words[l.user_id] = (words[l.user_id] || 0) + wordCount(l.text);
     for (const s of rec.report.speakers) s.words = words[s.user] || 0;
   }
+
+  // What the bot played goes in the transcript too, credited to whoever played it
+  for (const e of rec.events || []) {
+    if (e.type !== "sound") continue;
+    const line = soundLine(rec, e);
+    lines.push({ start_ms: e.t, end_ms: e.t + 2000, user_id: e.user || "bot", name: line.name, text: line.text, norm: normalizeText(line.text) });
+  }
+  lines.sort((a, b) => a.start_ms - b.start_ms);
+  ctx.lines = lines;
 
   const filesOut = writeTranscriptFiles(rec, lines, ctx.dir);
   out.files = out.files || {};

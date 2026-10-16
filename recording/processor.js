@@ -87,7 +87,7 @@ function makeCtx(rec) {
     async trackFiles() {
       const out = {};
       const onDrive = rec.outputs.files?.tracks || {};
-      for (const userId of new Set([...Object.keys(rec.outputs.speech || {}), ...Object.keys(onDrive)])) {
+      for (const userId of Object.keys(rec.outputs.speech || {})) {
         const local = ctx.trackPaths?.[userId] || path.join(dir, "tracks", `${userId}.ogg`);
         if (!fs.existsSync(local) && onDrive[userId]?.id && drive.enabled) {
           fs.mkdirSync(path.dirname(local), { recursive: true });
@@ -257,13 +257,16 @@ async function audioStep(rec, ctx) {
   const totalMs = Date.parse(rec.ended_at) - Date.parse(rec.started_at);
   const speech = {};
   const tracks = [];
-  // Most talkative first: "01 Name.ogg" is the person who talked the most
-  const users = [...byUser.keys()].sort((a, b) => (rec.speakers?.[b]?.speaking_ms || 0) - (rec.speakers?.[a]?.speaking_ms || 0));
+  // Most talkative first: "01 Name.ogg" is the person who talked the most; the bot's sounds come last
+  const isBot = (u) => !!rec.speakers?.[u]?.bot;
+  const users = [...byUser.keys()].sort((a, b) => isBot(a) - isBot(b) || (rec.speakers?.[b]?.speaking_ms || 0) - (rec.speakers?.[a]?.speaking_ms || 0));
   for (const userId of users) {
     const name = rec.speakers?.[userId]?.name || userId;
     const chunks = byUser.get(userId).sort((a, b) => a.startMs - b.startMs);
     const raw = path.join(rawDir, `${userId}.ogg`);
-    speech[userId] = remux(chunks, raw, Math.ceil(totalMs * MS), name);
+    const intervals = remux(chunks, raw, Math.ceil(totalMs * MS), name);
+    // The bot's tracks are only mixed in: their words (TTS text, meme names) are already in the activity log
+    if (!isBot(userId)) speech[userId] = intervals;
     for (const c of chunks) fs.unlink(c.file, () => { }); // Drive keeps a copy until the recording is finished
     tracks.push({ userId, name, file: raw, out: path.join(tracksDir, `${userId}.ogg`), upload: `${String(tracks.length + 1).padStart(2, "0")} ${safeName(name)}.ogg` });
   }

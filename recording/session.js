@@ -6,6 +6,7 @@ const { EndBehaviorType, VoiceConnectionStatus, entersState } = require("@discor
 const { IDs, Recording: cfg } = require("../config");
 const audio = require("../audioManager");
 const { TrackWriter, MS } = require("./track");
+const { isSilence } = require("./ogg");
 const store = require("./store");
 const drive = require("./drive");
 const panel = require("./panel");
@@ -26,6 +27,23 @@ function tagRtp(receiver) {
       packet.rtpTimestamp = buffer.readUInt32BE(4);
     }
     return packet;
+  };
+}
+
+// Discord never sends the bot its own audio back, so what the bot plays (memes, TTS, join/leave
+// announcements) is copied on its way out: every packet the player hands to the connection passes
+// through here first. conn.__recTap is the recording listening on that connection, if any.
+function tapOutgoing(conn) {
+  if (conn.__recTapped || typeof conn.prepareAudioPacket !== "function") return;
+  conn.__recTapped = true;
+  const prepare = conn.prepareAudioPacket;
+  conn.prepareAudioPacket = function (buffer) {
+    try {
+      conn.__recTap?.(buffer);
+    } catch (err) {
+      console.warn("[Rec] Copying the bot's own audio failed:", err.message);
+    }
+    return prepare.call(this, buffer);
   };
 }
 
@@ -110,6 +128,8 @@ class RecordingSession {
       this.detachConnection();
       this.conn = conn;
       tagRtp(conn.receiver);
+      tapOutgoing(conn);
+      conn.__recTap = (packet) => this.onBotPacket(packet);
       this.onSpeaking = (userId) => this.subscribe(userId);
       conn.receiver.speaking.on("start", this.onSpeaking);
       this.onConnState = (oldState, newState) => this.connectionChanged(newState);
@@ -121,6 +141,7 @@ class RecordingSession {
 
   detachConnection() {
     if (!this.conn) return;
+    this.conn.__recTap = null;
     this.conn.receiver?.speaking.off("start", this.onSpeaking);
     this.conn.off("stateChange", this.onConnState);
     this.conn = null;
@@ -148,9 +169,31 @@ class RecordingSession {
 
   onPacket(userId, packet) {
     if (!this.active) return;
+    this.trackFor(userId).push(packet, this.nowMs());
+  }
+
+  // The bot's own sounds go to one track per member who played them ("bot-<their id>"), or "bot" for
+  // automatic ones (join/leave announcements); each new sound is logged with who played it
+  onBotPacket(packet) {
+    if (!this.active) return;
+    const playing = audio.state.nowPlaying;
+    if (!playing && isSilence(packet)) return; // the player's trailing silence after a sound
+    const key = playing?.userId ? `bot-${playing.userId}` : "bot";
+    // (join/leave announcements are recorded but not logged: the log already says who joined/left)
+    if (playing && playing.playId !== this.lastPlayId && playing.kind !== "announce") {
+      this.lastPlayId = playing.playId;
+      const e = this.addEvent("sound", playing.userId || null, String(playing.text || "").slice(0, 300));
+      e.kind = playing.kind || "sound";
+      if (playing.userId) e.name = memberName(this.guild, playing.userId);
+    }
+    const name = playing?.userId ? `${memberName(this.guild, playing.userId)} (bot sounds)` : "Bot (announcements)";
+    this.trackFor(key, name, true).push(packet, this.nowMs());
+  }
+
+  trackFor(userId, displayName = null, bot = false) {
     let track = this.tracks.get(userId);
     if (!track) {
-      const name = memberName(this.guild, userId);
+      const name = displayName || memberName(this.guild, userId);
       track = new TrackWriter({
         dir: this.dir,
         userId,
@@ -161,9 +204,9 @@ class RecordingSession {
         onChunk: (c) => this.chunkClosed(c),
       });
       this.tracks.set(userId, track);
-      if (!this.rec.speakers[userId]) this.rec.speakers[userId] = { name, bytes: 0, speaking_ms: 0 };
+      if (!this.rec.speakers[userId]) this.rec.speakers[userId] = { name, bytes: 0, speaking_ms: 0, ...(bot && { bot: true }) };
     }
-    track.push(packet, this.nowMs());
+    return track;
   }
 
   // ---------- Uploads (raw chunks go to Drive while recording, so a restart loses at most one) ----------
@@ -347,7 +390,7 @@ class RecordingSession {
       startedAtMs: this.startedAtMs,
       elapsedMs: this.active ? this.nowMs() : Date.now() - this.startedAtMs,
       bytes: Object.values(this.rec.speakers).reduce((a, s) => a + (s.bytes || 0), 0),
-      speakers: Object.keys(this.rec.speakers).length,
+      speakers: Object.values(this.rec.speakers).filter((s) => !s.bot).length,
       region: endpoint.split(".")[0] || null,
       pingMs: ping?.ws ?? ping?.udp,
       dave: (conn?.state?.networking?.state?.dave?.protocolVersion || 0) > 0,

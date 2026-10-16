@@ -38,7 +38,7 @@ module.exports = function registerRecordingsPage(app, client) {
       ended_at: r.ended_at,
       duration_ms: end - Date.parse(r.started_at),
       status: r.status,
-      speakers: Object.entries(r.speakers || {})
+      speakers: Object.entries(r.speakers || {}).filter(([, s]) => !s.bot)
         .map(([u, s]) => ({ ...person(u, s.name), speaking_ms: s.speaking_ms || 0 }))
         .sort((a, b) => b.speaking_ms - a.speaking_ms),
       has_audio: !!r.outputs?.files?.mix?.id && !r.outputs?.audioDeleted,
@@ -92,7 +92,7 @@ module.exports = function registerRecordingsPage(app, client) {
         summary_ar: rec.summary_ar || null,
         tracks: Object.entries(files.tracks || {}).map(([u, t]) => ({ ...person(u, t.name), has_audio: !!t.id && !rec.outputs?.audioDeleted })),
         folder_url: rec.drive_folder_id ? drive.folderUrl(rec.drive_folder_id) : null,
-        lines: lines.map((l) => ({ start_ms: l.start_ms, end_ms: l.end_ms, user_id: l.user_id, text: l.text })),
+        lines: lines.map((l) => ({ start_ms: l.start_ms, end_ms: l.end_ms, user_id: l.user_id, name: l.name, text: l.text })),
       });
     } catch (err) {
       console.error("[API] /api/recordings/:id failed:", err);

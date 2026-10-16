@@ -185,7 +185,7 @@ module.exports = (client) => {
       const resource = createAudioResource(memeFile);
 
       await audio.ensureVoiceReady(client, msg);
-      audio.playVoice(resource);
+      audio.playVoice(resource, { kind: "meme", userId: msg.author.id, text: message });
       const logMessage = msg.member.displayName + " " + message;
       console.log(logMessage);
       sendToChannel(client, IDs.channelCommands, logMessage);
@@ -314,7 +314,7 @@ module.exports = (client) => {
         const audioPath = await audio.textToSpeech(ttsText);
         const resource = createAudioResource(audioPath);
         await audio.ensureVoiceReady(client, msg);
-        audio.playVoice(resource);
+        audio.playVoice(resource, { kind: "tts", userId: msg.author.id, text: ttsText });
         setTimeout(() => {
           fs.unlink(audioPath, (err) => { if (err) console.error('Error deleting audio file:', err); });
         }, 5000);
@@ -323,7 +323,7 @@ module.exports = (client) => {
         const stream = discordTTS.getVoiceStream(message, { lang: lang });
         const resource = createAudioResource(stream);
         await audio.ensureVoiceReady(client, msg);
-        audio.playVoice(resource);
+        audio.playVoice(resource, { kind: "tts", userId: msg.author.id, text: message });
       }
       const logMessage = `${msg.member.displayName} ${message}`;
       console.log(logMessage);
@@ -460,7 +460,7 @@ module.exports = (client) => {
       if (before.channelId == audio.state.voiceCurrent) {
         const stream = discordTTS.getVoiceStream(personTTS + " left", { lang: "ja" });
         const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
-        audio.playVoice(resource);
+        audio.playVoice(resource, { kind: "announce", text: personTTS + " left" });
       }
       audio.leaveEmptyVoiceChannel(client);
     }
@@ -484,12 +484,12 @@ module.exports = (client) => {
 
         const stream = discordTTS.getVoiceStream(personTTS + " joined", { lang: "ja" });
         const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
-        audio.playVoice(resource);
+        audio.playVoice(resource, { kind: "announce", text: personTTS + " joined" });
 
         if (person == "prollygeek") {
           const memeFile = otherFolder + "TDKJoin.mp3";
           let resource2 = createAudioResource(memeFile);
-          audio.playVoice(resource2);
+          audio.playVoice(resource2, { kind: "announce", text: "TDK's join sound" });
         }
       }
 
@@ -550,7 +550,7 @@ module.exports = (client) => {
 
         const resource = createAudioResource(memesFolder + memeFile);
         await audio.ensureVoiceReady(client, interaction);
-        audio.playVoice(resource);
+        audio.playVoice(resource, { kind: "meme", userId: interaction.user.id, text: memeKey });
 
         const logMessage = interaction.member.displayName + " " + memeKey;
         console.log(logMessage);

@@ -57,6 +57,7 @@ function eventLine(e) {
     case "leave": return `${t}: ${who} left.`;
     case "note": return `${t}: 📝 ${who}: ${oneLine(e.text, 180)}`;
     case "clip": return `${t}: ✂️ ${who} clipped ${e.text}.`;
+    case "sound": return e.kind === "tts" ? `${t}: 🗣️ ${who} (TTS): ${oneLine(e.text, 150)}` : `${t}: 🔊 ${who} played ${oneLine(e.text, 80)}`;
     case "reconnect": return `${t}: 🔁 Automatically reconnected.`;
     case "restart": return `${t}: ⚠️ The bot restarted (${e.text} gap).`;
     case "toggle": return `${t}: ⚙️ ${who} turned ${e.text}.`;
@@ -137,7 +138,7 @@ function endedPanel(rec) {
   const prog = out.progress || {};
   const files = out.files || {};
   const deleted = rec.status === "deleted";
-  const speakers = Object.values(rec.speakers || {});
+  const speakers = Object.values(rec.speakers || {}).filter((s) => !s.bot);
 
   const details = [
     `**Recording ID:** \`${rec.id}\``,
@@ -353,7 +354,7 @@ function recordingsList(rows) {
     const end = r.ended_at ? Date.parse(r.ended_at) : Date.now();
     const folder = r.drive_folder_id ? ` · [Files](https://drive.google.com/drive/folders/${r.drive_folder_id})` : "";
     const state = r.status === "recording" ? " · 🔴 live" : r.status === "done" ? "" : ` · ${r.status}`;
-    return `\`${r.id}\` · <t:${unix(start)}:f> · <#${r.channel_id}> · ${human(end - start)} · ${Object.keys(r.speakers || {}).length} speakers${state}${folder}`;
+    return `\`${r.id}\` · <t:${unix(start)}:f> · <#${r.channel_id}> · ${human(end - start)} · ${Object.values(r.speakers || {}).filter((s) => !s.bot).length} speakers${state}${folder}`;
   });
   c.addTextDisplayComponents(text("### 🎙️ Recent recordings\n" + (lines.join("\n") || "None yet.")));
   return v2(c);
