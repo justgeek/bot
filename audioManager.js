@@ -197,14 +197,13 @@ async function textToSpeech(text) {
   throw lastError || new Error('No ElevenLabs API key configured');
 }
 
+// Real people only: other bots (e.g. Craig/مخبر) don't count as company
+function countHumans(channel) {
+  return channel ? channel.members.filter((m) => !m.user.bot).size : 0;
+}
+
 function shouldJoinVoiceChannel(client, channelId) {
-  const channel = client.channels.cache.get(channelId);
-  if (channel) {
-    const totalMembers = channel.members.size;
-    const botMember = channel.members.get(client.user.id);
-    return totalMembers > 0 && !(totalMembers === 1 && botMember);
-  }
-  return false;
+  return countHumans(client.channels.cache.get(channelId)) > 0;
 }
 
 const joinBanhaVoiceChannel = async (client, channelToJoin) => {
@@ -284,14 +283,13 @@ function leaveEmptyVoiceChannel(client) {
   if (!state.connection) return;
 
   const channel = client.channels.cache.get(IDs.voice3);
-  const totalMembers = channel ? channel.members.size : 0;
 
-  if (totalMembers === 1) {
+  if (countHumans(channel) === 0) {
     state.connection.destroy();
     state.connection = null;
     state.player = null;
     state.connectionSubscription = null;
-    console.log("Bot left the voice channel as it was the only user.");
+    console.log("Bot left the voice channel as no real people were left.");
   }
 }
 
