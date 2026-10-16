@@ -49,6 +49,7 @@ module.exports = {
     clipSeconds: 30,
     clipMaxSeconds: 120,
     driveRootFolder: "Discord Recordings",
+    minFreeGB: 1, // when Google Drive has less free than this, the oldest recordings' audio is deleted (text kept); 0 = off
   },
 
   // Allowed channels for the Dashboard "Share to Discord" feature

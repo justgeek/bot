@@ -450,9 +450,12 @@ async function housekeeping() {
       lastRetention = Date.now();
       await processor.applyRetention(settings.retentionDays);
     }
-    if (drive.enabled && (!quotaCache || Date.now() - quotaCache.at > 3600e3)) {
-      quotaCache = { at: Date.now(), ...(await drive.quota()) };
-      refreshControlPanel();
+    // Keep at least cfg.minFreeGB free on Drive by deleting the oldest recordings' audio (checks the quota too)
+    if (drive.enabled) {
+      const q = await processor.freeUpSpace(cfg.minFreeGB * 1024 ** 3);
+      const changed = !quotaCache || Math.abs(q.usage - quotaCache.usage) > 1024 ** 2;
+      quotaCache = { at: Date.now(), ...q };
+      if (changed) refreshControlPanel();
     }
   } catch (err) {
     console.warn("[Rec] Housekeeping failed:", err.message);

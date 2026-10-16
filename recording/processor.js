@@ -388,24 +388,56 @@ async function deleteRecording(rec, byUserId) {
   fs.rm(path.join(WORK_DIR, rec.id), { recursive: true, force: true }, () => { });
 }
 
-// Audio older than `days` goes to Drive's trash; transcripts, summaries and info stay
+// Deletes a recording's audio for good (mix, speaker tracks, clips); transcripts, summaries and info stay.
+// why: shown on its panel ("after 30 days" / "to free up Drive space")
+async function removeAudio(rec, why) {
+  const out = rec.outputs || (rec.outputs = {});
+  if (out.files?.mix?.id) await drive.remove(out.files.mix.id);
+  await drive.trashChild(rec.drive_folder_id, "tracks", { permanent: true });
+  await drive.trashChild(rec.drive_folder_id, "clips", { permanent: true });
+  out.audioDeleted = why;
+  await store.saveRecording(rec);
+  await updatePanel(rec);
+}
+
+// Finished recordings that still have audio on Drive, oldest first
+async function withAudio() {
+  return (await store.findRecordings(["done"]))
+    .filter((r) => !r.outputs?.audioDeleted && r.drive_folder_id && r.outputs?.files?.mix?.id)
+    .sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at));
+}
+
+// Audio older than `days` is deleted
 async function applyRetention(days) {
   if (!drive.enabled || !(days > 0)) return;
   const cutoff = Date.now() - days * 86400e3;
-  for (const rec of await store.findRecordings(["done"])) {
-    const out = rec.outputs || {};
-    if (out.audioDeleted || !rec.drive_folder_id || Date.parse(rec.ended_at || rec.started_at) > cutoff) continue;
+  for (const rec of await withAudio()) {
+    if (Date.parse(rec.ended_at || rec.started_at) > cutoff) continue;
     try {
-      if (out.files?.mix?.id) await drive.trash(out.files.mix.id);
-      await drive.trashChild(rec.drive_folder_id, "tracks");
-      await drive.trashChild(rec.drive_folder_id, "clips");
-      out.audioDeleted = days;
-      await store.saveRecording(rec);
-      await updatePanel(rec);
+      await removeAudio(rec, `after ${days} days`);
     } catch (err) {
       console.warn(`[Rec] Retention cleanup of ${rec.id} failed:`, err.message);
     }
   }
 }
 
-module.exports = { init, enqueue, isBusy, shutdown, updatePanel, deleteRecording, applyRetention, buildReport, remux };
+// While Drive has less than minFreeBytes free, the oldest recordings' audio is deleted. Returns the quota.
+async function freeUpSpace(minFreeBytes) {
+  if (!drive.enabled) return null;
+  let q = await drive.quota();
+  if (!(minFreeBytes > 0) || !q.limit) return q;
+  for (const rec of await withAudio()) {
+    if (q.limit - q.usage >= minFreeBytes) break;
+    try {
+      await removeAudio(rec, "to free up Drive space");
+      console.log(`[Rec] Deleted the audio of ${rec.id} (${rec.started_at}) to free up Drive space.`);
+    } catch (err) {
+      console.warn(`[Rec] Couldn't free space with ${rec.id}:`, err.message);
+      break;
+    }
+    q = await drive.quota();
+  }
+  return q;
+}
+
+module.exports = { init, enqueue, isBusy, shutdown, updatePanel, deleteRecording, applyRetention, freeUpSpace, buildReport, remux };

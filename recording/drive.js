@@ -113,10 +113,20 @@ async function rename(fileId, name) {
   await withRetry("rename", () => api.files.update({ fileId, requestBody: { name }, fields: "id" }));
 }
 
-// Trashes a file/folder by name inside a folder, if it's there
-async function trashChild(parentId, name) {
+// Deletes for good, skipping the trash (trashed files still count against the Drive quota for 30 days)
+async function remove(fileId) {
+  if (!fileId) return;
+  try {
+    await withRetry("delete", () => api.files.delete({ fileId }));
+  } catch (err) {
+    if (statusOf(err) !== 404) throw err;
+  }
+}
+
+// Trashes (or with permanent, deletes) a file/folder by name inside a folder, if it's there
+async function trashChild(parentId, name, { permanent = false } = {}) {
   const child = await findChild(parentId, name);
-  if (child) await trash(child.id);
+  if (child) await (permanent ? remove(child.id) : trash(child.id));
   folderCache.delete(`${parentId}/${name}`);
 }
 
@@ -140,4 +150,4 @@ const fileUrl = (id) => `https://drive.google.com/file/d/${id}/view`;
 const folderUrl = (id) => `https://drive.google.com/drive/folders/${id}`;
 const mediaUrl = (id) => `https://www.googleapis.com/drive/v3/files/${id}?alt=media`;
 
-module.exports = { enabled, ensureFolder, recordingFolder, upload, download, rename, trash, trashChild, quota, mediaStream, accessToken, fileUrl, folderUrl, mediaUrl };
+module.exports = { enabled, ensureFolder, recordingFolder, upload, download, rename, trash, remove, trashChild, quota, mediaStream, accessToken, fileUrl, folderUrl, mediaUrl };

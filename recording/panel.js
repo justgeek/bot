@@ -152,7 +152,7 @@ function endedPanel(rec) {
         stepLine("Audio", prog.audio),
         rec.options?.transcribe ? stepLine("Transcript", prog.transcript) : "➖ Transcript: off",
         rec.options?.summarize ? stepLine("Summary", prog.summary) : "➖ Summary: off",
-        out.audioDeleted ? `🧹 Audio removed after ${out.audioDeleted} days (text kept).` : "",
+        out.audioDeleted ? `🧹 Audio removed ${typeof out.audioDeleted === "number" ? `after ${out.audioDeleted} days` : out.audioDeleted} (text kept).` : "",
         rec.status === "failed" && rec.error ? `-# Error: ${oneLine(rec.error, 300)}` : "",
       ].filter(Boolean).join("\n");
 
@@ -214,7 +214,7 @@ function controlPanel({ settings, active, quota, driveEnabled, dbEnabled, gemini
   const lines = [
     "## 🎙️ Recorder",
     `**Auto-record:** ${settings.autoRecord ? "**On**" : "Off"} — starts when **${settings.minPeople}+** people are in ${channels}; every recording stops ${cfg.emptyStopMinutes} min after the channel empties.`,
-    `**After each recording:** transcript **${onOff(settings.transcribe)}** · summary **${onOff(settings.summarize)}** (English + Egyptian Arabic) · audio kept **${settings.retentionDays ? `${settings.retentionDays} days` : "forever"}** (text always kept)`,
+    `**After each recording:** transcript **${onOff(settings.transcribe)}** · summary **${onOff(settings.summarize)}** (English + Egyptian Arabic) · audio kept **${settings.retentionDays ? `${settings.retentionDays} days` : "forever"}** (text always kept)` + (cfg.minFreeGB ? `; when Drive has under ${cfg.minFreeGB} GB free, the oldest recordings' audio is deleted` : ""),
     "-# These are the defaults for new recordings; each recording's own panel can still switch its transcript/summary on or off.",
   ];
   if (quota?.limit) {
