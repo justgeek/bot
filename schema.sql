@@ -107,3 +107,72 @@ as $$
   select coalesce(sum(extract(epoch from (coalesce(left_at, now()) - joined_at))), 0)::bigint
     from voice_sessions;
 $$;
+
+-- ---------- Voice recordings (recording/) ----------
+-- One row per recording; the bot keeps it up to date while it records and while it processes the audio.
+create table if not exists recordings (
+  id               text primary key,          -- the 12-character id shown on the panel
+  guild_id         text        not null,
+  channel_id       text        not null,
+  channel_name     text,
+  started_by       text,                      -- user id; null = auto-record
+  started_at       timestamptz not null,
+  ended_at         timestamptz,
+  end_reason       text,                      -- stopped | empty | max | kicked | moved | error | restart
+  status           text        not null default 'recording', -- recording | suspended | processing | paused | done | failed | deleted | discarded
+  heartbeat_at     timestamptz,
+  suspended_at     timestamptz,               -- the bot shut down mid-recording (resumes after the restart)
+  resume_after     timestamptz,               -- paused until then (Gemini's free daily quota was used up)
+  parts            integer     not null default 1, -- +1 for every bot restart the recording carried on through
+  panel_message_id text,
+  thread_id        text,
+  options          jsonb       not null default '{}'::jsonb, -- { transcribe, summarize }
+  events           jsonb       not null default '[]'::jsonb, -- activity log: [{ t: ms into the recording, type, user, text }]
+  speakers         jsonb       not null default '{}'::jsonb, -- user id -> { name, bytes, speaking_ms }
+  report           jsonb,                     -- the session report card
+  summary_en       text,
+  summary_ar       text,
+  drive_folder_id  text,
+  outputs          jsonb       not null default '{}'::jsonb, -- processing progress and Drive file ids
+  error            text
+);
+create index if not exists recordings_status_idx  on recordings (status);
+create index if not exists recordings_started_idx on recordings (started_at desc);
+
+-- Raw audio pieces (one per speaker per 5 minutes) uploaded to Drive while recording; removed once processed
+create table if not exists recording_chunks (
+  recording_id  text    not null references recordings (id) on delete cascade,
+  user_id       text    not null,
+  start_ms      bigint  not null,             -- where the piece starts, in ms into the recording
+  part          integer not null default 1,
+  bytes         bigint,
+  drive_file_id text,
+  primary key (recording_id, user_id, start_ms)
+);
+
+-- Transcript lines, for !search, !ask and the /recordings page
+create table if not exists recording_lines (
+  id           bigint generated always as identity primary key,
+  recording_id text    not null references recordings (id) on delete cascade,
+  start_ms     integer not null,
+  end_ms       integer not null,
+  user_id      text    not null,
+  name         text,
+  text         text    not null,
+  norm         text    not null              -- lower case, Arabic letter variants unified: what search matches
+);
+create index if not exists recording_lines_rec_idx on recording_lines (recording_id, start_ms);
+create extension if not exists pg_trgm with schema extensions;
+create index if not exists recording_lines_norm_trgm on recording_lines using gin (norm extensions.gin_trgm_ops);
+
+-- Small key/value settings (the recorder's auto-record switch, its channels, defaults...)
+create table if not exists bot_settings (
+  key        text primary key,
+  value      jsonb       not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table recordings       enable row level security;
+alter table recording_chunks enable row level security;
+alter table recording_lines  enable row level security;
+alter table bot_settings     enable row level security;

@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Recordings</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%99%EF%B8%8F%3C/text%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;500;700&family=Special+Elite&family=Noto+Sans+Arabic:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0a0a0b;
+      --surface: #151213;
+      --surface-2: #0f0d0e;
+      --raised: #1d1819;
+      --border: #3b1c20;
+      --text: #d8d2c4;
+      --muted: #8f867b;
+      --heading: #f2ece0;
+      --accent: #e5253f;
+      --accent-fg: #000;
+      --now: rgba(229, 37, 63, .14);
+      --radius: 12px;
+      --font: "Roboto Condensed", "Noto Sans Arabic", system-ui, sans-serif;
+      --font-heading: "Special Elite", "Roboto Condensed", monospace;
+      --font-ar: "Noto Sans Arabic", "Roboto Condensed", system-ui, sans-serif;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        color-scheme: light;
+        --bg: #f6f3ee;
+        --surface: #ffffff;
+        --surface-2: #f1ece4;
+        --raised: #ece6dc;
+        --border: #e2d6c8;
+        --text: #2a2522;
+        --muted: #7a6f65;
+        --heading: #17120f;
+        --accent: #c81e36;
+        --accent-fg: #fff;
+        --now: rgba(200, 30, 54, .10);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body { background: var(--bg); color: var(--text); font: 15px/1.5 var(--font); min-height: 100vh; }
+    a { color: var(--accent); }
+    button, input, select { font: inherit; color: inherit; }
+    h1, h2, h3 { font-family: var(--font-heading); color: var(--heading); font-weight: 400; margin: 0; }
+
+    header {
+      position: sticky; top: 0; z-index: 5;
+      display: grid; grid-template-columns: auto minmax(0, 460px); justify-content: space-between; gap: 10px 16px; align-items: center;
+      padding: 12px 16px; background: color-mix(in srgb, var(--bg) 88%, transparent);
+      backdrop-filter: blur(8px); border-bottom: 1px solid var(--border);
+    }
+    @media (max-width: 560px) { header { grid-template-columns: minmax(0, 1fr); } }
+    header h1 { font-size: 22px; white-space: nowrap; }
+    .search { min-width: 0; }
+    .search input { width: 100%; }
+    input[type="search"], input[type="text"], select {
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; outline: none; min-width: 0;
+    }
+    input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+    .layout { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 16px; padding: 16px; max-width: 1500px; margin: 0 auto; }
+    @media (max-width: 860px) {
+      .layout { grid-template-columns: minmax(0, 1fr); }
+      .layout.has-detail aside, .layout:not(.has-detail) #detail { display: none; }
+    }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+
+    aside { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+    .item {
+      display: block; width: 100%; text-align: left; cursor: pointer; padding: 10px 12px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    }
+    .item:hover { background: var(--raised); }
+    .item.sel { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+    .item .when { color: var(--heading); font-weight: 700; }
+    .item .meta, .muted { color: var(--muted); font-size: 13px; }
+    .faces { display: flex; margin-top: 6px; }
+    .faces img, .faces .dot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--surface); margin-left: -6px; background: var(--raised); object-fit: cover; }
+    .faces > :first-child { margin-left: 0; }
+    .badge { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 99px; border: 1px solid var(--border); color: var(--muted); margin-left: 4px; }
+    .badge.live { border-color: var(--accent); color: var(--accent); }
+
+    section#detail { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+    .head { padding: 14px 16px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; }
+    .head h2 { font-size: 20px; flex: 1 1 auto; }
+    .back { display: none; }
+    @media (max-width: 860px) { .back { display: inline-block; } }
+    .btn { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; text-decoration: none; color: var(--text); }
+    .btn:hover { background: var(--raised); }
+    .btn.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+
+    .player { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+    .player-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    audio { flex: 1 1 320px; width: 100%; min-width: 0; height: 40px; }
+    .timeline { position: relative; height: 26px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; overflow: hidden; }
+    .timeline .speech { position: absolute; top: 9px; height: 8px; background: color-mix(in srgb, var(--accent) 45%, transparent); }
+    .timeline .head-pos { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--heading); }
+    .timeline .mark { position: absolute; top: 2px; transform: translateX(-50%); font-size: 13px; line-height: 1; cursor: pointer; }
+
+    .tabs { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 2px; }
+    .tab-body { padding: 14px 16px; }
+    .tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+    .chip { border: 1px solid var(--border); border-radius: 99px; padding: 2px 10px; background: var(--surface-2); cursor: pointer; font-size: 13px; }
+    .chip.off { opacity: .4; }
+
+    .lines { display: flex; flex-direction: column; }
+    #lines { position: relative; max-height: min(62vh, 760px); overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
+    .line { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 8px; padding: 4px 6px; border-radius: 6px; }
+    .line.now { background: var(--now); }
+    .line .t { font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); background: none; border: 0; padding: 2px 0; text-align: left; cursor: pointer; }
+    .line .t:hover { color: var(--accent); }
+    .line .who { font-weight: 700; margin-inline-end: 6px; }
+    .line .txt { unicode-bidi: plaintext; overflow-wrap: anywhere; }
+    .line.note .txt { font-style: italic; }
+    mark { background: color-mix(in srgb, var(--accent) 35%, transparent); color: inherit; border-radius: 3px; }
+
+    .md h3 { font-size: 17px; margin: 14px 0 6px; }
+    .md ul { margin: 4px 0; padding-inline-start: 22px; }
+    .md p { margin: 6px 0; }
+    .md code { background: var(--surface-2); padding: 0 4px; border-radius: 4px; }
+    .rtl { direction: rtl; text-align: right; font-family: var(--font-ar); }
+    .rtl h3 { font-family: var(--font-ar); font-weight: 600; }
+
+    .bars { display: flex; flex-direction: column; gap: 8px; }
+    .bar-row { display: grid; grid-template-columns: minmax(80px, 160px) minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+    .bar { height: 12px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+    .bar > span { display: block; height: 100%; border-radius: 99px; background: var(--accent); }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 14px; }
+    .stat { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+    .stat b { display: block; color: var(--heading); font-size: 18px; }
+
+    .results { display: flex; flex-direction: column; gap: 6px; }
+    .result { text-align: left; cursor: pointer; padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+    .result:hover { background: var(--raised); }
+    .empty { padding: 30px 16px; text-align: center; color: var(--muted); }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>🎙️ Recordings</h1>
+    <div class="search"><input id="q" type="search" placeholder="Search everything that was said…" autocomplete="off" aria-label="Search transcripts"></div>
+  </header>
+  <main class="layout" id="layout">
+    <aside id="list" aria-label="Recordings"><div class="empty">Loading…</div></aside>
+    <section id="detail"><div class="card empty">Pick a recording.</div></section>
+  </main>
+
+  <script>
+    (function () {
+      // Same site as the dashboard: reuse its accent colour if one was picked there
+      try {
+        var a = localStorage.getItem("banha-accent");
+        if (a && /^#[0-9a-f]{6}$/i.test(a)) document.documentElement.style.setProperty("--accent", a);
+      } catch (e) { }
+
+      var KEY = new URLSearchParams(location.search).get("key") || "";
+      var withKey = function (url) { return KEY ? url + (url.indexOf("?") < 0 ? "?" : "&") + "key=" + encodeURIComponent(KEY) : url; };
+      var api = function (path) {
+        return fetch(withKey(path), { cache: "no-store" }).then(function (r) {
+          if (!r.ok) throw new Error(r.status);
+          return r.json();
+        });
+      };
+      var $ = function (id) { return document.getElementById(id); };
+      var esc = function (s) {
+        return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; });
+      };
+      var pad = function (n) { return String(n).padStart(2, "0"); };
+      var hms = function (ms) { var s = Math.max(0, Math.floor(ms / 1000)); return pad(Math.floor(s / 3600)) + ":" + pad(Math.floor(s % 3600 / 60)) + ":" + pad(s % 60); };
+      var human = function (ms) { var m = Math.round(ms / 60000); return m < 60 ? m + "m" : Math.floor(m / 60) + "h " + pad(m % 60) + "m"; };
+      var when = function (iso) { return new Date(iso).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); };
+      var REASONS = { stopped: "stopped by hand", empty: "everyone left", max: "hit the time limit", kicked: "bot disconnected", moved: "bot moved", error: "connection error", restart: "bot restarted" };
+
+      var list = [];
+      var current = null;
+      var people = {};
+      var hidden = {};
+      var tab = "transcript";
+      var follow = true;
+      var filterText = "";
+      var pendingSeek = null;
+
+      // ---------- List ----------
+      function renderList() {
+        var el = $("list");
+        if (!list.length) { el.innerHTML = '<div class="card empty">No recordings yet.</div>'; return; }
+        el.innerHTML = list.map(function (r) {
+          var faces = r.speakers.slice(0, 7).map(function (s) {
+            return s.avatar ? '<img alt="" title="' + esc(s.name) + '" src="' + esc(s.avatar) + '">' : '<span class="dot" title="' + esc(s.name) + '"></span>';
+          }).join("");
+          var badges = (r.status === "recording" || r.status === "suspended" ? '<span class="badge live">live</span>' : "") +
+            (r.has_transcript ? '<span class="badge">transcript</span>' : "") + (r.has_summary ? '<span class="badge">summary</span>' : "") +
+            (!r.has_audio && r.status === "done" ? '<span class="badge">text only</span>' : "");
+          return '<button class="item' + (current && current.id === r.id ? " sel" : "") + '" data-id="' + esc(r.id) + '">' +
+            '<div class="when">' + esc(when(r.started_at)) + badges + "</div>" +
+            '<div class="meta">' + esc(r.channel_name || "Voice") + " · " + human(r.duration_ms) + " · " + r.speakers.length + " speakers</div>" +
+            '<div class="faces">' + faces + "</div></button>";
+        }).join("");
+      }
+
+      $("list").addEventListener("click", function (e) {
+        var b = e.target.closest(".item");
+        if (b) location.hash = b.dataset.id;
+        var r = e.target.closest(".result");
+        if (r) location.hash = r.dataset.id + "@" + Math.floor(Number(r.dataset.t) / 1000);
+      });
+
+      // ---------- Detail ----------
+      function open(id, seekSec) {
+        if (current && current.id === id) { if (seekSec != null) seek(seekSec * 1000); return; }
+        pendingSeek = seekSec;
+        $("layout").classList.add("has-detail");
+        $("detail").innerHTML = '<div class="card empty">Loading…</div>';
+        api("/api/recordings/" + encodeURIComponent(id)).then(function (rec) {
+          current = rec;
+          people = {};
+          (rec.speakers || []).concat(rec.tracks || []).forEach(function (p) { people[p.user_id] = p; });
+          hidden = {};
+          filterText = "";
+          tab = rec.lines.length ? "transcript" : rec.summary_en ? "summary" : "report";
+          renderList();
+          renderDetail();
+        }).catch(function () {
+          $("detail").innerHTML = '<div class="card empty">That recording couldn\'t be loaded.</div>';
+        });
+      }
+
+      function nameOf(uid) { return (people[uid] && people[uid].name) || uid || "?"; }
+      function colorOf(uid) { return (people[uid] && people[uid].color) || "var(--heading)"; }
+
+      function renderDetail() {
+        var r = current;
+        var tracks = (r.tracks || []).filter(function (t) { return t.has_audio; });
+        var trackOptions = '<option value="mix">Everyone (mix)</option>' + tracks.map(function (t) { return '<option value="' + esc(t.user_id) + '">' + esc(t.name) + " only</option>"; }).join("");
+        var tabs = [["transcript", "Transcript"], ["summary", "Summary"], ["summary-ar", "الملخص"], ["report", "Report card"], ["activity", "Activity"]];
+        $("detail").innerHTML =
+          '<div class="card head">' +
+          '<button class="btn back" id="back">← All</button>' +
+          "<h2>" + esc(when(r.started_at)) + " · " + esc(r.channel_name || "Voice") + "</h2>" +
+          '<span class="muted">' + human(r.duration_ms) + " · " + r.speakers.length + " speakers" + (r.parts > 1 ? " · " + r.parts + " parts" : "") + (r.end_reason ? " · " + esc(REASONS[r.end_reason] || r.end_reason) : "") + "</span>" +
+          (r.folder_url ? '<a class="btn" target="_blank" rel="noopener" href="' + esc(r.folder_url) + '">📁 Drive</a>' : "") +
+          "</div>" +
+          (r.has_audio ?
+            '<div class="card player"><div class="player-row"><audio id="audio" controls preload="metadata"></audio><select id="track" aria-label="Track">' + trackOptions + "</select></div>" +
+            '<div class="timeline" id="timeline" title="Click to jump"></div></div>' :
+            '<div class="card player muted">' + (r.status === "done" ? "The audio of this recording was removed (only the text is kept)." : "The audio isn't ready yet.") + "</div>") +
+          '<div class="tabs" role="tablist">' + tabs.map(function (t) { return '<button class="btn' + (tab === t[0] ? " on" : "") + '" data-tab="' + t[0] + '" role="tab">' + t[1] + "</button>"; }).join("") + "</div>" +
+          '<div class="card tab-body" id="tab"></div>';
+
+        $("back").onclick = function () { $("layout").classList.remove("has-detail"); history.replaceState(null, "", location.pathname + location.search); current = null; renderList(); };
+        Array.prototype.forEach.call(document.querySelectorAll("[data-tab]"), function (b) {
+          b.onclick = function () { tab = b.dataset.tab; renderDetail(); };
+        });
+        if (r.has_audio) setupPlayer();
+        renderTab();
+        if (pendingSeek != null) { seek(pendingSeek * 1000); pendingSeek = null; }
+      }
+
+      function setupPlayer() {
+        var audio = $("audio");
+        var setSrc = function (track) { audio.src = withKey("/api/recordings/" + encodeURIComponent(current.id) + "/audio?track=" + encodeURIComponent(track)); };
+        setSrc("mix");
+        $("track").onchange = function () {
+          var t = audio.currentTime, playing = !audio.paused;
+          setSrc(this.value);
+          audio.addEventListener("loadedmetadata", function once() { audio.removeEventListener("loadedmetadata", once); audio.currentTime = t; if (playing) audio.play(); });
+        };
+        audio.ontimeupdate = function () { highlight(audio.currentTime * 1000); };
+        renderTimeline();
+      }
+
+      function renderTimeline() {
+        var el = $("timeline");
+        if (!el) return;
+        var dur = Math.max(1, current.duration_ms);
+        var pct = function (ms) { return (Math.min(dur, Math.max(0, ms)) / dur * 100).toFixed(3) + "%"; };
+        // Speech density: one block per transcript line (everyone)
+        var blocks = current.lines.map(function (l) { return '<span class="speech" style="left:' + pct(l.start_ms) + ";width:" + (Math.max(0.15, (l.end_ms - l.start_ms) / dur * 100)).toFixed(3) + '%"></span>'; }).join("");
+        var marks = (current.events || []).filter(function (e) { return e.type === "note" || e.type === "clip"; }).map(function (e) {
+          return '<span class="mark" data-t="' + e.t + '" style="left:' + pct(e.t) + '" title="' + esc(hms(e.t) + " " + (e.type === "note" ? "📝 " + nameOf(e.user) + ": " + e.text : "✂️ clip by " + nameOf(e.user))) + '">' + (e.type === "note" ? "📝" : "✂️") + "</span>";
+        }).join("");
+        el.innerHTML = blocks + marks + '<span class="head-pos" id="headpos" style="left:0"></span>';
+        el.onclick = function (e) {
+          var m = e.target.closest(".mark");
+          if (m) return seek(Number(m.dataset.t));
+          var rect = el.getBoundingClientRect();
+          seek((e.clientX - rect.left) / rect.width * dur);
+        };
+      }
+
+      function seek(ms) {
+        var audio = $("audio");
+        if (!audio) return;
+        var go = function () { audio.currentTime = Math.max(0, ms / 1000 - 1); audio.play().catch(function () { }); };
+        if (audio.readyState >= 1) go(); else audio.addEventListener("loadedmetadata", function once() { audio.removeEventListener("loadedmetadata", once); go(); });
+        highlight(ms, true);
+      }
+
+      // ---------- Tabs ----------
+      function renderTab() {
+        var el = $("tab");
+        if (tab === "transcript") return renderTranscript(el);
+        if (tab === "summary") return renderMd(el, current.summary_en, false);
+        if (tab === "summary-ar") return renderMd(el, current.summary_ar, true);
+        if (tab === "report") return renderReport(el);
+        renderActivity(el);
+      }
+
+      function transcriptItems() {
+        var items = current.lines.map(function (l) { return { t: l.start_ms, user: l.user_id, text: l.text }; });
+        (current.events || []).forEach(function (e) { if (e.type === "note") items.push({ t: e.t, user: e.user, text: e.text, note: true }); });
+        return items.sort(function (a, b) { return a.t - b.t; });
+      }
+
+      var shown = [];
+      function renderTranscript(el) {
+        if (!current.lines.length) {
+          el.innerHTML = '<div class="empty">' + (current.has_transcript ? "Nothing was said." : "No transcript for this recording (yet).") + "</div>";
+          return;
+        }
+        var ids = Object.keys(people).filter(function (u) { return current.lines.some(function (l) { return l.user_id === u; }); });
+        el.innerHTML = '<div class="tools">' + ids.map(function (u) {
+          return '<button class="chip' + (hidden[u] ? " off" : "") + '" data-user="' + esc(u) + '" style="border-color:' + esc(colorOf(u)) + '">' + esc(nameOf(u)) + "</button>";
+        }).join("") +
+          '<input type="text" id="find" placeholder="Find in this transcript" value="' + esc(filterText) + '" style="flex:1 1 180px">' +
+          '<label class="muted"><input type="checkbox" id="follow"' + (follow ? " checked" : "") + "> follow audio</label></div>" +
+          '<div class="lines" id="lines"></div>';
+        Array.prototype.forEach.call(el.querySelectorAll(".chip"), function (c) {
+          c.onclick = function () { hidden[c.dataset.user] = !hidden[c.dataset.user]; c.classList.toggle("off"); renderLines(); };
+        });
+        $("find").oninput = function () { filterText = this.value; renderLines(); };
+        $("follow").onchange = function () { follow = this.checked; };
+        renderLines();
+      }
+
+      function renderLines() {
+        var needle = filterText.trim().toLowerCase();
+        shown = transcriptItems().filter(function (it) { return !hidden[it.user] && (!needle || it.text.toLowerCase().indexOf(needle) >= 0 || nameOf(it.user).toLowerCase().indexOf(needle) >= 0); });
+        var mark = function (s) {
+          var h = esc(s);
+          if (!needle) return h;
+          var n = esc(needle).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          return h.replace(new RegExp(n, "gi"), function (m) { return "<mark>" + m + "</mark>"; });
+        };
+        $("lines").innerHTML = shown.length ? shown.map(function (it, i) {
+          return '<div class="line' + (it.note ? " note" : "") + '" data-i="' + i + '"><button class="t" data-t="' + it.t + '">' + hms(it.t) + "</button>" +
+            '<div class="txt"><span class="who" style="color:' + esc(colorOf(it.user)) + '">' + (it.note ? "📝 " : "") + esc(nameOf(it.user)) + "</span>" + mark(it.text) + "</div></div>";
+        }).join("") : '<div class="empty">No lines match.</div>';
+        $("lines").onclick = function (e) { var b = e.target.closest(".t"); if (b) seek(Number(b.dataset.t)); };
+        lastNow = -1;
+      }
+
+      var lastNow = -1;
+      function highlight(ms, force) {
+        var hp = $("headpos");
+        if (hp) hp.style.left = (Math.min(1, ms / Math.max(1, current.duration_ms)) * 100).toFixed(3) + "%";
+        var linesEl = $("lines");
+        if (!linesEl || !shown.length) return;
+        var lo = 0, hi = shown.length - 1, idx = -1;
+        while (lo <= hi) { var mid = (lo + hi) >> 1; if (shown[mid].t <= ms) { idx = mid; lo = mid + 1; } else hi = mid - 1; }
+        if (idx === lastNow && !force) return;
+        var prev = linesEl.querySelector(".line.now");
+        if (prev) prev.classList.remove("now");
+        lastNow = idx;
+        if (idx < 0) return;
+        var row = linesEl.querySelector('.line[data-i="' + idx + '"]');
+        if (!row) return;
+        row.classList.add("now");
+        // Scrolls the transcript box only, never the page
+        if (follow || force) linesEl.scrollTo({ top: row.offsetTop - linesEl.clientHeight / 2 + row.clientHeight / 2, behavior: force ? "auto" : "smooth" });
+      }
+
+      // Small markdown subset for the summaries: ### headings, - bullets, **bold**, *italic*, `code`
+      function md(src) {
+        var out = [], inList = false;
+        var inline = function (s) {
+          return esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(^|[\s(])\*(?!\s)(.+?)\*(?=[\s).,!?]|$)/g, "$1<i>$2</i>").replace(/`([^`]+)`/g, "<code>$1</code>");
+        };
+        String(src || "").split("\n").forEach(function (line) {
+          var t = line.trim();
+          var bullet = /^[-*•]\s+(.*)/.exec(t);
+          if (bullet) { if (!inList) { out.push("<ul>"); inList = true; } out.push("<li>" + inline(bullet[1]) + "</li>"); return; }
+          if (inList) { out.push("</ul>"); inList = false; }
+          var h = /^#{1,6}\s+(.*)/.exec(t);
+          if (h) out.push("<h3>" + inline(h[1]) + "</h3>");
+          else if (t) out.push("<p>" + inline(t) + "</p>");
+        });
+        if (inList) out.push("</ul>");
+        return out.join("");
+      }
+
+      function renderMd(el, text, rtl) {
+        el.innerHTML = text ? '<div class="md' + (rtl ? ' rtl" dir="rtl' : "") + '">' + md(text) + "</div>" : '<div class="empty">No summary for this recording (yet).</div>';
+      }
+
+      function renderReport(el) {
+        var rep = current.report;
+        if (!rep) { el.innerHTML = '<div class="empty">No report card yet.</div>'; return; }
+        var max = Math.max.apply(null, rep.speakers.map(function (s) { return s.talkMs; }).concat([1]));
+        el.innerHTML = '<div class="bars">' + rep.speakers.map(function (s) {
+          return '<div class="bar-row"><span class="who" style="color:' + esc(colorOf(s.user)) + ';font-weight:700">' + esc(nameOf(s.user)) + "</span>" +
+            '<div class="bar"><span style="width:' + (s.talkMs / max * 100).toFixed(1) + "%;background:" + esc(colorOf(s.user) === "var(--heading)" ? "var(--accent)" : colorOf(s.user)) + '"></span></div>' +
+            '<span class="muted">' + human(s.talkMs) + " · " + Math.round(s.share * 100) + "%" + (s.words ? " · " + s.words.toLocaleString() + " words" : "") + "</span></div>";
+        }).join("") + "</div>" +
+          '<div class="stats">' +
+          '<div class="stat"><span class="muted">Recording</span><b>' + human(rep.durationMs) + "</b></div>" +
+          '<div class="stat"><span class="muted">Someone talking</span><b>' + human(rep.talkMs) + "</b></div>" +
+          (rep.longest ? '<div class="stat"><span class="muted">Longest monologue</span><b>' + esc(nameOf(rep.longest.user)) + "</b>" + human(rep.longest.ms) + " at " + hms(rep.longest.at) + "</div>" : "") +
+          (rep.interrupter ? '<div class="stat"><span class="muted">Jumped in the most</span><b>' + esc(nameOf(rep.interrupter.user)) + "</b>" + rep.interrupter.count + " times</div>" : "") +
+          '<div class="stat"><span class="muted">Notes · clips</span><b>' + rep.notes + " · " + rep.clips + "</b></div></div>";
+      }
+
+      function renderActivity(el) {
+        var text = function (e) {
+          var who = esc(nameOf(e.user));
+          switch (e.type) {
+            case "start": return e.user ? who + " started the recording" : "Auto-recording started";
+            case "join": return who + " joined";
+            case "leave": return who + " left";
+            case "note": return "📝 " + who + ": " + esc(e.text);
+            case "clip": return "✂️ " + who + " clipped " + esc(String(e.text || "").replace(/`/g, ""));
+            case "reconnect": return "🔁 Reconnected";
+            case "restart": return "⚠️ Bot restarted (" + esc(e.text) + " gap)";
+            case "toggle": return "⚙️ " + who + " turned " + esc(e.text);
+            case "stop": return "⏹️ Stopped" + (e.user ? " by " + who : "");
+            default: return esc(e.text || e.type);
+          }
+        };
+        el.innerHTML = (current.events || []).length ? '<div class="lines">' + current.events.map(function (e) {
+          return '<div class="line"><button class="t" data-t="' + e.t + '">' + hms(e.t) + '</button><div class="txt">' + text(e) + "</div></div>";
+        }).join("") + "</div>" : '<div class="empty">Nothing logged.</div>';
+        el.onclick = function (e) { var b = e.target.closest(".t"); if (b) seek(Number(b.dataset.t)); };
+      }
+
+      // ---------- Search across all recordings ----------
+      var searchTimer = null;
+      $("q").addEventListener("input", function () {
+        clearTimeout(searchTimer);
+        var q = this.value.trim();
+        searchTimer = setTimeout(function () {
+          if (!q) { renderList(); return; }
+          api("/api/recordings/search?q=" + encodeURIComponent(q)).then(function (res) {
+            $("layout").classList.remove("has-detail");
+            var byId = {};
+            list.forEach(function (r) { byId[r.id] = r; });
+            $("list").innerHTML = '<div class="muted">' + res.results.length + " result" + (res.results.length === 1 ? "" : "s") + ' for "' + esc(q) + '"</div><div class="results">' +
+              res.results.map(function (r) {
+                var rec = byId[r.recording_id];
+                return '<button class="result" data-id="' + esc(r.recording_id) + '" data-t="' + r.start_ms + '"><div class="muted">' + esc(rec ? when(rec.started_at) : r.recording_id) + " · " + hms(r.start_ms) + '</div><div class="txt" style="unicode-bidi:plaintext"><b>' + esc(r.name) + ":</b> " + esc(r.text) + "</div></button>";
+              }).join("") + "</div>";
+          }).catch(function () { $("list").innerHTML = '<div class="card empty">Search failed.</div>'; });
+        }, 350);
+      });
+
+      // ---------- Start ----------
+      function route() {
+        var m = /^#([A-Za-z0-9]+)(?:@(\d+))?$/.exec(location.hash);
+        if (m) open(m[1], m[2] != null ? Number(m[2]) : null);
+      }
+      window.addEventListener("hashchange", route);
+      api("/api/recordings").then(function (res) {
+        list = res.recordings;
+        renderList();
+        route();
+      }).catch(function () { $("list").innerHTML = '<div class="card empty">Couldn\'t load the recordings.</div>'; });
+    })();
+  </script>
+</body>
+
+</html>

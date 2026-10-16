@@ -13,6 +13,7 @@ const { clearHistory } = require("./history");
 const { getRelevantEmojis } = require('./ai.js');
 const { buildMemeMenus } = require("./menuBuilder");
 const db = require("./db");
+const recording = require("./recording");
 
 // What a member's voice state counts as right now. Deafening always mutes too, so that time is
 // "deafened" only and "muted" means muted while still listening. Self and server mute/deafen both count.
@@ -48,6 +49,8 @@ module.exports = (client) => {
     const membersLoaded = guild
       ? guild.members.fetch({ withPresences: true }).catch((e) => console.warn("Member fetch warning:", e.message))
       : Promise.resolve();
+    // Voice recorder: control panel in #record, plus resuming a recording a restart cut off
+    membersLoaded.then(() => recording.init(client)).catch((e) => console.error("[Rec] init failed:", e));
     membersLoaded
       .then(() => db.reconcileVoiceSessions(client))
       .then((carried) => {
@@ -129,6 +132,9 @@ module.exports = (client) => {
 
     const displayName = getAuthorDisplayName(msg);
 
+    // Recording commands only count in #record; anywhere else they're plain "!" TTS like any other text
+    if (msg.channel.id === IDs.channelRecord && (await recording.handleCommand(msg))) return;
+
     const reactTo = ['ASD'];
     if ((reactTo.includes(msg.author.username) && !message.startsWith("!")) || message.startsWith("_")) {
       try {
@@ -159,6 +165,7 @@ module.exports = (client) => {
         "`!memes`: list memes.",
         "`!joinme`: Join your current voice channel.",
         "`!restartbot`: Restart the bot.",
+        // "`!record`, `!stoprecord`, `!note`, `!clip`, `!recordings`, `!search`, `!ask`: voice recording (only in #record).",
       ];
       msg.channel.send("> **COMMANDS:**\n> " + commands.join("\n> "));
     } else if (message === "!memes") {
@@ -277,7 +284,9 @@ module.exports = (client) => {
     } else if (message.startsWith("!joinme")) {
       try {
         let vc = msg.member.voice.channel.id;
-        if (vc) {
+        if (vc && audio.state.pinnedChannelId && vc !== audio.state.pinnedChannelId) {
+          msg.reply(`🔴 I'm recording in <#${audio.state.pinnedChannelId}>, so I can't move until it stops.`);
+        } else if (vc) {
           await audio.joinBanhaVoiceChannel(client, vc);
           msg.delete();
         }
@@ -293,6 +302,8 @@ module.exports = (client) => {
     } else if (message.startsWith("!restartbot")) {
       msg.delete();
       console.log("Restarting bot...");
+      // A running recording is saved first and picks up again after the restart
+      await recording.shutdown().catch((e) => console.error("[Rec] shutdown failed:", e));
       process.exit(1);
     } else if (message.startsWith("!")) {
       message = message.replace("!", "").trim();
@@ -412,6 +423,8 @@ module.exports = (client) => {
   });
 
   client.on("voiceStateUpdate", async (before, after) => {
+    // The recorder also needs the bot's own changes (kicked out of voice / dragged elsewhere)
+    recording.onVoiceStateUpdate(before, after);
     if (after.id == client.user.id) return;
 
     // --- Database logging: voice sessions with mic speaking tracking ---
@@ -512,6 +525,9 @@ module.exports = (client) => {
 
   client.on("interactionCreate", async (interaction) => {
     try {
+      // Recording panels in #record (buttons, selects, the note form)
+      if (await recording.handleInteraction(interaction)) return;
+
       if (interaction.isStringSelectMenu() && interaction.customId.startsWith("meme_select_")) {
         const memeKey = interaction.values[0];
         const memeFile = memes[memeKey];

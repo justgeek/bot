@@ -12,8 +12,16 @@ const state = {
   voiceCurrent: IDs.voice3,
   connection: null,
   player: null,
-  connectionSubscription: null
+  connectionSubscription: null,
+  // Set while a recording runs: the bot has one voice connection per server, so nothing may move it elsewhere
+  pinnedChannelId: null
 };
+
+// Called with the connection each time it becomes ready (the recorder attaches to it)
+const voiceReadyHooks = new Set();
+function onVoiceReady(fn) {
+  voiceReadyHooks.add(fn);
+}
 
 // In-memory mic speaking trackers
 const activeSpeakers = new Map(); // userId -> start timestamp (ms)
@@ -30,17 +38,23 @@ function settleSpeaker(userId) {
 
 function attachSpeakingTracker(conn) {
   if (!conn || !conn.receiver || !conn.receiver.speaking) return;
+  const speaking = conn.receiver.speaking;
 
-  conn.receiver.speaking.removeAllListeners('start');
-  conn.receiver.speaking.removeAllListeners('end');
+  // Swap out only our own listeners: the recorder listens on the same emitter
+  if (conn.__speakingHandlers) {
+    speaking.off('start', conn.__speakingHandlers.start);
+    speaking.off('end', conn.__speakingHandlers.end);
+  }
 
   // Triggered when member opens mic (green circle appears)
-  conn.receiver.speaking.on('start', (userId) => {
+  const onStart = (userId) => {
     if (!activeSpeakers.has(userId)) activeSpeakers.set(userId, Date.now());
-  });
+  };
+  conn.__speakingHandlers = { start: onStart, end: settleSpeaker };
+  speaking.on('start', onStart);
 
   // Triggered when member stops speaking
-  conn.receiver.speaking.on('end', settleSpeaker);
+  speaking.on('end', settleSpeaker);
 
   // No 'end' event arrives once the connection drops, so close out whoever was mid-sentence
   if (!conn.__speakingSettleHooked) {
@@ -207,6 +221,10 @@ function shouldJoinVoiceChannel(client, channelId) {
 }
 
 const joinBanhaVoiceChannel = async (client, channelToJoin) => {
+  if (state.pinnedChannelId && channelToJoin !== state.pinnedChannelId) {
+    console.log(`Not moving to voice channel ${channelToJoin}: recording in ${state.pinnedChannelId}.`);
+    return state.connection;
+  }
   if (!shouldJoinVoiceChannel(client, channelToJoin)) {
     console.log(`Not joining voice channel ${channelToJoin} as it's empty or only contains bots.`);
     return null;
@@ -221,17 +239,21 @@ const joinBanhaVoiceChannel = async (client, channelToJoin) => {
     selfMute: false
   });
 
-  state.connection.on('stateChange', (oldState, newState) => {
-    console.log(`Connection transitioned from ${oldState.status} to ${newState.status}`);
-  });
+  // joinVoiceChannel hands back the same connection while one exists, so hook it only once
+  if (!state.connection.__banhaHooked) {
+    state.connection.__banhaHooked = true;
+    state.connection.on('stateChange', (oldState, newState) => {
+      console.log(`Connection transitioned from ${oldState.status} to ${newState.status}`);
+    });
 
-  state.connection.on('error', (error) => {
-    console.error('Connection Error:', error);
-  });
+    state.connection.on('error', (error) => {
+      console.error('Connection Error:', error);
+    });
 
-  state.connection.on('debug', (message) => {
-    console.log(`[Voice Debug] ${message}`);
-  });
+    state.connection.on('debug', (message) => {
+      console.log(`[Voice Debug] ${message}`);
+    });
+  }
 
   try {
     await entersState(state.connection, VoiceConnectionStatus.Ready, 20000);
@@ -259,12 +281,16 @@ const joinBanhaVoiceChannel = async (client, channelToJoin) => {
     console.error('Failed to subscribe player to connection:', e);
   }
 
+  for (const hook of voiceReadyHooks) {
+    try { hook(state.connection); } catch (e) { console.error('Voice ready hook failed:', e); }
+  }
+
   return state.connection;
 };
 
 async function ensureVoiceReady(client, msg) {
   try {
-    const targetChannelId = msg?.member?.voice?.channel?.id || state.voiceCurrent || IDs.voice3;
+    const targetChannelId = state.pinnedChannelId || msg?.member?.voice?.channel?.id || state.voiceCurrent || IDs.voice3;
     if (!state.connection || state.connection.state?.status !== VoiceConnectionStatus.Ready || state.connection.joinConfig.channelId !== targetChannelId) {
       await joinBanhaVoiceChannel(client, targetChannelId);
     }
@@ -280,7 +306,8 @@ const playVoice = (resourceToPlay) => {
 };
 
 function leaveEmptyVoiceChannel(client) {
-  if (!state.connection) return;
+  // A running recording decides itself when to leave (it stops a while after the channel empties)
+  if (!state.connection || state.pinnedChannelId) return;
 
   const channel = client.channels.cache.get(IDs.voice3);
 
@@ -295,6 +322,8 @@ function leaveEmptyVoiceChannel(client) {
 
 module.exports = {
   state,
+  onVoiceReady,
+  countHumans,
   textToSpeech,
   shouldJoinVoiceChannel,
   joinBanhaVoiceChannel,

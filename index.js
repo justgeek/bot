@@ -37,6 +37,24 @@ require("./events")(client);
 // Login Bot
 client.login(process.env.BOT_TOKEN);
 
+// Heroku sends SIGTERM ~30 s before it stops the dyno (daily restart, deploys); Ctrl+C is SIGINT.
+// A running recording saves itself and resumes after the restart.
+const recording = require("./recording");
+let shuttingDown = false;
+for (const signal of ["SIGTERM", "SIGINT"]) {
+  process.on(signal, async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`${signal} received, saving any recording before exiting...`);
+    try {
+      await recording.shutdown();
+    } catch (e) {
+      console.error("Recording shutdown failed:", e);
+    }
+    process.exit(0);
+  });
+}
+
 // Optional HTTP Health check/Keep-Alive App
 const app = express();
 const port = process.env.PORT || 3000;

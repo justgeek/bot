@@ -1,8 +1,9 @@
 {
   "dependencies": {
     "@discordjs/opus": "^0.10.0",
-    "@discordjs/voice": "^0.19.2",
+    "@discordjs/voice": "0.19.2",
     "@google/generative-ai": "^0.21.0",
+    "@googleapis/drive": "^26.0.2",
     "@snazzah/davey": "^0.1.10",
     "@supabase/supabase-js": "^2.117.3",
     "active-window": "^0.1.0",

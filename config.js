@@ -11,6 +11,7 @@ module.exports = {
     channelActivity: "1474888679183876228", // activity text channel
     channelCommands: "1020315442042122330", // commands text channel
     channelLateNotice: "247069115204763648", // where dashboard "late notices" are announced (main chat)
+    channelRecord: "1560616047462318170", // record text channel: recording panels, and the only place recording commands work
 
     voice1: "247069115204763649", // 1st voice channel
     voice2: "248868783534505984", // 2nd voice channel (secret)
@@ -30,6 +31,26 @@ module.exports = {
     "moonscarlet": "#ff0000",
     "exorcismus": "#181818",        // Exorcismus: black
     "exorcismus#7611": "#181818",
+  },
+
+  // Voice recording (recording/). Auto-record on/off, its channels, min people and the transcript/summary
+  // defaults are changed from the control panel in #record; these are the fixed limits and formats.
+  Recording: {
+    chunkMinutes: 5, // raw audio goes to Drive in pieces this long while recording, so a restart risks at most one
+    maxHours: 12, // safety cap per recording
+    emptyStopMinutes: 2, // stop once the channel has had no people for this long
+    autoMinPeople: 2, // default people needed for auto-record to start
+    autoStartDelaySeconds: 5, // the channel must stay that full this long (ignores quick join/leave)
+    resumeWindowMinutes: 30, // after a restart, resume a recording only if it was cut off less than this ago
+    ignoreBots: true, // don't record other bots (music bots etc.)
+    mixKbps: 32, // everyone mixed together, Opus mono
+    trackKbps: 24, // one file per speaker, Opus mono
+    clipKbps: 48,
+    clipSeconds: 30,
+    clipMaxSeconds: 120,
+    nicknamePrefix: "🔴 REC ", // shown on the bot while it records
+    ttsAnnounce: true, // say "recording started/stopped" in the voice channel
+    driveRootFolder: "Discord Recordings",
   },
 
   // Allowed channels for the Dashboard "Share to Discord" feature

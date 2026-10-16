@@ -616,6 +616,7 @@ async function getRecentLogs(limit = 30, opts = {}) {
 }
 
 module.exports = {
+  supabase, // also used by recording/store.js
   isTrackedChannel,
   isAfkChannel,
   unionIntervals,
