@@ -2,8 +2,7 @@
 // keeps the activity log and the live panel in #record, and rides out reconnects and bot restarts.
 const fs = require("fs");
 const path = require("path");
-const { EndBehaviorType, VoiceConnectionStatus, entersState, createAudioResource, StreamType } = require("@discordjs/voice");
-const discordTTS = require("discord-tts");
+const { EndBehaviorType, VoiceConnectionStatus, entersState } = require("@discordjs/voice");
 const { IDs, Recording: cfg } = require("../config");
 const audio = require("../audioManager");
 const { TrackWriter, MS } = require("./track");
@@ -101,8 +100,6 @@ class RecordingSession {
     }
     this.attach(conn);
     this.timer = setInterval(() => this.tick(), 1000);
-    this.setNickname(true);
-    this.announce(fresh ? "recording started" : "recording resumed");
     this.refreshPanel(true);
   }
 
@@ -395,33 +392,6 @@ class RecordingSession {
     await this.panelMessage.edit(panel.livePanel(this.view())).catch((err) => console.warn("[Rec] Panel update failed:", err.message));
   }
 
-  // ---------- Nickname + spoken announcement, so everyone knows they're being recorded ----------
-  async setNickname(on) {
-    const me = this.guild?.members.me;
-    if (!me || !cfg.nicknamePrefix) return;
-    const prefix = cfg.nicknamePrefix;
-    const current = me.nickname || "";
-    try {
-      if (on && !current.startsWith(prefix)) await me.setNickname((prefix + (current || me.user.username)).slice(0, 32));
-      if (!on && current.startsWith(prefix)) {
-        const restored = current.slice(prefix.length);
-        await me.setNickname(restored && restored !== me.user.username ? restored : null);
-      }
-    } catch (err) {
-      console.warn("[Rec] Couldn't change the bot's nickname (needs Change Nickname):", err.message);
-    }
-  }
-
-  announce(words) {
-    if (!cfg.ttsAnnounce || !audio.state.player) return;
-    try {
-      const stream = discordTTS.getVoiceStream(words, { lang: "en" });
-      audio.playVoice(createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true }));
-    } catch (err) {
-      console.warn("[Rec] Announcement failed:", err.message);
-    }
-  }
-
   // ---------- Ending ----------
   closeTracks() {
     for (const s of this.streams.values()) s.destroy();
@@ -449,8 +419,6 @@ class RecordingSession {
       this.rec.outputs = this.rec.outputs || {};
       if (hadAudio) this.rec.outputs.progress = { audio: { state: "pending", detail: "waiting for the last uploads" } };
 
-      if (reason !== "empty" && wasActive) this.announce("recording stopped");
-      this.setNickname(false);
       await this.uploads;
       await store.saveRecording(this.rec);
       await this.releaseVoice();
@@ -471,8 +439,6 @@ class RecordingSession {
   async releaseVoice() {
     audio.state.pinnedChannelId = null;
     if (this.channelId === IDs.voice3) return audio.leaveEmptyVoiceChannel(this.client);
-    await sleep(2500); // lets "recording stopped" finish playing
-    if (audio.state.pinnedChannelId) return; // a new recording already started
     if (audio.countHumans(this.client.channels.cache.get(IDs.voice3)) > 0) {
       await audio.joinBanhaVoiceChannel(this.client, IDs.voice3);
     } else if (audio.state.connection) {

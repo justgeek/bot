@@ -1,9 +1,11 @@
 // scripts/drive-auth.js - one-time setup so the bot can save recordings to your Google Drive.
+// Run it on your own PC (not on Heroku): Google sends your browser back to a page this script opens locally.
 //
 // 1. https://console.cloud.google.com : create a project and enable the "Google Drive API".
-// 2. "OAuth consent screen": External, add the scope ".../auth/drive.file", then "Publish app" (In production).
-//    Leave it in "Testing" and Google expires the token after 7 days.
-// 3. "Credentials" -> "Create credentials" -> "OAuth client ID" -> type "Desktop app". Copy its ID and secret.
+// 2. "Google Auth Platform" (the old "OAuth consent screen"): Branding = app name + your email; Audience =
+//    External, then "Publish app" so it's "In production" (left in "Testing", Google expires the token after
+//    7 days); Data access = add the scope ".../auth/drive.file".
+// 3. Clients -> "Create client" -> type "Desktop app". Copy its client ID and client secret.
 // 4. Run:  node scripts/drive-auth.js <client id> <client secret>
 //    (or put GDRIVE_CLIENT_ID / GDRIVE_CLIENT_SECRET in .env and run it without arguments)
 //    Open the link, sign in with the Google account whose Drive should hold the recordings, and allow it.

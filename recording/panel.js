@@ -206,8 +206,8 @@ function noteModal(id) {
 }
 
 // ---------- Control panel (one persistent message) ----------
-// info: { settings, active: { channelId } | null, quota: { usage, limit } | null, driveEnabled, dbEnabled }
-function controlPanel({ settings, active, quota, driveEnabled, dbEnabled }) {
+// info: { settings, active: { channelId } | null, quota: { usage, limit } | null, driveEnabled, dbEnabled, geminiKey }
+function controlPanel({ settings, active, quota, driveEnabled, dbEnabled, geminiKey }) {
   const channels = settings.autoChannels?.length
     ? settings.autoChannels.map((id) => `<#${id}>`).join(", ")
     : "any voice channel (except the secret one and AFK)";
@@ -215,11 +215,13 @@ function controlPanel({ settings, active, quota, driveEnabled, dbEnabled }) {
     "## 🎙️ Recorder",
     `**Auto-record:** ${settings.autoRecord ? "**On**" : "Off"} — starts when **${settings.minPeople}+** people are in ${channels}; every recording stops ${cfg.emptyStopMinutes} min after the channel empties.`,
     `**After each recording:** transcript **${onOff(settings.transcribe)}** · summary **${onOff(settings.summarize)}** (English + Egyptian Arabic) · audio kept **${settings.retentionDays ? `${settings.retentionDays} days` : "forever"}** (text always kept)`,
+    "-# These are the defaults for new recordings; each recording's own panel can still switch its transcript/summary on or off.",
   ];
   if (quota?.limit) {
     const pct = Math.round((quota.usage / quota.limit) * 100);
     lines.push(`**Google Drive:** ${size(quota.usage)} of ${size(quota.limit)} used (${pct}%)` + (pct >= 90 ? " ⚠️ almost full" : ""));
   } else if (!driveEnabled) lines.push("⚠️ **Google Drive isn't connected** - recordings can't be kept (see scripts/drive-auth.js).");
+  if (!geminiKey && (settings.transcribe || settings.summarize)) lines.push("⚠️ **RECORDING_GEMINI_API_KEY isn't set** - transcripts and summaries can't be made.");
   if (!dbEnabled) lines.push("⚠️ **No database** - recordings can't resume after a restart and these settings reset.");
   lines.push(active ? `**Now:** 🔴 recording in <#${active.channelId}>` : "**Now:** not recording");
   lines.push("-# Commands (this channel only): `!record` `!stoprecord` `!note <text>` `!clip [secs]` `!recordings` `!autorecord on|off` `!search <words>` `!ask <question>`");
@@ -231,6 +233,12 @@ function controlPanel({ settings, active, quota, driveEnabled, dbEnabled }) {
       button("recctl:start", "Start recording", ButtonStyle.Danger, "🔴", !!active),
       button("recctl:auto", `Auto-record: ${onOff(settings.autoRecord)}`, settings.autoRecord ? ButtonStyle.Success : ButtonStyle.Secondary, "🤖"),
       button("recctl:settings", "Settings", ButtonStyle.Secondary, "⚙️")
+    )
+  );
+  c.addActionRowComponents(
+    row(
+      button("recctl:tx", `Transcripts: ${onOff(settings.transcribe)}`, settings.transcribe ? ButtonStyle.Success : ButtonStyle.Secondary, "📄"),
+      button("recctl:sum", `Summaries: ${onOff(settings.summarize)}`, settings.summarize ? ButtonStyle.Success : ButtonStyle.Secondary, "✨")
     )
   );
   return v2(c);
@@ -267,12 +275,6 @@ function settingsPanel(settings, { ephemeral = true } = {}) {
         .setCustomId("recset:keep")
         .setPlaceholder("How long to keep audio")
         .addOptions(RETENTION_CHOICES.map((d) => ({ label: d ? `Keep audio ${d} days (text kept forever)` : "Keep audio forever", value: String(d), default: d === (settings.retentionDays || 0) })))
-    )
-  );
-  c.addActionRowComponents(
-    row(
-      button("recset:tx", `New recordings - transcript: ${onOff(settings.transcribe)}`, settings.transcribe ? ButtonStyle.Success : ButtonStyle.Secondary, "📄"),
-      button("recset:sum", `Summary: ${onOff(settings.summarize)}`, settings.summarize ? ButtonStyle.Success : ButtonStyle.Secondary, "✨")
     )
   );
   return v2(c, ephemeral ? MessageFlags.Ephemeral : 0);

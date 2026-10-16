@@ -289,6 +289,7 @@ async function audioStep(rec, ctx) {
   if (drive.enabled) {
     ctx.progress("audio", "running", "uploading to Google Drive");
     const folder = await drive.recordingFolder(rec, folderName(rec));
+    await drive.rename(folder, folderName(rec)); // "start → …" becomes "start → end" now that it's over
     out.files.mix = await drive.upload(folder, "mix.ogg", mixFile, "audio/ogg");
     await ctx.save();
     const tracksFolder = await drive.ensureFolder(folder, "tracks");

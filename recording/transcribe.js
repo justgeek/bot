@@ -16,9 +16,12 @@ const { sleep, QuotaPause, UserError, nextQuotaReset, localStamp } = require("./
 // Same as aiHandler.js: casual voice chat trips the default filters
 const SAFETY = ["HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"].map((category) => ({ category, threshold: "BLOCK_NONE" }));
 
-const transcribeModel = () => process.env.RECORDING_TRANSCRIBE_MODEL || process.env.GEMINI_AI_MODEL || "gemini-flash-latest";
-const fallbackModel = () => process.env.RECORDING_TRANSCRIBE_FALLBACK_MODEL || null; // e.g. a Flash-Lite model, which gets more free requests
-const summaryModel = () => process.env.RECORDING_SUMMARY_MODEL || process.env.GEMINI_AI_MODEL || "gemini-flash-latest";
+// Recordings use their own Gemini key, not the "!!" chat's GEMINI_API_KEY, so they never eat its quota.
+// Free-tier limits count per Google Cloud project: make this key in a different project from the other one.
+const apiKey = () => process.env.RECORDING_GEMINI_API_KEY || "";
+const geminiModelName = () => process.env.RECORDING_GEMINI_MODEL || "gemini-flash-latest";
+const fallbackModel = () => process.env.RECORDING_GEMINI_FALLBACK_MODEL || null; // e.g. a Flash-Lite model, which gets more free requests
+const NO_KEY = "RECORDING_GEMINI_API_KEY isn't set (Heroku config var), so there's no Gemini to ask";
 
 // Segments: one person's stretch of speech. Pauses under 1.5 s are merged when nobody else started
 // talking in between (keeps the conversation's order exact), up to 30 s each.
@@ -133,10 +136,10 @@ class SegmentCutter {
 
 // ---------- Gemini ----------
 function geminiModel(name, { schema, system } = {}) {
-  if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is not set");
+  if (!apiKey()) throw new Error(NO_KEY);
   const generationConfig = { temperature: 0.2 };
   if (schema) Object.assign(generationConfig, { responseMimeType: "application/json", responseSchema: schema });
-  return new GoogleGenerativeAI(process.env.GEMINI_API_KEY).getGenerativeModel({ model: name, safetySettings: SAFETY, systemInstruction: system, generationConfig });
+  return new GoogleGenerativeAI(apiKey()).getGenerativeModel({ model: name, safetySettings: SAFETY, systemInstruction: system, generationConfig });
 }
 
 const isDailyQuota = (err) => /PerDay|per day|daily/i.test(JSON.stringify(err.errorDetails || []) + " " + (err.message || ""));
@@ -240,6 +243,7 @@ async function transcriptStep(rec, ctx) {
   const pending = segments.filter((s) => !(s.id in done));
 
   if (pending.length) {
+    if (!apiKey()) throw new Error(NO_KEY);
     const files = await ctx.trackFiles();
     const missing = [...new Set(pending.map((s) => s.user))].filter((u) => !files[u]);
     if (missing.length) throw new Error(`the audio of ${missing.map((u) => names[u] || u).join(", ")} isn't available to transcribe`);
@@ -247,7 +251,7 @@ async function transcriptStep(rec, ctx) {
     const pendingMs = pending.reduce((a, s) => a + s.end - s.start, 0);
     const estimate = Math.max(1, Math.ceil(pendingMs / BATCH_SPEECH_MS));
     const cutters = new Map();
-    let model = transcribeModel();
+    let model = geminiModelName();
     let onFallback = false;
     let batch = [];
     let batchMs = 0;
@@ -398,9 +402,10 @@ async function summaryStep(rec, ctx) {
     ctx.progress("summary", "done", "nothing was said to summarize");
     return;
   }
+  if (!apiKey()) throw new Error(NO_KEY);
   let response;
   try {
-    response = await generate(summaryModel(), [{ text: `${sessionHeader(rec)}\n\nTranscript:\n${transcriptText(lines)}` }], { schema: SUMMARY_SCHEMA, system: SUMMARY_SYSTEM });
+    response = await generate(geminiModelName(), [{ text: `${sessionHeader(rec)}\n\nTranscript:\n${transcriptText(lines)}` }], { schema: SUMMARY_SCHEMA, system: SUMMARY_SYSTEM });
   } catch (err) {
     if (err.daily) throw new QuotaPause("summary", nextQuotaReset());
     throw err;
@@ -441,6 +446,7 @@ const ASK_SYSTEM = [
 const MAX_ASK_CHARS = 600000; // ~200k tokens: stays inside the free tier's tokens-per-minute
 
 async function ask(question) {
+  if (!apiKey()) throw new UserError("RECORDING_GEMINI_API_KEY isn't set yet (Heroku config var).");
   const since = new Date(Date.now() - 30 * 86400e3).toISOString();
   const summaries = await store.recentSummaries(since);
   // Read in full the sessions with the most lines matching the question's words (else the latest one)
@@ -470,7 +476,7 @@ async function ask(question) {
   }
   if (parts.length === 1) throw new UserError("There are no transcribed recordings to look through yet.");
   try {
-    const response = await generate(summaryModel(), [{ text: parts.join("\n\n") }], { system: ASK_SYSTEM });
+    const response = await generate(geminiModelName(), [{ text: parts.join("\n\n") }], { system: ASK_SYSTEM });
     return response.text().trim() || "I couldn't find anything about that.";
   } catch (err) {
     if (err.daily) throw new UserError(`Gemini's free daily limit is used up - try again after <t:${Math.floor(nextQuotaReset() / 1000)}:t>.`);
@@ -478,4 +484,6 @@ async function ask(question) {
   }
 }
 
-module.exports = { normalizeText, buildSegments, SegmentCutter, transcriptStep, summaryStep, search, ask, writeTranscriptFiles };
+const hasGeminiKey = () => !!apiKey();
+
+module.exports = { normalizeText, buildSegments, SegmentCutter, transcriptStep, summaryStep, search, ask, writeTranscriptFiles, hasGeminiKey };

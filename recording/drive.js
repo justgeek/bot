@@ -109,6 +109,10 @@ async function trash(fileId) {
   }
 }
 
+async function rename(fileId, name) {
+  await withRetry("rename", () => api.files.update({ fileId, requestBody: { name }, fields: "id" }));
+}
+
 // Trashes a file/folder by name inside a folder, if it's there
 async function trashChild(parentId, name) {
   const child = await findChild(parentId, name);
@@ -136,4 +140,4 @@ const fileUrl = (id) => `https://drive.google.com/file/d/${id}/view`;
 const folderUrl = (id) => `https://drive.google.com/drive/folders/${id}`;
 const mediaUrl = (id) => `https://www.googleapis.com/drive/v3/files/${id}?alt=media`;
 
-module.exports = { enabled, ensureFolder, recordingFolder, upload, download, trash, trashChild, quota, mediaStream, accessToken, fileUrl, folderUrl, mediaUrl };
+module.exports = { enabled, ensureFolder, recordingFolder, upload, download, rename, trash, trashChild, quota, mediaStream, accessToken, fileUrl, folderUrl, mediaUrl };

@@ -136,6 +136,16 @@ module.exports = function registerDashboard(app, client) {
     res.send("BANHA FOREVER !!!!! BOT IS RUNNING OK");
   });
 
+  // Public privacy note (Google's OAuth "Branding" page needs a privacy policy link to publish the Drive app)
+  app.get("/privacy", (req, res) => {
+    res.type("html").send(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Privacy</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;max-width:680px;margin:40px auto;padding:0 16px;color:#222}</style></head><body>
+<h1>Privacy</h1>
+<p>This is a private Discord bot for one friends' server. It records that server's voice chats when asked to, and saves the recordings, transcripts and summaries to its owner's own Google Drive (it can only see files it created itself).</p>
+<p>Nothing is sold or shared with anyone else. Transcripts and summaries are made with Google's Gemini API. To have a recording deleted, ask the server's admins.</p>
+</body></html>`);
+  });
+
   app.get("/", guard, (req, res) => {
     res.sendFile(path.join(__dirname, "dashboard.html"));
   });

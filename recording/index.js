@@ -168,7 +168,7 @@ function refreshControlPanel({ repost = false } = {}) {
 }
 
 const controlPayload = () =>
-  panel.controlPanel({ settings, active: active ? { channelId: active.channelId } : null, quota: quotaCache, driveEnabled: drive.enabled, dbEnabled: store.enabled });
+  panel.controlPanel({ settings, active: active ? { channelId: active.channelId } : null, quota: quotaCache, driveEnabled: drive.enabled, dbEnabled: store.enabled, geminiKey: transcribe.hasGeminiKey() });
 
 async function renderControlPanel(repost) {
   const channel = await client.channels.fetch(IDs.channelRecord).catch(() => null);
@@ -356,6 +356,18 @@ async function controlInteraction(i, action) {
     await saveSettings();
     await i.update(controlPayload());
     evaluateAuto();
+  } else if (action === "tx" || action === "sum") {
+    // Defaults for new recordings (a summary is written from the transcript, so they go together)
+    requireAdmin(i.member);
+    if (action === "tx") {
+      settings.transcribe = !settings.transcribe;
+      if (!settings.transcribe) settings.summarize = false;
+    } else {
+      settings.summarize = !settings.summarize;
+      if (settings.summarize) settings.transcribe = true;
+    }
+    await saveSettings();
+    await i.update(controlPayload());
   } else if (action === "settings") {
     requireAdmin(i.member);
     await i.reply(panel.settingsPanel(settings));
@@ -367,13 +379,6 @@ async function settingsInteraction(i, action) {
   if (action === "channels") settings.autoChannels = [...i.values];
   else if (action === "min") settings.minPeople = Number(i.values[0]) || cfg.autoMinPeople;
   else if (action === "keep") settings.retentionDays = Number(i.values[0]) || 0;
-  else if (action === "tx") {
-    settings.transcribe = !settings.transcribe;
-    if (!settings.transcribe) settings.summarize = false;
-  } else if (action === "sum") {
-    settings.summarize = !settings.summarize;
-    if (settings.summarize) settings.transcribe = true;
-  }
   await saveSettings();
   await i.update(panel.settingsPanel(settings, { ephemeral: false }));
   refreshControlPanel();
@@ -396,14 +401,6 @@ async function playInteraction(i, recId, startMs) {
 }
 
 // ---------- Startup, background jobs, shutdown ----------
-async function clearNickname() {
-  const me = guild()?.members.me;
-  const prefix = cfg.nicknamePrefix;
-  if (!prefix || !me?.nickname?.startsWith(prefix)) return;
-  const restored = me.nickname.slice(prefix.length);
-  await me.setNickname(restored && restored !== me.user.username ? restored : null).catch(() => { });
-}
-
 // Recordings a restart cut off are resumed when people are still there (else finished and processed);
 // processing that was interrupted carries on
 async function resumeAll() {
@@ -478,7 +475,6 @@ async function init(c) {
   } finally {
     resuming = false;
   }
-  if (!active) await clearNickname();
   await refreshControlPanel();
   setInterval(housekeeping, 10 * 60000);
   housekeeping();

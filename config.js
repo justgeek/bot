@@ -48,8 +48,6 @@ module.exports = {
     clipKbps: 48,
     clipSeconds: 30,
     clipMaxSeconds: 120,
-    nicknamePrefix: "🔴 REC ", // shown on the bot while it records
-    ttsAnnounce: true, // say "recording started/stopped" in the voice channel
     driveRootFolder: "Discord Recordings",
   },
 

@@ -38,8 +38,13 @@ function localStamp(ms) {
   return `${p.date} ${pad(p.hour)}.${pad(p.minute)}`;
 }
 
+// The recording's Drive folder: "2026-10-16 21.56 → 23.40", or "2026-10-16 21.56 → 2026-10-17 03.42" past
+// midnight (server clock). While it's still recording the end is "…"; processing renames it once it's over.
 function folderName(rec) {
-  return `${localStamp(Date.parse(rec.started_at))} · ${safeName(rec.channel_name || "Voice")} · ${rec.id}`;
+  const start = localStamp(Date.parse(rec.started_at));
+  if (!rec.ended_at) return `${start} → …`;
+  const end = localStamp(Date.parse(rec.ended_at));
+  return `${start} → ${end.slice(0, 10) === start.slice(0, 10) ? end.slice(11) : end}`;
 }
 
 function threadName(rec) {
