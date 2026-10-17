@@ -391,8 +391,20 @@ function writeTranscriptFiles(rec, lines, dir) {
 // ---------- Summary step ----------
 const SUMMARY_SCHEMA = {
   type: SchemaType.OBJECT,
-  properties: { en: { type: SchemaType.STRING }, ar: { type: SchemaType.STRING } },
-  required: ["en", "ar"],
+  properties: {
+    en: { type: SchemaType.STRING },
+    ar: { type: SchemaType.STRING },
+    // How each speaker got written in the two summaries, so the web page can colour them
+    names: {
+      type: SchemaType.ARRAY,
+      items: {
+        type: SchemaType.OBJECT,
+        properties: { speaker: { type: SchemaType.STRING }, written: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } } },
+        required: ["speaker", "written"],
+      },
+    },
+  },
+  required: ["en", "ar", "names"],
 };
 
 const SUMMARY_SYSTEM = [
@@ -402,6 +414,7 @@ const SUMMARY_SYSTEM = [
   "Each one in Discord markdown with these sections as ### headings:",
   "TL;DR (2-4 bullets) · Timeline (the main stretches and topics, each with its [hh:mm:ss]) · Highlights & funny moments (short quotes in their original language, with who said them) · Plans & decisions (or that there were none) · People (one line per person on what they were up to) · Notes (only if people added notes).",
   "Be concrete and only use what is in the transcript. Keep each version under 3500 characters.",
+  "In `names`, list every speaker (exactly as written in the transcript) with each way you wrote their name in `en` and `ar` (e.g. a first name, a nickname, the Arabic spelling).",
 ].join("\n");
 
 function sessionHeader(rec) {
@@ -433,9 +446,15 @@ async function summaryStep(rec, ctx) {
     if (err.daily) throw new QuotaPause("summary", nextQuotaReset());
     throw err;
   }
-  const { en, ar } = JSON.parse(response.text());
+  const { en, ar, names } = JSON.parse(response.text());
   rec.summary_en = String(en || "").trim();
   rec.summary_ar = String(ar || "").trim();
+  const idOf = Object.fromEntries(lines.map((l) => [l.name, l.user_id]));
+  rec.outputs.aliases = {};
+  for (const n of Array.isArray(names) ? names : []) {
+    const uid = idOf[n?.speaker];
+    if (uid) rec.outputs.aliases[uid] = (n.written || []).map((w) => String(w).trim()).filter((w) => w.length > 1).slice(0, 8);
+  }
   if (drive.enabled && rec.drive_folder_id) {
     await drive.upload(rec.drive_folder_id, "summary.en.md", Buffer.from(rec.summary_en + "\n"), "text/markdown; charset=utf-8");
     await drive.upload(rec.drive_folder_id, "summary.ar.md", Buffer.from(rec.summary_ar + "\n"), "text/markdown; charset=utf-8");

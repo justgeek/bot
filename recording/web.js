@@ -93,6 +93,7 @@ module.exports = function registerRecordingsPage(app, client) {
         report: rec.report || null,
         summary_en: rec.summary_en || null,
         summary_ar: rec.summary_ar || null,
+        aliases: rec.outputs?.aliases || {},
         tracks: Object.entries(files.tracks || {}).map(([u, t]) => ({ ...person(u, t.name), has_audio: !!t.id && !rec.outputs?.audioDeleted })),
         folder_url: rec.drive_folder_id ? drive.folderUrl(rec.drive_folder_id) : null,
         lines: lines.map((l) => ({ start_ms: l.start_ms, end_ms: l.end_ms, user_id: l.user_id, name: l.name, text: l.text })),

@@ -146,6 +146,11 @@
     .md ul { margin: 4px 0; padding-inline-start: 22px; }
     .md p { margin: 6px 0; }
     .md code { background: var(--surface-2); padding: 0 4px; border-radius: 4px; }
+    .md .ts { font: 13px ui-monospace, monospace; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; unicode-bidi: isolate; direction: ltr; }
+    .md .ts:hover { text-decoration: underline; }
+    .md .pp { font-weight: 600; }
+    .md bdi { unicode-bidi: isolate; }
+    body.space .scrub { cursor: grab; }
     .rtl { direction: rtl; text-align: right; font-family: var(--font-ar); }
     .rtl h3 { font-family: var(--font-ar); font-weight: 600; }
 
@@ -288,7 +293,7 @@
             '<div class="playhead" id="playhead" style="left:0"></div><div class="hovertime" id="hovertime"></div></div>' +
             '<div class="zoombar"><button class="cbtn small" id="zoomout" title="Zoom out (-)">−</button><button class="cbtn small" id="zoomin" title="Zoom in (+), or scroll on the waveform">+</button>' +
             '<button class="cbtn small" id="zoomall" title="Show everything (0)">Fit</button><span class="muted" id="zoomlabel"></span>' +
-            '<span class="muted hint">scroll on the waveform to zoom · Shift+scroll to move along</span></div>' +
+            '<span class="muted hint">scroll on the waveform to zoom · Shift+scroll or hold Space + move the mouse to move along</span></div>' +
             '<div class="controls">' +
             '<button class="cbtn" id="back30" title="Back 30 s (Shift+←)">« 30</button>' +
             '<button class="cbtn" id="back5" title="Back 5 s (←)">‹ 5</button>' +
@@ -331,6 +336,7 @@
       // The visible stretch of the recording (zoomed in = a smaller stretch); shared with jump()/keys
       var view = { start: 0, len: 1 };
       var zoomBy = function () { };
+      var panBy = function () { return false; };
 
       function setupPlayer() {
         var rec = current;
@@ -409,7 +415,9 @@
         var tick = function () {
           var ms = audio.currentTime * 1000;
           // Zoomed in and playing past the visible stretch: turn the page
-          if (!audio.paused && view.len < dur && (ms > view.start + view.len || ms < view.start)) { view.start = Math.min(dur - view.len, Math.max(0, ms - view.len * 0.05)); drawLanes(); drawMarks(); zoomLabel(); }
+          // ...unless the view was moved by hand (Shift+scroll, Space+mouse), then leave it until the playhead is back in it
+          if (ms >= view.start && ms <= view.start + view.len) view.free = false;
+          else if (!audio.paused && !view.free && view.len < dur) { view.start = Math.min(dur - view.len, Math.max(0, ms - view.len * 0.05)); drawLanes(); drawMarks(); zoomLabel(); }
           var p = x(ms);
           $("playhead").style.display = p < 0 || p > 1 ? "none" : "";
           $("playhead").style.left = (p * 100).toFixed(3) + "%";
@@ -430,14 +438,21 @@
         $("zoomin").onclick = function () { zoomBy(2); };
         $("zoomout").onclick = function () { zoomBy(0.5); };
         $("zoomall").onclick = function () { view = { start: 0, len: dur }; drawPlayer(); };
+        // Move the visible stretch by a number of pixels, without touching the playback position
+        panBy = function (px) {
+          if (view.len >= dur) return false;
+          view.start = Math.min(dur - view.len, Math.max(0, view.start + px / scrub.clientWidth * view.len));
+          view.free = true;
+          drawPlayer();
+          return true;
+        };
         // Mouse wheel on the waveform: zoom at the pointer; Shift+wheel (or a sideways swipe) scrolls along
         scrub.addEventListener("wheel", function (ev) {
           ev.preventDefault();
-          var sideways = Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.shiftKey ? ev.deltaY : 0;
-          if (sideways) {
-            view.start = Math.min(dur - view.len, Math.max(0, view.start + sideways / 400 * view.len));
-            drawPlayer();
-          } else zoomBy(ev.deltaY < 0 ? 1.5 : 1 / 1.5, msAt(ev));
+          var unit = ev.deltaMode === 1 ? 33 : ev.deltaMode === 2 ? 400 : 1; // lines/pages (Firefox) to pixels
+          var sideways = (Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.shiftKey ? ev.deltaY : 0) * unit;
+          if (sideways) panBy(sideways / 400 * scrub.clientWidth);
+          else if (ev.deltaY) { zoomBy(ev.deltaY < 0 ? 1.5 : 1 / 1.5, msAt(ev)); view.free = true; }
         }, { passive: false });
 
         api("/api/recordings/" + encodeURIComponent(rec.id) + "/peaks").then(function (res) {
@@ -457,7 +472,7 @@
         // Click or drag anywhere on the waveform/lanes to jump; hovering shows the time
         var msAt = function (ev) { var b = scrub.getBoundingClientRect(); return view.start + Math.min(1, Math.max(0, (ev.clientX - b.left) / b.width)) * view.len; };
         var dragging = false;
-        scrub.onpointerdown = function (ev) { dragging = true; scrub.setPointerCapture(ev.pointerId); jump(msAt(ev)); };
+        scrub.onpointerdown = function (ev) { if (space.down) return; dragging = true; scrub.setPointerCapture(ev.pointerId); jump(msAt(ev)); };
         scrub.onpointermove = function (ev) {
           var ms = msAt(ev), ht = $("hovertime");
           ht.textContent = view.len < 120000 ? hms(ms) + "." + Math.floor(ms % 1000 / 100) : hms(ms);
@@ -484,6 +499,7 @@
         if (!audio) return;
         var go = function () {
           audio.currentTime = Math.max(0, ms / 1000);
+          view.free = false;
           // Zoomed in: keep the new position in view
           if (current && view.len < current.duration_ms && (ms < view.start || ms > view.start + view.len)) view.start = Math.min(current.duration_ms - view.len, Math.max(0, ms - view.len / 2));
           drawPlayer();
@@ -497,16 +513,34 @@
       function seek(ms) {
         var audio = $("audio");
         if (!audio) return;
-        var go = function () { audio.currentTime = Math.max(0, ms / 1000 - 1); audio.play().catch(function () { }); };
+        var go = function () { view.free = false; audio.currentTime = Math.max(0, ms / 1000 - 1); audio.play().catch(function () { }); };
         if (audio.readyState >= 1) go(); else audio.addEventListener("loadedmetadata", function once() { audio.removeEventListener("loadedmetadata", once); go(); });
         highlight(ms, true);
       }
 
       window.addEventListener("resize", function () { drawPlayer(); });
+      // Space: tap to play/pause; hold it and move the mouse to drag the zoomed-in waveform along (playback stays put)
+      var space = { down: false, moved: 0, x: null };
+      var spaceOff = function () { space.down = false; document.body.classList.remove("space"); };
+      document.addEventListener("keyup", function (e) {
+        if (e.key !== " " || !space.down) return;
+        spaceOff();
+        var a = $("audio");
+        if (a && space.moved < 5) a.paused ? a.play().catch(function () { }) : a.pause();
+      });
+      window.addEventListener("blur", spaceOff);
+      document.addEventListener("pointermove", function (e) {
+        if (!space.down) return;
+        if (space.x != null && panBy(space.x - e.clientX)) space.moved += Math.abs(e.clientX - space.x);
+        space.x = e.clientX;
+      });
       document.addEventListener("keydown", function (e) {
         var a = $("audio");
         if (!a || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
-        if (e.key === " ") { e.preventDefault(); a.paused ? a.play().catch(function () { }) : a.pause(); }
+        if (e.key === " ") {
+          e.preventDefault();
+          if (!e.repeat && !space.down) { space.down = true; space.moved = 0; space.x = null; document.body.classList.add("space"); }
+        }
         else if (e.key === "ArrowLeft") { e.preventDefault(); nudge(e.shiftKey ? -30 : -5); }
         else if (e.key === "ArrowRight") { e.preventDefault(); nudge(e.shiftKey ? 30 : 5); }
         else if (e.key === "m" || e.key === "M") $("mute").click();
@@ -520,6 +554,7 @@
       // ---------- Tabs ----------
       function renderTab() {
         var el = $("tab");
+        el.onclick = null;
         if (tab === "transcript") return renderTranscript(el);
         if (tab === "summary") return renderMd(el, current.summary_en, false);
         if (tab === "summary-ar") return renderMd(el, current.summary_ar, true);
@@ -589,11 +624,46 @@
         if (follow || force) linesEl.scrollTo({ top: row.offsetTop - linesEl.clientHeight / 2 + row.clientHeight / 2, behavior: force ? "auto" : "smooth" });
       }
 
-      // Small markdown subset for the summaries: ### headings, - bullets, **bold**, *italic*, `code`
-      function md(src) {
-        var out = [], inList = false;
+      // People's names as the summaries write them (the summary step lists them, plus their display names) → user id
+      function nameMatcher() {
+        var map = {};
+        var add = function (n, uid) { n = String(n || "").trim(); if (n.length < 3) return; map[n] = map[n] && map[n] !== uid ? null : uid; };
+        Object.keys(people).forEach(function (uid) {
+          if (/^bot/.test(uid)) return;
+          var n = people[uid].name || "";
+          add(n, uid);
+          n.split(/[\s._-]+/).forEach(function (w) { if (/^\p{L}{3,}$/u.test(w)) add(w, uid); });
+          ((current.aliases || {})[uid] || []).forEach(function (a) { add(a, uid); });
+        });
+        var names = Object.keys(map).filter(function (n) { return map[n]; }).sort(function (a, b) { return b.length - a.length; });
+        if (!names.length) return null;
+        // Arabic glues و/ف/ل/ب onto the name ("وهشام" = "and Hesham"); those stay uncoloured
+        return { map: map, re: new RegExp("(?<![\\p{L}\\p{N}])([وفلب]?)(" + names.map(function (n) { return n.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }).join("|") + ")(?![\\p{L}\\p{N}])", "gu") };
+      }
+
+      // Small markdown subset for the summaries: ### headings, - bullets, **bold**, *italic*, `code`,
+      // plus clickable [hh:mm:ss], people in their colours, and the other language's bits isolated so mixed lines keep their order
+      function md(src, rtl) {
+        var out = [], inList = false, names = nameMatcher();
+        // Quotes and runs of the other script become their own <bdi> islands (Arabic in the English one, Latin in the Arabic one)
+        var other = rtl ? "(?<![&\\w])[A-Za-z][\\w'’-]*(?:[ :.-]+[A-Za-z0-9][\\w'’-]*)*" : "[\\u0600-\\u06FF](?:[\\u0600-\\u06FF\\s.,!…؟،:-]*[\\u0600-\\u06FF؟!])?";
+        var islands = new RegExp('"([^"]+)"|“([^”]+)”|«([^»]+)»|(' + other + ")", "g");
+        var textOnly = function (html, fn) { return html.split(/(<[^>]+>)/).map(function (p, i) { return i % 2 ? p : fn(p); }).join(""); };
         var inline = function (s) {
-          return esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(^|[\s(])\*(?!\s)(.+?)\*(?=[\s).,!?]|$)/g, "$1<i>$2</i>").replace(/`([^`]+)`/g, "<code>$1</code>");
+          var h = String(s).replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; });
+          h = h.replace(islands, function (m, q1, q2, q3, run) {
+            if (run) return "<bdi>" + run + "</bdi>";
+            return m.charAt(0) + "<bdi>" + (q1 || q2 || q3) + "</bdi>" + m.charAt(m.length - 1);
+          });
+          h = h.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(^|[\s(>])\*(?!\s)(.+?)\*(?=[\s).,:!?<]|$)/g, "$1<i>$2</i>").replace(/`([^`]+)`/g, "<code>$1</code>");
+          return textOnly(h, function (t) {
+            t = t.replace(/\[?\b(\d{1,2}):(\d{2}):(\d{2})\b\]?/g, function (m, hh, mm, ss) {
+              return '<button class="ts" data-t="' + ((+hh * 3600 + +mm * 60 + +ss) * 1000) + '" title="Play from here">' + m + "</button>";
+            });
+            return names ? textOnly(t, function (p) {
+              return p.replace(names.re, function (m, pre, n) { return pre + '<span class="pp" style="color:' + esc(colorOf(names.map[n])) + '">' + n + "</span>"; });
+            }) : t;
+          });
         };
         String(src || "").split("\n").forEach(function (line) {
           var t = line.trim();
@@ -609,7 +679,8 @@
       }
 
       function renderMd(el, text, rtl) {
-        el.innerHTML = text ? '<div class="md' + (rtl ? ' rtl" dir="rtl' : "") + '">' + md(text) + "</div>" : '<div class="empty">No summary for this recording (yet).</div>';
+        el.innerHTML = text ? '<div class="md' + (rtl ? ' rtl" dir="rtl' : "") + '">' + md(text, rtl) + "</div>" : '<div class="empty">No summary for this recording (yet).</div>';
+        el.onclick = function (e) { var b = e.target.closest(".ts"); if (b) seek(Number(b.dataset.t)); };
       }
 
       function renderReport(el) {
