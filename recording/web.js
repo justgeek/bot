@@ -1,8 +1,11 @@
 // recording/web.js - the hidden recordings page at /recordings and its API.
 // Nothing links to it (not the dashboard, not the bot); you open it by typing the address.
 // Set RECORDINGS_KEY to require /recordings?key=... (falls back to DASHBOARD_KEY when only that is set).
+const fs = require("fs");
 const path = require("path");
 const store = require("./store");
+const { peaksFromOgg } = require("./peaks");
+const { WORK_DIR } = require("./util");
 const drive = require("./drive");
 const transcribe = require("./transcribe");
 const { IDs, MemberColorOverrides } = require("../config");
@@ -93,6 +96,19 @@ module.exports = function registerRecordingsPage(app, client) {
         tracks: Object.entries(files.tracks || {}).map(([u, t]) => ({ ...person(u, t.name), has_audio: !!t.id && !rec.outputs?.audioDeleted })),
         folder_url: rec.drive_folder_id ? drive.folderUrl(rec.drive_folder_id) : null,
         lines: lines.map((l) => ({ start_ms: l.start_ms, end_ms: l.end_ms, user_id: l.user_id, name: l.name, text: l.text })),
+        // "Who's talking" lanes under the waveform: each person's speech, pauses under 2 s joined
+        activity: Object.fromEntries(
+          Object.entries(rec.outputs?.speech || {}).map(([u, iv]) => {
+            const runs = [];
+            for (const [s, e] of iv) {
+              const last = runs[runs.length - 1];
+              if (last && s - last[1] < 2000) last[1] = e;
+              else runs.push([s, e]);
+            }
+            return [u, runs];
+          })
+        ),
+        has_peaks: !!rec.outputs?.peaks,
       });
     } catch (err) {
       console.error("[API] /api/recordings/:id failed:", err);
@@ -101,6 +117,40 @@ module.exports = function registerRecordingsPage(app, client) {
   });
 
   // Streams the mix (or one speaker's track) from Drive; passes the Range header through so the player can seek
+  // The player's waveform. Made while processing; recordings from before that get it made once here
+  // (the mix is fetched from Drive and read, then the result is saved)
+  const peaksJobs = new Map();
+  app.get("/api/recordings/:id/peaks", guard, async (req, res) => {
+    try {
+      const rec = await store.getRecording(String(req.params.id));
+      if (!rec) return res.status(404).json({ error: "not_found" });
+      if (!rec.outputs?.peaks) {
+        const mixId = rec.outputs?.files?.mix?.id;
+        if (!mixId || rec.outputs?.audioDeleted || !drive.enabled) return res.json({ peaks: null });
+        if (!peaksJobs.has(rec.id)) {
+          peaksJobs.set(rec.id, (async () => {
+            const file = path.join(WORK_DIR, `peaks_${rec.id}.ogg`);
+            fs.mkdirSync(WORK_DIR, { recursive: true });
+            try {
+              await drive.download(mixId, file);
+              rec.outputs.peaks = peaksFromOgg(file, Date.parse(rec.ended_at) - Date.parse(rec.started_at));
+              await store.saveRecording(rec);
+            } finally {
+              fs.unlink(file, () => { });
+              peaksJobs.delete(rec.id);
+            }
+          })());
+        }
+        await peaksJobs.get(rec.id);
+      }
+      res.set("Cache-Control", "private, max-age=86400");
+      res.json({ peaks: rec.outputs.peaks });
+    } catch (err) {
+      console.error("[API] /api/recordings/:id/peaks failed:", err.message || err);
+      res.status(500).json({ error: "peaks_failed" });
+    }
+  });
+
   app.get("/api/recordings/:id/audio", guard, async (req, res) => {
     try {
       const rec = await store.getRecording(String(req.params.id));

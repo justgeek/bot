@@ -11,6 +11,7 @@ const store = require("./store");
 const drive = require("./drive");
 const panel = require("./panel");
 const transcribe = require("./transcribe");
+const { peaksFromOgg } = require("./peaks");
 const { WORK_DIR, QuotaPause, folderName, safeName } = require("./util");
 
 let client = null;
@@ -325,6 +326,7 @@ async function audioStep(rec, ctx) {
         if (pct > lastPct) ctx.progress("audio", "running", `mixing (${(lastPct = pct)}%)`);
       },
     });
+    out.peaks = peaksFromOgg(mixFile, totalMs); // the waveform on the /recordings page
     if (folder) {
       ctx.progress("audio", "running", "uploading the mix");
       out.files.mix = await drive.upload(folder, "mix.ogg", mixFile, "audio/ogg");

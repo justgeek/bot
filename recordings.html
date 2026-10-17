@@ -100,13 +100,26 @@
     .btn:hover { background: var(--raised); }
     .btn.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 
-    .player { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
-    .player-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-    audio { flex: 1 1 320px; width: 100%; min-width: 0; height: 40px; }
-    .timeline { position: relative; height: 26px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; overflow: hidden; }
-    .timeline .speech { position: absolute; top: 9px; height: 8px; background: color-mix(in srgb, var(--accent) 45%, transparent); }
-    .timeline .head-pos { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--heading); }
-    .timeline .mark { position: absolute; top: 2px; transform: translateX(-50%); font-size: 13px; line-height: 1; cursor: pointer; }
+    .player { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+    .marks { position: relative; height: 18px; }
+    .marks .mark { position: absolute; top: 0; transform: translateX(-50%); font-size: 13px; line-height: 1; cursor: pointer; background: none; border: 0; padding: 0; }
+    .scrub { position: relative; cursor: pointer; touch-action: none; user-select: none; }
+    #wave { display: block; width: 100%; height: 72px; background: var(--surface-2); border-radius: 8px; }
+    .lanes { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+    .lane { position: relative; height: 14px; }
+    .lane canvas { display: block; width: 100%; height: 14px; background: var(--surface-2); border-radius: 4px; }
+    .lane span { position: absolute; left: 6px; top: 0; font-size: 10px; line-height: 14px; padding: 0 4px; border-radius: 4px; background: color-mix(in srgb, var(--surface) 80%, transparent); pointer-events: none; }
+    .playhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--heading); pointer-events: none; box-shadow: 0 0 6px color-mix(in srgb, var(--heading) 60%, transparent); }
+    .hovertime { position: absolute; top: -26px; transform: translateX(-50%); font: 12px ui-monospace, monospace; padding: 2px 6px; border-radius: 6px; background: var(--raised); border: 1px solid var(--border); pointer-events: none; display: none; white-space: nowrap; }
+    .scrub:hover .hovertime { display: block; }
+    .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .cbtn { background: var(--surface-2); border: 1px solid var(--border); border-radius: 99px; height: 38px; min-width: 38px; padding: 0 12px; cursor: pointer; font-size: 14px; }
+    .cbtn:hover { background: var(--raised); }
+    .cbtn.play { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); min-width: 48px; height: 48px; font-size: 20px; }
+    .clock { font: 14px ui-monospace, monospace; color: var(--muted); margin: 0 6px; white-space: nowrap; }
+    .clock b { color: var(--heading); font-weight: 500; }
+    .grow { flex: 1 1 auto; }
+    input[type="range"] { accent-color: var(--accent); width: 96px; }
 
     .tabs { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 2px; }
     .tab-body { padding: 14px 16px; }
@@ -224,6 +237,7 @@
       function open(id, seekSec) {
         if (current && current.id === id) { if (seekSec != null) seek(seekSec * 1000); return; }
         pendingSeek = seekSec;
+        if ($("audio")) $("audio").pause();
         $("layout").classList.add("has-detail");
         $("detail").innerHTML = '<div class="card empty">Loading…</div>';
         api("/api/recordings/" + encodeURIComponent(id)).then(function (rec) {
@@ -264,53 +278,166 @@
           (r.folder_url ? '<a class="btn" target="_blank" rel="noopener" href="' + esc(r.folder_url) + '">📁 Drive</a>' : "") +
           "</div>" +
           (r.has_audio ?
-            '<div class="card player"><div class="player-row"><audio id="audio" controls preload="metadata"></audio><select id="track" aria-label="Track">' + trackOptions + "</select></div>" +
-            '<div class="timeline" id="timeline" title="Click to jump"></div></div>' :
+            '<div class="card player"><audio id="audio" preload="metadata"></audio>' +
+            '<div class="marks" id="marks"></div>' +
+            '<div class="scrub" id="scrub" title="Click or drag to jump"><canvas id="wave"></canvas><div class="lanes" id="lanes"></div>' +
+            '<div class="playhead" id="playhead" style="left:0"></div><div class="hovertime" id="hovertime"></div></div>' +
+            '<div class="controls">' +
+            '<button class="cbtn" id="back30" title="Back 30 s (Shift+←)">« 30</button>' +
+            '<button class="cbtn" id="back5" title="Back 5 s (←)">‹ 5</button>' +
+            '<button class="cbtn play" id="playbtn" title="Play / pause (Space)">▶</button>' +
+            '<button class="cbtn" id="fwd5" title="Forward 5 s (→)">5 ›</button>' +
+            '<button class="cbtn" id="fwd30" title="Forward 30 s (Shift+→)">30 »</button>' +
+            '<span class="clock" id="clock"><b>00:00:00</b> / ' + hms(r.duration_ms) + "</span>" +
+            '<span class="grow"></span>' +
+            '<select id="speed" aria-label="Speed" title="Speed">' + [0.75, 1, 1.25, 1.5, 1.75, 2].map(function (s) { return '<option value="' + s + '">' + s + "×</option>"; }).join("") + "</select>" +
+            '<button class="cbtn" id="mute" title="Mute (M)">🔊</button><input type="range" id="vol" min="0" max="1" step="0.05" aria-label="Volume">' +
+            '<select id="track" aria-label="Track">' + trackOptions + "</select>" +
+            "</div></div>" :
             '<div class="card player muted">' + (r.status === "done" ? "The audio of this recording was removed (only the text is kept)." : "The audio isn't ready yet.") + "</div>") +
           '<div class="tabs" role="tablist">' + tabs.map(function (t) { return '<button class="btn' + (tab === t[0] ? " on" : "") + '" data-tab="' + t[0] + '" role="tab">' + t[1] + "</button>"; }).join("") + "</div>" +
           '<div class="card tab-body" id="tab"></div>';
 
-        $("back").onclick = function () { $("layout").classList.remove("has-detail"); history.replaceState(null, "", location.pathname + location.search); current = null; renderList(); };
+        $("back").onclick = function () { if ($("audio")) $("audio").pause(); $("layout").classList.remove("has-detail"); history.replaceState(null, "", location.pathname + location.search); current = null; renderList(); };
+        // Switching tabs only swaps the tab's content (the player keeps playing)
         Array.prototype.forEach.call(document.querySelectorAll("[data-tab]"), function (b) {
-          b.onclick = function () { tab = b.dataset.tab; renderDetail(); };
+          b.onclick = function () {
+            tab = b.dataset.tab;
+            Array.prototype.forEach.call(document.querySelectorAll("[data-tab]"), function (x) { x.classList.toggle("on", x === b); });
+            renderTab();
+            var a = $("audio");
+            if (a) highlight(a.currentTime * 1000, true);
+          };
         });
         if (r.has_audio) setupPlayer();
         renderTab();
         if (pendingSeek != null) { seek(pendingSeek * 1000); pendingSeek = null; }
       }
 
+      // ---------- Player: waveform + who's-talking lanes + controls ----------
+      var drawPlayer = function () { };
+      var load = function (k, d) { try { var v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } };
+      var keep = function (k, v) { try { localStorage.setItem(k, v); } catch (e) { } };
+
       function setupPlayer() {
-        var audio = $("audio");
-        var setSrc = function (track) { audio.src = withKey("/api/recordings/" + encodeURIComponent(current.id) + "/audio?track=" + encodeURIComponent(track)); };
+        var rec = current;
+        var audio = $("audio"), wave = $("wave"), scrub = $("scrub");
+        var dur = Math.max(1, rec.duration_ms);
+        var css = getComputedStyle(document.documentElement);
+        var col = function (v, d) { return css.getPropertyValue(v).trim() || d; };
+        var C = { played: col("--accent", "#e5253f"), rest: col("--border", "#3b1c20"), flat: col("--muted", "#8f867b") };
+        var peaks = null;
+
+        var setSrc = function (track) { audio.src = withKey("/api/recordings/" + encodeURIComponent(rec.id) + "/audio?track=" + encodeURIComponent(track)); };
         setSrc("mix");
-        $("track").onchange = function () {
-          var t = audio.currentTime, playing = !audio.paused;
-          setSrc(this.value);
-          audio.addEventListener("loadedmetadata", function once() { audio.removeEventListener("loadedmetadata", once); audio.currentTime = t; if (playing) audio.play(); });
-        };
-        audio.ontimeupdate = function () { highlight(audio.currentTime * 1000); };
-        renderTimeline();
-      }
+        audio.playbackRate = Number(load("rec-speed", 1)) || 1;
+        audio.volume = Math.min(1, Math.max(0, Number(load("rec-volume", 1))));
+        $("speed").value = String(audio.playbackRate);
+        $("vol").value = String(audio.volume);
 
-      function renderTimeline() {
-        var el = $("timeline");
-        if (!el) return;
-        var dur = Math.max(1, current.duration_ms);
-        var pct = function (ms) { return (Math.min(dur, Math.max(0, ms)) / dur * 100).toFixed(3) + "%"; };
-        // Speech density: one block per transcript line (everyone)
-        var blocks = current.lines.map(function (l) { return '<span class="speech" style="left:' + pct(l.start_ms) + ";width:" + (Math.max(0.15, (l.end_ms - l.start_ms) / dur * 100)).toFixed(3) + '%"></span>'; }).join("");
-        var marks = (current.events || []).filter(function (e) { return e.type === "note" || e.type === "clip"; }).map(function (e) {
-          return '<span class="mark" data-t="' + e.t + '" style="left:' + pct(e.t) + '" title="' + esc(hms(e.t) + " " + (e.type === "note" ? "📝 " + nameOf(e.user) + ": " + e.text : "✂️ clip by " + nameOf(e.user))) + '">' + (e.type === "note" ? "📝" : "✂️") + "</span>";
+        // One lane per person, in talk-time order (report card), coloured like them
+        var order = (rec.report && rec.report.speakers ? rec.report.speakers.map(function (s) { return s.user; }) : []);
+        var laneIds = Object.keys(rec.activity || {}).filter(function (u) { return rec.activity[u].length; })
+          .sort(function (a, b) { return (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99); });
+        $("lanes").innerHTML = laneIds.map(function (u) {
+          return '<div class="lane"><canvas data-user="' + esc(u) + '"></canvas><span style="color:' + esc(colorOf(u)) + '">' + esc(nameOf(u)) + "</span></div>";
         }).join("");
-        el.innerHTML = blocks + marks + '<span class="head-pos" id="headpos" style="left:0"></span>';
-        el.onclick = function (e) {
-          var m = e.target.closest(".mark");
-          if (m) return seek(Number(m.dataset.t));
-          var rect = el.getBoundingClientRect();
-          seek((e.clientX - rect.left) / rect.width * dur);
+        var marks = (rec.events || []).filter(function (e) { return e.type === "note" || e.type === "clip"; });
+        $("marks").innerHTML = marks.map(function (e) {
+          return '<button class="mark" data-t="' + e.t + '" style="left:' + (Math.min(1, e.t / dur) * 100).toFixed(3) + '%" title="' + esc(hms(e.t) + " " + (e.type === "note" ? "📝 " + nameOf(e.user) + ": " + e.text : "✂️ clip by " + nameOf(e.user))) + '">' + (e.type === "note" ? "📝" : "✂️") + "</button>";
+        }).join("");
+        $("marks").onclick = function (e) { var m = e.target.closest(".mark"); if (m) seek(Number(m.dataset.t)); };
+
+        var fit = function (cv) {
+          var r = window.devicePixelRatio || 1, w = Math.round(cv.clientWidth * r), h = Math.round(cv.clientHeight * r);
+          if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+          return { w: w, h: h, r: r, g: cv.getContext("2d") };
+        };
+        var drawLanes = function () {
+          Array.prototype.forEach.call(document.querySelectorAll("#lanes canvas"), function (cv) {
+            var s = fit(cv), runs = rec.activity[cv.dataset.user] || [];
+            s.g.clearRect(0, 0, s.w, s.h);
+            s.g.fillStyle = colorOf(cv.dataset.user) === "var(--heading)" ? C.played : colorOf(cv.dataset.user);
+            runs.forEach(function (run) { var x = run[0] / dur * s.w; s.g.fillRect(x, 2 * s.r, Math.max(1.5 * s.r, (run[1] - run[0]) / dur * s.w), s.h - 4 * s.r); });
+          });
+        };
+        var drawWave = function () {
+          var s = fit(wave), g = s.g, pos = audio.currentTime * 1000 / dur;
+          g.clearRect(0, 0, s.w, s.h);
+          g.globalAlpha = 1;
+          if (!peaks) { g.fillStyle = C.rest; g.fillRect(0, s.h / 2 - s.r, s.w, 2 * s.r); g.fillStyle = C.played; g.fillRect(0, s.h / 2 - s.r, pos * s.w, 2 * s.r); return; }
+          var bar = 2 * s.r, gap = 1 * s.r, cols = Math.max(1, Math.floor(s.w / (bar + gap)));
+          for (var c = 0; c < cols; c++) {
+            var a = Math.floor(c / cols * peaks.length), b = Math.max(a + 1, Math.floor((c + 1) / cols * peaks.length)), v = 0;
+            for (var i = a; i < b; i++) if (peaks[i] > v) v = peaks[i];
+            var h = Math.max(s.r * 1.5, v / 100 * (s.h - 6 * s.r));
+            var played = (c + 0.5) / cols <= pos;
+            g.fillStyle = played ? C.played : C.flat;
+            g.globalAlpha = played ? 1 : 0.45;
+            g.fillRect(c * (bar + gap), (s.h - h) / 2, bar, h);
+          }
+          g.globalAlpha = 1;
+        };
+        var tick = function () {
+          var ms = audio.currentTime * 1000;
+          $("playhead").style.left = (Math.min(1, ms / dur) * 100).toFixed(3) + "%";
+          $("clock").innerHTML = "<b>" + hms(ms) + "</b> / " + hms(dur);
+          drawWave();
+        };
+        drawPlayer = function () { drawLanes(); tick(); };
+        drawPlayer();
+
+        api("/api/recordings/" + encodeURIComponent(rec.id) + "/peaks").then(function (res) {
+          if (current !== rec) return;
+          peaks = res.peaks;
+          tick();
+        }).catch(function () { });
+
+        // Smooth progress while playing; the transcript follows too
+        var raf = null;
+        var loop = function () { if (current !== rec) return; tick(); highlight(audio.currentTime * 1000); raf = audio.paused ? null : requestAnimationFrame(loop); };
+        audio.onplay = function () { $("playbtn").textContent = "⏸"; if (!raf) raf = requestAnimationFrame(loop); };
+        audio.onpause = function () { $("playbtn").textContent = "▶"; tick(); };
+        audio.onseeked = audio.onloadedmetadata = tick;
+        audio.ontimeupdate = function () { if (audio.paused) { tick(); highlight(audio.currentTime * 1000); } };
+
+        // Click or drag anywhere on the waveform/lanes to jump; hovering shows the time
+        var msAt = function (ev) { var b = scrub.getBoundingClientRect(); return Math.min(1, Math.max(0, (ev.clientX - b.left) / b.width)) * dur; };
+        var dragging = false;
+        scrub.onpointerdown = function (ev) { dragging = true; scrub.setPointerCapture(ev.pointerId); jump(msAt(ev)); };
+        scrub.onpointermove = function (ev) {
+          var ms = msAt(ev), ht = $("hovertime");
+          ht.textContent = hms(ms);
+          ht.style.left = (ms / dur * 100).toFixed(3) + "%";
+          if (dragging) jump(ms);
+        };
+        scrub.onpointerup = scrub.onpointercancel = function () { dragging = false; };
+
+        $("playbtn").onclick = function () { audio.paused ? audio.play().catch(function () { }) : audio.pause(); };
+        $("back5").onclick = function () { nudge(-5); };
+        $("fwd5").onclick = function () { nudge(5); };
+        $("back30").onclick = function () { nudge(-30); };
+        $("fwd30").onclick = function () { nudge(30); };
+        $("speed").onchange = function () { audio.playbackRate = Number(this.value) || 1; keep("rec-speed", audio.playbackRate); };
+        $("vol").oninput = function () { audio.volume = Number(this.value); audio.muted = false; keep("rec-volume", audio.volume); $("mute").textContent = audio.volume ? "🔊" : "🔇"; };
+        $("mute").onclick = function () { audio.muted = !audio.muted; this.textContent = audio.muted ? "🔇" : "🔊"; };
+        $("track").onchange = function () {
+          var t = audio.currentTime, playing = !audio.paused, rate = audio.playbackRate;
+          setSrc(this.value);
+          audio.addEventListener("loadedmetadata", function once() { audio.removeEventListener("loadedmetadata", once); audio.currentTime = t; audio.playbackRate = rate; if (playing) audio.play(); });
         };
       }
 
+      // Exact jump (waveform, keys) without starting playback
+      function jump(ms) {
+        var audio = $("audio");
+        if (!audio) return;
+        var go = function () { audio.currentTime = Math.max(0, ms / 1000); drawPlayer(); highlight(ms, true); };
+        if (audio.readyState >= 1) go(); else audio.addEventListener("loadedmetadata", function once() { audio.removeEventListener("loadedmetadata", once); go(); });
+      }
+      function nudge(sec) { var a = $("audio"); if (a) jump(Math.min(current.duration_ms, Math.max(0, (a.currentTime + sec) * 1000))); }
+
+      // From the transcript/activity/notes: jump a second early and play
       function seek(ms) {
         var audio = $("audio");
         if (!audio) return;
@@ -318,6 +445,16 @@
         if (audio.readyState >= 1) go(); else audio.addEventListener("loadedmetadata", function once() { audio.removeEventListener("loadedmetadata", once); go(); });
         highlight(ms, true);
       }
+
+      window.addEventListener("resize", function () { drawPlayer(); });
+      document.addEventListener("keydown", function (e) {
+        var a = $("audio");
+        if (!a || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
+        if (e.key === " ") { e.preventDefault(); a.paused ? a.play().catch(function () { }) : a.pause(); }
+        else if (e.key === "ArrowLeft") { e.preventDefault(); nudge(e.shiftKey ? -30 : -5); }
+        else if (e.key === "ArrowRight") { e.preventDefault(); nudge(e.shiftKey ? 30 : 5); }
+        else if (e.key === "m" || e.key === "M") $("mute").click();
+      });
 
       // ---------- Tabs ----------
       function renderTab() {
@@ -375,8 +512,6 @@
 
       var lastNow = -1;
       function highlight(ms, force) {
-        var hp = $("headpos");
-        if (hp) hp.style.left = (Math.min(1, ms / Math.max(1, current.duration_ms)) * 100).toFixed(3) + "%";
         var linesEl = $("lines");
         if (!linesEl || !shown.length) return;
         var lo = 0, hi = shown.length - 1, idx = -1;
