@@ -43,17 +43,16 @@ const opus = (kbps) => ["-c:a", "libopus", "-b:a", `${kbps}k`, "-vbr", "on", "-a
 const level = "dynaudnorm=f=250:g=15:m=5";
 const sum = (labels) => `${labels.join("")}amix=inputs=${labels.length}:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.95`;
 
-// One pass for everything: decodes each raw track once, writes its compressed copy and the mix
-// tracks: [{ file, out }] (same length, already silence-filled on the recording's timeline)
-async function encodeTracksAndMix(tracks, mixOut, { trackKbps, mixKbps, onProgress }) {
+// One speaker's track: levelled and compressed (one small ffmpeg run per speaker, so progress is saved per speaker)
+async function encodeTrack(input, out, { kbps }) {
+  await run(["-i", input, "-af", level, "-ac", "1", ...opus(kbps), out]);
+}
+
+// The mix, from tracks that are already levelled
+async function mixTracks(files, out, { kbps, onProgress }) {
   const args = [];
-  for (const t of tracks) args.push("-i", t.file);
-  const graph = [];
-  tracks.forEach((_, i) => graph.push(`[${i}:a]asplit=2[t${i}][m${i}]`, `[m${i}]${level}[n${i}]`));
-  graph.push(`${sum(tracks.map((_, i) => `[n${i}]`))}[mix]`);
-  args.push("-filter_complex", graph.join(";"));
-  tracks.forEach((t, i) => args.push("-map", `[t${i}]`, "-ac", "1", ...opus(trackKbps), t.out));
-  args.push("-map", "[mix]", "-ac", "1", ...opus(mixKbps), mixOut);
+  for (const f of files) args.push("-i", f);
+  args.push("-filter_complex", `${sum(files.map((_, i) => `[${i}:a]`))}[mix]`, "-map", "[mix]", "-ac", "1", ...opus(kbps), out);
   await run(args, { onProgress });
 }
 
@@ -74,4 +73,4 @@ function killAll() {
   }
 }
 
-module.exports = { run, opus, encodeTracksAndMix, mix, killAll };
+module.exports = { run, opus, encodeTrack, mixTracks, mix, killAll };

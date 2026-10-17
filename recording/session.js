@@ -241,8 +241,10 @@ class RecordingSession {
     for (const t of this.tracks.values()) t.tick(now);
 
     if (this.humans().length) this.emptySince = null;
-    else if (this.emptySince === null) this.emptySince = Date.now();
-    else if (Date.now() - this.emptySince >= cfg.emptyStopMinutes * 60000) return void this.stop("empty");
+    else {
+      if (this.emptySince === null) this.emptySince = Date.now();
+      if (Date.now() - this.emptySince >= (cfg.emptyStopSeconds || 0) * 1000) return void this.stop("empty");
+    }
     if (now >= cfg.maxHours * 3600e3) return void this.stop("max");
 
     if (Date.now() - this.lastSaved >= 30000) this.persist();

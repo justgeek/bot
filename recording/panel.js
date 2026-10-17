@@ -214,7 +214,7 @@ function controlPanel({ settings, active, quota, driveEnabled, dbEnabled, gemini
     : "any voice channel (except the secret one and AFK)";
   const lines = [
     "## 🎙️ Recorder",
-    `**Auto-record:** ${settings.autoRecord ? "**On**" : "Off"} — starts when **${settings.minPeople}+** people are in ${channels}; every recording stops ${cfg.emptyStopMinutes} min after the channel empties.`,
+    `**Auto-record:** ${settings.autoRecord ? "**On**" : "Off"} — starts when **${settings.minPeople}+** people are in ${channels}; every recording stops ${cfg.emptyStopSeconds ? `${cfg.emptyStopSeconds} s after the channel empties` : "as soon as the last person leaves"}.`,
     `**After each recording:** transcript **${onOff(settings.transcribe)}** · summary **${onOff(settings.summarize)}** (English + Egyptian Arabic) · audio kept **${settings.retentionDays ? `${settings.retentionDays} days` : "forever"}** (text always kept)` + (cfg.minFreeGB ? `; when Drive has under ${cfg.minFreeGB} GB free, the oldest recordings' audio is deleted` : ""),
     "-# These are the defaults for new recordings; each recording's own panel can still switch its transcript/summary on or off.",
   ];

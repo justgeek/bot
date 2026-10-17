@@ -179,7 +179,10 @@
       };
       var pad = function (n) { return String(n).padStart(2, "0"); };
       var hms = function (ms) { var s = Math.max(0, Math.floor(ms / 1000)); return pad(Math.floor(s / 3600)) + ":" + pad(Math.floor(s % 3600 / 60)) + ":" + pad(s % 60); };
-      var human = function (ms) { var m = Math.round(ms / 60000); return m < 60 ? m + "m" : Math.floor(m / 60) + "h " + pad(m % 60) + "m"; };
+      var human = function (ms) {
+        if (ms < 60000) return Math.round(ms / 1000) + "s";
+        var m = Math.round(ms / 60000); return m < 60 ? m + "m" : Math.floor(m / 60) + "h " + pad(m % 60) + "m";
+      };
       var when = function (iso) { return new Date(iso).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); };
       var REASONS = { stopped: "stopped by hand", empty: "everyone left", max: "hit the time limit", kicked: "bot disconnected", moved: "bot moved", error: "connection error", restart: "bot restarted" };
 
@@ -238,7 +241,15 @@
       }
 
       function nameOf(uid) { return (people[uid] && people[uid].name) || uid || "?"; }
-      function colorOf(uid) { return (people[uid] && people[uid].color) || "var(--heading)"; }
+      // Member colours too close to the page's background (e.g. near-black on the dark theme) fall back to the text colour
+      function readable(hex) {
+        if (!/^#[0-9a-f]{6}$/i.test(hex || "")) return false;
+        var n = parseInt(hex.slice(1), 16);
+        var lum = (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+        var dark = !matchMedia("(prefers-color-scheme: light)").matches;
+        return dark ? lum > 0.25 : lum < 0.8;
+      }
+      function colorOf(uid) { var c = people[uid] && people[uid].color; return readable(c) ? c : "var(--heading)"; }
 
       function renderDetail() {
         var r = current;

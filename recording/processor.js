@@ -84,10 +84,11 @@ function makeCtx(rec) {
       return client?.channels.fetch(rec.thread_id).catch(() => null);
     },
     // Each speaker's compressed track on this disk (downloaded again from Drive after a restart)
-    async trackFiles() {
+    // all: every track (the mix needs the bot's too), else only the people's (for the transcript)
+    async trackFiles({ all = false } = {}) {
       const out = {};
       const onDrive = rec.outputs.files?.tracks || {};
-      for (const userId of Object.keys(rec.outputs.speech || {})) {
+      for (const userId of Object.keys(all ? onDrive : rec.outputs.speech || {})) {
         const local = ctx.trackPaths?.[userId] || path.join(dir, "tracks", `${userId}.ogg`);
         if (!fs.existsSync(local) && onDrive[userId]?.id && drive.enabled) {
           fs.mkdirSync(path.dirname(local), { recursive: true });
@@ -222,93 +223,115 @@ function buildReport(rec, speech, durationMs) {
   };
 }
 
+// Builds the audio one speaker at a time (rebuild their track from its pieces, level + compress it,
+// upload it), saving after each, then mixes the finished tracks. A restart in the middle only redoes the
+// speaker (or the mix) that was in progress.
 async function audioStep(rec, ctx) {
   const out = rec.outputs;
+  out.files = out.files || {};
+  out.files.tracks = out.files.tracks || {};
+  out.speech = out.speech || {};
   ctx.progress("audio", "running", "gathering the audio");
   const chunksDir = path.join(ctx.dir, "chunks");
   const rawDir = path.join(ctx.dir, "raw");
   const tracksDir = path.join(ctx.dir, "tracks");
   for (const d of [chunksDir, rawDir, tracksDir]) fs.mkdirSync(d, { recursive: true });
 
-  // Chunks are on this disk, or (after a restart) on Drive
   const byUser = new Map();
-  let lost = 0;
   for (const row of await store.getChunks(rec.id)) {
-    const file = path.join(chunksDir, `${row.user_id}_${row.start_ms}.ogg`);
-    if (!fs.existsSync(file)) {
-      if (!row.drive_file_id || !drive.enabled) {
-        lost++;
-        continue;
-      }
-      try {
-        await drive.download(row.drive_file_id, file);
-      } catch (err) {
-        console.warn(`[Rec] Chunk ${row.user_id}_${row.start_ms} couldn't be downloaded:`, err.message);
-        lost++;
-        continue;
-      }
-    }
     if (!byUser.has(row.user_id)) byUser.set(row.user_id, []);
-    byUser.get(row.user_id).push({ file, startMs: Number(row.start_ms) });
+    byUser.get(row.user_id).push(row);
   }
-  if (!byUser.size) throw new Error(lost ? "the audio didn't reach Google Drive before the bot restarted" : "no audio was found");
-  if (lost) console.warn(`[Rec] ${rec.id}: ${lost} chunk(s) were lost`);
-
-  const totalMs = Date.parse(rec.ended_at) - Date.parse(rec.started_at);
-  const speech = {};
-  const tracks = [];
   // Most talkative first: "01 Name.ogg" is the person who talked the most; the bot's sounds come last
   const isBot = (u) => !!rec.speakers?.[u]?.bot;
-  const users = [...byUser.keys()].sort((a, b) => isBot(a) - isBot(b) || (rec.speakers?.[b]?.speaking_ms || 0) - (rec.speakers?.[a]?.speaking_ms || 0));
-  for (const userId of users) {
+  const users = [...new Set([...byUser.keys(), ...Object.keys(out.files.tracks)])].sort(
+    (a, b) => isBot(a) - isBot(b) || (rec.speakers?.[b]?.speaking_ms || 0) - (rec.speakers?.[a]?.speaking_ms || 0)
+  );
+  if (!users.length) throw new Error("no audio was found");
+  const totalMs = Date.parse(rec.ended_at) - Date.parse(rec.started_at);
+
+  let folder = null;
+  let tracksFolder = null;
+  if (drive.enabled) {
+    folder = await drive.recordingFolder(rec, folderName(rec));
+    await drive.rename(folder, folderName(rec)); // "start → …" becomes "start → end" now that it's over
+    tracksFolder = await drive.ensureFolder(folder, "tracks");
+  }
+
+  let lost = 0;
+  for (const [i, userId] of users.entries()) {
+    if (out.files.tracks[userId]?.done) continue;
     const name = rec.speakers?.[userId]?.name || userId;
-    const chunks = byUser.get(userId).sort((a, b) => a.startMs - b.startMs);
+    ctx.progress("audio", "running", `speaker track ${i + 1} of ${users.length} (${name})`);
+    // Their pieces are on this disk, or (after a restart) on Drive
+    const chunks = [];
+    for (const row of (byUser.get(userId) || []).sort((a, b) => a.start_ms - b.start_ms)) {
+      const file = path.join(chunksDir, `${row.user_id}_${row.start_ms}.ogg`);
+      if (!fs.existsSync(file)) {
+        if (!row.drive_file_id || !drive.enabled) {
+          lost++;
+          continue;
+        }
+        try {
+          await drive.download(row.drive_file_id, file);
+        } catch (err) {
+          console.warn(`[Rec] Chunk ${row.user_id}_${row.start_ms} couldn't be downloaded:`, err.message);
+          lost++;
+          continue;
+        }
+      }
+      chunks.push({ file, startMs: Number(row.start_ms) });
+    }
+    if (!chunks.length) continue;
     const raw = path.join(rawDir, `${userId}.ogg`);
+    const local = path.join(tracksDir, `${userId}.ogg`);
     const intervals = remux(chunks, raw, Math.ceil(totalMs * MS), name);
     // The bot's tracks are only mixed in: their words (TTS text, meme names) are already in the activity log
-    if (!isBot(userId)) speech[userId] = intervals;
+    if (!isBot(userId)) out.speech[userId] = intervals;
+    await ffmpeg.encodeTrack(raw, local, { kbps: cfg.trackKbps });
+    fs.unlink(raw, () => { });
     for (const c of chunks) fs.unlink(c.file, () => { }); // Drive keeps a copy until the recording is finished
-    tracks.push({ userId, name, file: raw, out: path.join(tracksDir, `${userId}.ogg`), upload: `${String(tracks.length + 1).padStart(2, "0")} ${safeName(name)}.ogg` });
+    const entry = { name, done: true };
+    if (tracksFolder) Object.assign(entry, await drive.upload(tracksFolder, `${String(i + 1).padStart(2, "0")} ${safeName(name)}.ogg`, local, "audio/ogg"));
+    out.files.tracks[userId] = entry;
+    await ctx.save();
   }
-  out.speech = speech;
-  rec.report = buildReport(rec, speech, totalMs);
+  if (!Object.keys(out.files.tracks).length) throw new Error(lost ? "the audio didn't reach Google Drive before the bot restarted" : "no audio was found");
+  if (lost) console.warn(`[Rec] ${rec.id}: ${lost} chunk(s) were lost`);
+  rec.report = buildReport(rec, out.speech, totalMs);
   await ctx.save();
 
-  ctx.progress("audio", "running", "mixing (0%)");
+  // Everyone mixed together, from the finished (already levelled) tracks
+  const files = await ctx.trackFiles({ all: true });
+  ctx.trackPaths = files;
   const mixFile = path.join(ctx.dir, "mix.ogg");
-  let lastPct = -1;
-  await ffmpeg.encodeTracksAndMix(tracks, mixFile, {
-    trackKbps: cfg.trackKbps,
-    mixKbps: cfg.mixKbps,
-    onProgress: (ms) => {
-      const pct = Math.min(99, Math.floor((ms / Math.max(1, totalMs)) * 100));
-      if (pct >= lastPct + 5) ctx.progress("audio", "running", `mixing (${(lastPct = pct)}%)`);
-    },
-  });
-  for (const t of tracks) fs.unlink(t.file, () => { });
-  ctx.trackPaths = Object.fromEntries(tracks.map((t) => [t.userId, t.out]));
-
-  out.files = out.files || {};
-  if (drive.enabled) {
-    ctx.progress("audio", "running", "uploading to Google Drive");
-    const folder = await drive.recordingFolder(rec, folderName(rec));
-    await drive.rename(folder, folderName(rec)); // "start → …" becomes "start → end" now that it's over
-    out.files.mix = await drive.upload(folder, "mix.ogg", mixFile, "audio/ogg");
-    await ctx.save();
-    const tracksFolder = await drive.ensureFolder(folder, "tracks");
-    out.files.tracks = out.files.tracks || {};
-    for (const t of tracks) {
-      out.files.tracks[t.userId] = { ...(await drive.upload(tracksFolder, t.upload, t.out, "audio/ogg")), name: t.name };
+  if (!out.files.mix) {
+    ctx.progress("audio", "running", "mixing (0%)");
+    let lastPct = -1;
+    await ffmpeg.mixTracks(Object.values(files), mixFile, {
+      kbps: cfg.mixKbps,
+      onProgress: (ms) => {
+        const pct = Math.min(99, Math.floor((ms / Math.max(1, totalMs)) * 100));
+        if (pct > lastPct) ctx.progress("audio", "running", `mixing (${(lastPct = pct)}%)`);
+      },
+    });
+    if (folder) {
+      ctx.progress("audio", "running", "uploading the mix");
+      out.files.mix = await drive.upload(folder, "mix.ogg", mixFile, "audio/ogg");
       await ctx.save();
     }
-    const total = out.files.mix.size + Object.values(out.files.tracks).reduce((a, f) => a + (f.size || 0), 0);
-    ctx.progress("audio", "done", `mix + ${tracks.length} speaker track${tracks.length === 1 ? "" : "s"} (${panel.size(total)})`);
+  }
+
+  const count = Object.keys(out.files.tracks).length;
+  if (drive.enabled) {
+    const total = (out.files.mix?.size || 0) + Object.values(out.files.tracks).reduce((a, f) => a + (f.size || 0), 0);
+    ctx.progress("audio", "done", `mix + ${count} track${count === 1 ? "" : "s"} (${panel.size(total)})`);
   } else {
     // Without Drive the only copy is this disk; post the mix in the thread when it's small enough
-    out.files.local = { mix: mixFile, tracks: ctx.trackPaths };
+    out.files.local = { mix: mixFile };
     const thread = await ctx.thread();
     const posted = thread && (await thread.send({ content: "🎧 Mix (Google Drive isn't connected)", files: [{ attachment: mixFile, name: "mix.ogg" }] }).then(() => true, () => false));
-    ctx.progress("audio", "done", `mix + ${tracks.length} tracks on the bot's disk only (Drive isn't connected)${posted ? "; mix posted in the thread" : ""}`);
+    ctx.progress("audio", "done", `mix + ${count} tracks on the bot's disk only (Drive isn't connected)${posted ? "; mix posted in the thread" : ""}`);
   }
   await ctx.save();
   if (!rec.options?.transcribe) await ctx.postReport();
