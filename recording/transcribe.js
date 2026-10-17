@@ -28,8 +28,9 @@ const NO_KEY = "RECORDING_GEMINI_API_KEY isn't set (Heroku config var), so there
 const MERGE_GAP_MS = 1500;
 const MAX_SEGMENT_MS = 30000;
 const MIN_SEGMENT_MS = 300;
-// Per request: ~45 min of speech, well under Gemini's 20 MB inline limit (a 6-hour night is ~12 requests)
-const BATCH_SPEECH_MS = 45 * 60000;
+// Per request: ~15 min of speech (~3 MB): answered in a minute or two. A busy 6-hour night is ~30 requests,
+// more than a free day allows, so the rest waits for the next day by itself
+const BATCH_SPEECH_MS = 15 * 60000;
 const BATCH_BYTES = 12 * 1024 * 1024;
 const BATCH_SEGMENTS = 900;
 
@@ -149,12 +150,18 @@ function retryDelayMs(err) {
 }
 
 // Retries rate limits (per minute) and Google's hiccups; err.daily = the day's quota is used up
+// Streamed, so the answer starts arriving right away: a long transcription answered in one go can take
+// minutes, and Node's fetch drops a request whose reply hasn't started after 5 minutes ("fetch failed")
 async function generate(modelName, parts, opts) {
   for (let attempt = 1; ; attempt++) {
     try {
-      const result = await geminiModel(modelName, opts).generateContent({ contents: [{ role: "user", parts }] });
-      return result.response;
+      const result = await geminiModel(modelName, opts).generateContentStream({ contents: [{ role: "user", parts }] });
+      return await result.response;
     } catch (err) {
+      // "fetch failed" hides the real reason (timeout, connection reset...) in err.cause
+      const cause = err.cause?.code || err.cause?.message;
+      if (cause && !String(err.message).includes(cause)) err.message += ` (${cause})`;
+      console.warn(`[Rec] Gemini request failed (attempt ${attempt}): ${String(err.message).slice(0, 300)}`);
       const status = Number(err.status) || 0;
       if (status === 429) {
         if (isDailyQuota(err) || attempt > 8) {

@@ -17,6 +17,22 @@ const clip = require("./clip");
 const { RecordingSession } = require("./session");
 const { WORK_DIR, UserError, newId, isAdmin, sleep } = require("./util");
 
+// The recorder's own log lines (everything printed with "[Rec]"), last 60 kept for !reclogs, so problems can
+// be read in #record instead of digging through Heroku's log among the web requests
+const recLog = [];
+for (const level of ["log", "warn", "error"]) {
+  const print = console[level].bind(console);
+  console[level] = (...args) => {
+    print(...args);
+    try {
+      const line = args.map((a) => (typeof a === "string" ? a : require("util").inspect(a, { depth: 2, breakLength: Infinity }))).join(" ");
+      if (!line.includes("[Rec]")) return;
+      recLog.push(`${new Date().toISOString().slice(5, 19).replace("T", " ")} ${level === "log" ? "" : level.toUpperCase() + " "}${line}`.slice(0, 500));
+      if (recLog.length > 60) recLog.shift();
+    } catch { }
+  };
+}
+
 const DEFAULT_SETTINGS = {
   autoRecord: false,
   autoChannels: [], // none = every voice channel except the secret one and AFK
@@ -215,7 +231,7 @@ function clampSeconds(arg) {
 }
 
 // ---------- Commands (only in #record) ----------
-const COMMAND_RE = /^!(record|stoprecord|note|clip|recordings|autorecord|search|ask)(?=\s|$)/i;
+const COMMAND_RE = /^!(record|stoprecord|note|clip|recordings|reclogs|autorecord|search|ask)(?=\s|$)/i;
 
 async function handleCommand(msg) {
   if (!client || msg.channel.id !== IDs.channelRecord) return false;
@@ -245,6 +261,15 @@ async function handleCommand(msg) {
       await msg.channel.sendTyping().catch(() => { });
       await active.clip(msg.author.id, clampSeconds(arg));
       await msg.react("✂️").catch(() => { });
+    } else if (cmd === "reclogs") {
+      // The recorder's latest log lines, newest last, as much as fits in one message
+      const lines = [];
+      let size = 0;
+      for (let i = recLog.length - 1; i >= 0 && size + recLog[i].length < 1850; i--) {
+        lines.unshift(recLog[i].replace(/```/g, "'''"));
+        size += recLog[i].length + 1;
+      }
+      await msg.reply({ content: lines.length ? "```\n" + lines.join("\n") + "\n```" : "Nothing logged by the recorder since the bot started.", allowedMentions: { parse: [] } });
     } else if (cmd === "recordings") {
       await msg.reply(panel.recordingsList(await store.listRecordings(10)));
     } else if (cmd === "autorecord") {

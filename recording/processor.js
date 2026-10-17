@@ -413,6 +413,9 @@ async function processRecording(id) {
       rec.status = "failed";
       rec.error = String(err.message || err).slice(0, 500);
       if (step !== "finish") out.progress[step] = { state: "failed", detail: String(err.message || err).replace(/\s+/g, " ").slice(0, 150) };
+      // The full error, where people will see it (the panel only has room for a short version)
+      const thread = await ctx.thread();
+      await thread?.send({ content: `❌ Processing stopped at the **${step}** step:\n\`\`\`\n${String(err.message || err).replace(/```/g, "'''").slice(0, 1700)}\n\`\`\`Press **Retry** on the panel to try again. For more details type \`!reclogs\` in #record.`, allowedMentions: { parse: [] } }).catch(() => { });
     }
   }
   await store.saveRecording(rec);

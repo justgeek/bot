@@ -225,7 +225,7 @@ function controlPanel({ settings, active, quota, driveEnabled, dbEnabled, gemini
   if (!geminiKey && (settings.transcribe || settings.summarize)) lines.push("⚠️ **RECORDING_GEMINI_API_KEY isn't set** - transcripts and summaries can't be made.");
   if (!dbEnabled) lines.push("⚠️ **No database** - recordings can't resume after a restart and these settings reset.");
   lines.push(active ? `**Now:** 🔴 recording in <#${active.channelId}>` : "**Now:** not recording");
-  lines.push("-# Commands (this channel only): `!record` `!stoprecord` `!note <text>` `!clip [secs]` `!recordings` `!autorecord on|off` `!search <words>` `!ask <question>`");
+  lines.push("-# Commands (this channel only): `!record` `!stoprecord` `!note <text>` `!clip [secs]` `!recordings` `!reclogs` `!autorecord on|off` `!search <words>` `!ask <question>`");
 
   const c = new ContainerBuilder().setAccentColor(active ? RED : BLURPLE);
   c.addTextDisplayComponents(text(lines.join("\n")));

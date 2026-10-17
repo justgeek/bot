@@ -3,7 +3,10 @@
 // (on a square-root scale) trace where the sound is. Gives `bins` values from 0 to 100.
 const { readOggPackets } = require("./ogg");
 
-function peaksFromOgg(file, durationMs, bins = 1600) {
+// One value per 250 ms (fine enough to zoom in on), at most 60000
+const binsFor = (durationMs) => Math.max(200, Math.min(60000, Math.ceil(durationMs / 250)));
+
+function peaksFromOgg(file, durationMs, bins = binsFor(durationMs)) {
   const total = Math.max(1, durationMs * 48);
   const bytes = new Float64Array(bins);
   const samples = new Float64Array(bins);
@@ -22,4 +25,4 @@ function peaksFromOgg(file, durationMs, bins = 1600) {
   return rate.map((r) => (r ? Math.round(Math.min(1, Math.sqrt(Math.max(0, r - floor) / top)) * 100) : 0));
 }
 
-module.exports = { peaksFromOgg };
+module.exports = { peaksFromOgg, binsFor };

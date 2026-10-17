@@ -4,7 +4,7 @@
 const fs = require("fs");
 const path = require("path");
 const store = require("./store");
-const { peaksFromOgg } = require("./peaks");
+const { peaksFromOgg, binsFor } = require("./peaks");
 const { WORK_DIR } = require("./util");
 const drive = require("./drive");
 const transcribe = require("./transcribe");
@@ -124,16 +124,18 @@ module.exports = function registerRecordingsPage(app, client) {
     try {
       const rec = await store.getRecording(String(req.params.id));
       if (!rec) return res.status(404).json({ error: "not_found" });
-      if (!rec.outputs?.peaks) {
+      const durationMs = Date.parse(rec.ended_at) - Date.parse(rec.started_at);
+      // Missing, or the coarser kind made before zooming existed
+      if (!rec.outputs?.peaks || rec.outputs.peaks.length < binsFor(durationMs) * 0.9) {
         const mixId = rec.outputs?.files?.mix?.id;
-        if (!mixId || rec.outputs?.audioDeleted || !drive.enabled) return res.json({ peaks: null });
+        if (!mixId || rec.outputs?.audioDeleted || !drive.enabled) return res.json({ peaks: rec.outputs?.peaks || null });
         if (!peaksJobs.has(rec.id)) {
           peaksJobs.set(rec.id, (async () => {
             const file = path.join(WORK_DIR, `peaks_${rec.id}.ogg`);
             fs.mkdirSync(WORK_DIR, { recursive: true });
             try {
               await drive.download(mixId, file);
-              rec.outputs.peaks = peaksFromOgg(file, Date.parse(rec.ended_at) - Date.parse(rec.started_at));
+              rec.outputs.peaks = peaksFromOgg(file, durationMs);
               await store.saveRecording(rec);
             } finally {
               fs.unlink(file, () => { });
