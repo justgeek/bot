@@ -343,7 +343,10 @@ module.exports = (client) => {
 
   client.on("messageUpdate", (oldMessage, newMessage) => {
     if (newMessage.author?.bot) return;
-    if (oldMessage == newMessage) return;
+    // Discord also fires this when it attaches link previews (embeds) to a message, with the text
+    // unchanged — only a change of content counts as an edit. When the old message wasn't cached its
+    // content is unknown, so rely on Discord's edited timestamp, which embed updates don't set.
+    if (oldMessage.partial ? !newMessage.editedTimestamp : oldMessage.content === newMessage.content) return;
     const edited = `${now()}\t **${newMessage.author.username}:**\n${oldMessage.content}\n>\n${newMessage.content}`;
     console.log("edited:", edited);
     sendToChannel(client, IDs.channelDel, edited);
