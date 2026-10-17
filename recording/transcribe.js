@@ -11,7 +11,7 @@ const { MS } = require("./track");
 const store = require("./store");
 const drive = require("./drive");
 const panel = require("./panel");
-const { sleep, QuotaPause, UserError, nextQuotaReset, localStamp } = require("./util");
+const { sleep, QuotaPause, UserError, nextQuotaReset, localStamp, participants } = require("./util");
 
 // Same as aiHandler.js: casual voice chat trips the default filters
 const SAFETY = ["HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"].map((category) => ({ category, threshold: "BLOCK_NONE" }));
@@ -190,7 +190,7 @@ const TRANSCRIPT_SCHEMA = {
 };
 
 function vocabulary(rec) {
-  const names = new Set(Object.values(rec.speakers || {}).map((s) => s.name).filter(Boolean));
+  const names = new Set(Object.values(participants(rec)).map((s) => s.name).filter(Boolean));
   for (const spoken of Object.values(PeopleTTS || {})) names.add(spoken);
   return { names: [...names], games: gamesList || [] };
 }
@@ -373,7 +373,7 @@ function writeTranscriptFiles(rec, lines, dir) {
   const started = Date.parse(rec.started_at);
   const head = [
     `Recording ${rec.id} - ${rec.channel_name || "Voice"} - ${localStamp(started)} (Cairo time)`,
-    `Speakers: ${Object.values(rec.speakers || {}).map((s) => s.name).join(", ")}`,
+    `Speakers: ${Object.values(participants(rec)).map((s) => s.name).join(", ")}`,
     "",
   ];
   const txt = head.concat(all.map((l) => `[${panel.hms(l.start_ms)}] ${l.name}: ${l.text}`)).join("\n") + "\n";

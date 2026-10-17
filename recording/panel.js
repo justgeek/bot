@@ -6,6 +6,7 @@ const {
   ChannelSelectMenuBuilder, StringSelectMenuBuilder, ChannelType,
 } = require("discord.js");
 const { Recording: cfg } = require("../config");
+const { participants } = require("./util");
 
 const RED = 0xed4245;
 const GREY = 0x4f545c;
@@ -138,7 +139,7 @@ function endedPanel(rec) {
   const prog = out.progress || {};
   const files = out.files || {};
   const deleted = rec.status === "deleted";
-  const speakers = Object.values(rec.speakers || {}).filter((s) => !s.bot);
+  const speakers = Object.values(participants(rec));
 
   const details = [
     `**Recording ID:** \`${rec.id}\``,
@@ -354,7 +355,7 @@ function recordingsList(rows) {
     const end = r.ended_at ? Date.parse(r.ended_at) : Date.now();
     const folder = r.drive_folder_id ? ` · [Files](https://drive.google.com/drive/folders/${r.drive_folder_id})` : "";
     const state = r.status === "recording" ? " · 🔴 live" : r.status === "done" ? "" : ` · ${r.status}`;
-    return `\`${r.id}\` · <t:${unix(start)}:f> · <#${r.channel_id}> · ${human(end - start)} · ${Object.values(r.speakers || {}).filter((s) => !s.bot).length} speakers${state}${folder}`;
+    return `\`${r.id}\` · <t:${unix(start)}:f> · <#${r.channel_id}> · ${human(end - start)} · ${Object.keys(participants(r)).length} speakers${state}${folder}`;
   });
   c.addTextDisplayComponents(text("### 🎙️ Recent recordings\n" + (lines.join("\n") || "None yet.")));
   return v2(c);

@@ -11,7 +11,7 @@ const store = require("./store");
 const drive = require("./drive");
 const panel = require("./panel");
 const clip = require("./clip");
-const { WORK_DIR, sleep, UserError, folderName, threadName, memberName } = require("./util");
+const { WORK_DIR, sleep, UserError, folderName, threadName, memberName, participants } = require("./util");
 
 // The voice library hands over only each packet's Opus payload. This wraps its packet parser (an internal
 // of @discordjs/voice 0.19.2, which package.json pins) to also attach the RTP timestamp from the header,
@@ -392,7 +392,7 @@ class RecordingSession {
       startedAtMs: this.startedAtMs,
       elapsedMs: this.active ? this.nowMs() : Date.now() - this.startedAtMs,
       bytes: Object.values(this.rec.speakers).reduce((a, s) => a + (s.bytes || 0), 0),
-      speakers: Object.values(this.rec.speakers).filter((s) => !s.bot).length,
+      speakers: Object.keys(participants(this.rec)).length,
       region: endpoint.split(".")[0] || null,
       pingMs: ping?.ws ?? ping?.udp,
       dave: (conn?.state?.networking?.state?.dave?.protocolVersion || 0) > 0,

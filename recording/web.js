@@ -5,7 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const store = require("./store");
 const { peaksFromOgg, binsFor } = require("./peaks");
-const { WORK_DIR } = require("./util");
+const { WORK_DIR, participants } = require("./util");
 const drive = require("./drive");
 const transcribe = require("./transcribe");
 const { IDs, MemberColorOverrides } = require("../config");
@@ -41,9 +41,10 @@ module.exports = function registerRecordingsPage(app, client) {
       ended_at: r.ended_at,
       duration_ms: end - Date.parse(r.started_at),
       status: r.status,
-      speakers: Object.entries(r.speakers || {}).filter(([, s]) => !s.bot)
-        .map(([u, s]) => ({ ...person(u, s.name), speaking_ms: s.speaking_ms || 0 }))
-        .sort((a, b) => b.speaking_ms - a.speaking_ms),
+      // Who talked and who only used TTS/memes, most talk first
+      speakers: Object.entries(participants(r))
+        .map(([u, p]) => ({ ...person(u, p.name), speaking_ms: p.speaking_ms, sound_ms: p.sound_ms }))
+        .sort((a, b) => b.speaking_ms - a.speaking_ms || b.sound_ms - a.sound_ms),
       has_audio: !!r.outputs?.files?.mix?.id && !r.outputs?.audioDeleted,
       has_transcript: prog.transcript?.state === "done",
       has_summary: prog.summary?.state === "done",
@@ -94,6 +95,8 @@ module.exports = function registerRecordingsPage(app, client) {
         summary_en: rec.summary_en || null,
         summary_ar: rec.summary_ar || null,
         aliases: rec.outputs?.aliases || {},
+        // Names for everyone in the activity log, including who joined but never talked
+        people: [...new Map((rec.events || []).filter((e) => e.user).map((e) => [e.user, e.name])).entries()].map(([u, name]) => person(u, name)),
         tracks: Object.entries(files.tracks || {}).map(([u, t]) => ({ ...person(u, t.name), has_audio: !!t.id && !rec.outputs?.audioDeleted })),
         folder_url: rec.drive_folder_id ? drive.folderUrl(rec.drive_folder_id) : null,
         lines: lines.map((l) => ({ start_ms: l.start_ms, end_ms: l.end_ms, user_id: l.user_id, name: l.name, text: l.text })),

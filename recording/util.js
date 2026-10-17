@@ -63,10 +63,26 @@ function memberName(guild, userId) {
   return m?.displayName || m?.user?.username || guild?.client.users.cache.get(userId)?.username || String(userId);
 }
 
+// Everyone who took part: who talked, plus who only played TTS/memes through the bot (their "bot-<id>" track)
+// -> { userId: { name, speaking_ms, sound_ms } }
+function participants(rec) {
+  const out = {};
+  for (const [key, s] of Object.entries(rec.speakers || {})) {
+    const sounds = key.startsWith("bot-");
+    if (s.bot && !sounds) continue; // "bot": the automatic announcements
+    const id = sounds ? key.slice(4) : key;
+    const p = out[id] || (out[id] = { name: null, speaking_ms: 0, sound_ms: 0 });
+    if (sounds) p.sound_ms += s.speaking_ms || 0;
+    else p.speaking_ms += s.speaking_ms || 0;
+    if (!sounds || !p.name) p.name = sounds ? String(s.name || "").replace(/ \(bot sounds\)$/, "") || null : s.name || p.name;
+  }
+  return out;
+}
+
 // Next reset of Gemini's per-day quota (midnight Pacific time), plus a little slack
 function nextQuotaReset() {
   const la = makeTz("America/Los_Angeles", 0);
   return la.startOfDate(la.addDays(la.dateOf(Date.now()), 1)) + 2 * 60000;
 }
 
-module.exports = { WORK_DIR, sleep, UserError, QuotaPause, newId, localStamp, folderName, threadName, safeName, isAdmin, memberName, nextQuotaReset };
+module.exports = { WORK_DIR, sleep, UserError, QuotaPause, newId, localStamp, folderName, threadName, safeName, isAdmin, memberName, participants, nextQuotaReset };

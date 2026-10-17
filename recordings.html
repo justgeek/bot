@@ -253,7 +253,7 @@
         api("/api/recordings/" + encodeURIComponent(id)).then(function (rec) {
           current = rec;
           people = {};
-          (rec.speakers || []).concat(rec.tracks || []).forEach(function (p) { people[p.user_id] = p; });
+          (rec.people || []).concat(rec.speakers || [], rec.tracks || []).forEach(function (p) { people[p.user_id] = p; });
           hidden = {};
           filterText = "";
           tab = rec.lines.length ? "transcript" : rec.summary_en ? "summary" : "report";
