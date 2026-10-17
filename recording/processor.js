@@ -242,10 +242,13 @@ async function audioStep(rec, ctx) {
     if (!byUser.has(row.user_id)) byUser.set(row.user_id, []);
     byUser.get(row.user_id).push(row);
   }
-  // Most talkative first: "01 Name.ogg" is the person who talked the most; the bot's sounds come last
-  const isBot = (u) => !!rec.speakers?.[u]?.bot;
-  const users = [...new Set([...byUser.keys(), ...Object.keys(out.files.tracks)])].sort(
-    (a, b) => isBot(a) - isBot(b) || (rec.speakers?.[b]?.speaking_ms || 0) - (rec.speakers?.[a]?.speaking_ms || 0)
+  // One file per person: what the bot played for them (their memes/TTS, the "X joined/left" about them,
+  // recorded as "bot-<their id>") is mixed into their own track. Only unattributed bot audio ("bot") stays apart.
+  const person = (u) => (u.startsWith("bot-") ? u.slice(4) : u);
+  const nameOf = (u) => rec.speakers?.[u]?.name || rec.speakers?.[`bot-${u}`]?.name?.replace(/ \(bot sounds\)$/, "") || u;
+  // Most talkative first: "01 Name.ogg" is the person who talked the most
+  const users = [...new Set([...[...byUser.keys()].map(person), ...Object.keys(out.files.tracks).filter((k) => !k.startsWith("bot-"))])].sort(
+    (a, b) => (a === "bot") - (b === "bot") || (rec.speakers?.[b]?.speaking_ms || 0) - (rec.speakers?.[a]?.speaking_ms || 0)
   );
   if (!users.length) throw new Error("no audio was found");
   const totalMs = Date.parse(rec.ended_at) - Date.parse(rec.started_at);
@@ -261,36 +264,43 @@ async function audioStep(rec, ctx) {
   let lost = 0;
   for (const [i, userId] of users.entries()) {
     if (out.files.tracks[userId]?.done) continue;
-    const name = rec.speakers?.[userId]?.name || userId;
+    const name = nameOf(userId);
     ctx.progress("audio", "running", `speaker track ${i + 1} of ${users.length} (${name})`);
-    // Their pieces are on this disk, or (after a restart) on Drive
-    const chunks = [];
-    for (const row of (byUser.get(userId) || []).sort((a, b) => a.start_ms - b.start_ms)) {
-      const file = path.join(chunksDir, `${row.user_id}_${row.start_ms}.ogg`);
-      if (!fs.existsSync(file)) {
-        if (!row.drive_file_id || !drive.enabled) {
-          lost++;
-          continue;
+    const raws = [];
+    const used = [];
+    for (const source of [userId, `bot-${userId}`].filter((k) => byUser.has(k))) {
+      // Their pieces are on this disk, or (after a restart) on Drive
+      const chunks = [];
+      for (const row of byUser.get(source).sort((a, b) => a.start_ms - b.start_ms)) {
+        const file = path.join(chunksDir, `${row.user_id}_${row.start_ms}.ogg`);
+        if (!fs.existsSync(file)) {
+          if (!row.drive_file_id || !drive.enabled) {
+            lost++;
+            continue;
+          }
+          try {
+            await drive.download(row.drive_file_id, file);
+          } catch (err) {
+            console.warn(`[Rec] Chunk ${row.user_id}_${row.start_ms} couldn't be downloaded:`, err.message);
+            lost++;
+            continue;
+          }
         }
-        try {
-          await drive.download(row.drive_file_id, file);
-        } catch (err) {
-          console.warn(`[Rec] Chunk ${row.user_id}_${row.start_ms} couldn't be downloaded:`, err.message);
-          lost++;
-          continue;
-        }
+        chunks.push({ file, startMs: Number(row.start_ms) });
       }
-      chunks.push({ file, startMs: Number(row.start_ms) });
+      if (!chunks.length) continue;
+      const raw = path.join(rawDir, `${source}.ogg`);
+      const intervals = remux(chunks, raw, Math.ceil(totalMs * MS), name);
+      // Only their own voice is transcribed and counted as talking; the bot's sounds are already in the log
+      if (source === userId && !rec.speakers?.[source]?.bot) out.speech[userId] = intervals;
+      raws.push(raw);
+      used.push(...chunks);
     }
-    if (!chunks.length) continue;
-    const raw = path.join(rawDir, `${userId}.ogg`);
+    if (!raws.length) continue;
     const local = path.join(tracksDir, `${userId}.ogg`);
-    const intervals = remux(chunks, raw, Math.ceil(totalMs * MS), name);
-    // The bot's tracks are only mixed in: their words (TTS text, meme names) are already in the activity log
-    if (!isBot(userId)) out.speech[userId] = intervals;
-    await ffmpeg.encodeTrack(raw, local, { kbps: cfg.trackKbps });
-    fs.unlink(raw, () => { });
-    for (const c of chunks) fs.unlink(c.file, () => { }); // Drive keeps a copy until the recording is finished
+    await ffmpeg.encodeTrack(raws, local, { kbps: cfg.trackKbps });
+    for (const f of raws) fs.unlink(f, () => { });
+    for (const c of used) fs.unlink(c.file, () => { }); // Drive keeps a copy until the audio is done
     const entry = { name, done: true };
     if (tracksFolder) Object.assign(entry, await drive.upload(tracksFolder, `${String(i + 1).padStart(2, "0")} ${safeName(name)}.ogg`, local, "audio/ogg"));
     out.files.tracks[userId] = entry;
@@ -326,6 +336,11 @@ async function audioStep(rec, ctx) {
   if (drive.enabled) {
     const total = (out.files.mix?.size || 0) + Object.values(out.files.tracks).reduce((a, f) => a + (f.size || 0), 0);
     ctx.progress("audio", "done", `mix + ${count} track${count === 1 ? "" : "s"} (${panel.size(total)})`);
+    await ctx.save();
+    // The raw 5-minute pieces were only a safety net while recording: gone for good (not to the trash, which
+    // would keep counting against the Drive space for 30 days)
+    await drive.trashChild(rec.drive_folder_id, "raw", { permanent: true });
+    await store.deleteChunks(rec.id);
   } else {
     // Without Drive the only copy is this disk; post the mix in the thread when it's small enough
     out.files.local = { mix: mixFile };
@@ -356,7 +371,7 @@ async function finishStep(rec, ctx) {
     };
     await drive.upload(rec.drive_folder_id, "info.json", Buffer.from(JSON.stringify(info, null, 2)), "application/json");
     // The raw chunks were only a safety net while recording
-    await drive.trashChild(rec.drive_folder_id, "raw");
+    await drive.trashChild(rec.drive_folder_id, "raw", { permanent: true });
     await store.deleteChunks(rec.id);
     fs.rm(ctx.dir, { recursive: true, force: true }, () => { });
   }

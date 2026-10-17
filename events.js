@@ -460,7 +460,7 @@ module.exports = (client) => {
       if (before.channelId == audio.state.voiceCurrent) {
         const stream = discordTTS.getVoiceStream(personTTS + " left", { lang: "ja" });
         const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
-        audio.playVoice(resource, { kind: "announce", text: personTTS + " left" });
+        audio.playVoice(resource, { kind: "announce", userId: after.id, text: personTTS + " left" });
       }
       audio.leaveEmptyVoiceChannel(client);
     }
@@ -484,12 +484,12 @@ module.exports = (client) => {
 
         const stream = discordTTS.getVoiceStream(personTTS + " joined", { lang: "ja" });
         const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary, inlineVolume: true });
-        audio.playVoice(resource, { kind: "announce", text: personTTS + " joined" });
+        audio.playVoice(resource, { kind: "announce", userId: after.id, text: personTTS + " joined" });
 
         if (person == "prollygeek") {
           const memeFile = otherFolder + "TDKJoin.mp3";
           let resource2 = createAudioResource(memeFile);
-          audio.playVoice(resource2, { kind: "announce", text: "TDK's join sound" });
+          audio.playVoice(resource2, { kind: "announce", userId: after.id, text: "TDK's join sound" });
         }
       }
 

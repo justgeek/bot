@@ -43,9 +43,15 @@ const opus = (kbps) => ["-c:a", "libopus", "-b:a", `${kbps}k`, "-vbr", "on", "-a
 const level = "dynaudnorm=f=250:g=15:m=5";
 const sum = (labels) => `${labels.join("")}amix=inputs=${labels.length}:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.95`;
 
-// One speaker's track: levelled and compressed (one small ffmpeg run per speaker, so progress is saved per speaker)
-async function encodeTrack(input, out, { kbps }) {
-  await run(["-i", input, "-af", level, "-ac", "1", ...opus(kbps), out]);
+// One speaker's track: levelled and compressed (one small ffmpeg run per speaker, so progress is saved per speaker).
+// inputs: their voice, plus what the bot played for them when there is any (summed into the one file)
+async function encodeTrack(inputs, out, { kbps }) {
+  const list = [].concat(inputs);
+  const args = [];
+  for (const f of list) args.push("-i", f);
+  if (list.length === 1) args.push("-af", level);
+  else args.push("-filter_complex", `${list.map((_, i) => `[${i}:a]`).join("")}amix=inputs=${list.length}:duration=longest:dropout_transition=0:normalize=0,${level},alimiter=limit=0.95[t]`, "-map", "[t]");
+  await run([...args, "-ac", "1", ...opus(kbps), out]);
 }
 
 // The mix, from tracks that are already levelled
