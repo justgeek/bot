@@ -646,7 +646,7 @@
       function md(src, rtl) {
         var out = [], inList = false, names = nameMatcher();
         // Quotes and runs of the other script become their own <bdi> islands (Arabic in the English one, Latin in the Arabic one)
-        var other = rtl ? "(?<![&\\w])[A-Za-z][\\w'’-]*(?:[ :.-]+[A-Za-z0-9][\\w'’-]*)*" : "[\\u0600-\\u06FF](?:[\\u0600-\\u06FF\\s.,!…؟،:-]*[\\u0600-\\u06FF؟!])?";
+        var other = rtl ? "(?<![&\\w])[A-Za-z][\\w'’-]*(?:(?:[ :.-]|&amp;)+[A-Za-z0-9][\\w'’-]*)*" : "[\\u0600-\\u06FF](?:[\\u0600-\\u06FF\\s.,!…؟،:-]*[\\u0600-\\u06FF؟!])?";
         var islands = new RegExp('"([^"]+)"|“([^”]+)”|«([^»]+)»|(' + other + ")", "g");
         var textOnly = function (html, fn) { return html.split(/(<[^>]+>)/).map(function (p, i) { return i % 2 ? p : fn(p); }).join(""); };
         var inline = function (s) {

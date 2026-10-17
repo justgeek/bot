@@ -412,8 +412,10 @@ const SUMMARY_SYSTEM = [
   'You get the session details and a transcript where each line is "[hh:mm:ss] Speaker: what they said".',
   "Write the same summary twice: `en` in English, and `ar` in Egyptian Arabic (Arabic script, casual Egyptian wording, not formal Arabic).",
   "Each one in Discord markdown with these sections as ### headings:",
-  "TL;DR (2-4 bullets) · Timeline (the main stretches and topics, each with its [hh:mm:ss]) · Highlights & funny moments (short quotes in their original language, with who said them) · Plans & decisions (or that there were none) · People (one line per person on what they were up to) · Notes (only if people added notes).",
-  "Be concrete and only use what is in the transcript. Keep each version under 3500 characters.",
+  "TL;DR (2-4 bullets) · Timeline (the main stretches and topics, each with its [hh:mm:ss]) · Highlights & funny moments · Plans & decisions (or that there were none) · People (one line per person on what they were up to) · Notes (only if people added notes).",
+  "Highlights & funny moments: list EVERY funny, savage, wholesome or memorable moment in the whole session, in order, not just the best few. One bullet each: who, a few words of context, the quote in its original language, and its [hh:mm:ss].",
+  "In `ar`, write the section headings in Arabic too.",
+  "Be concrete and only use what is in the transcript. Apart from the highlights, keep each version tight (around 3500 characters).",
   "In `names`, list every speaker (exactly as written in the transcript) with each way you wrote their name in `en` and `ar` (e.g. a first name, a nickname, the Arabic spelling).",
 ].join("\n");
 
