@@ -1,5 +1,5 @@
 // recording/transcribe.js - transcripts (who said what) and summaries with Gemini, made for the free tier:
-// few, large requests, and when the daily quota runs out the job pauses and carries on after the reset.
+// few, large requests, and when the daily quota runs out the job pauses and tries again every hour (or at the reset, if sooner).
 // Who said what is exact without any guessing: every speaker has their own track, and each request
 // carries labelled clips cut from those tracks.
 const fs = require("fs");
@@ -11,7 +11,7 @@ const { MS } = require("./track");
 const store = require("./store");
 const drive = require("./drive");
 const panel = require("./panel");
-const { sleep, QuotaPause, UserError, nextQuotaReset, localStamp, participants } = require("./util");
+const { sleep, QuotaPause, UserError, nextQuotaReset, quotaRetryAt, localStamp, participants } = require("./util");
 
 // Same as aiHandler.js: casual voice chat trips the default filters
 const SAFETY = ["HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"].map((category) => ({ category, threshold: "BLOCK_NONE" }));
@@ -291,7 +291,7 @@ async function transcriptStep(rec, ctx) {
             onFallback = true;
             continue;
           }
-          throw new QuotaPause("transcript", nextQuotaReset());
+          throw new QuotaPause("transcript", quotaRetryAt());
         }
       }
       for (const seg of batch) done[seg.id] = result[seg.id] ?? "";
@@ -445,7 +445,7 @@ async function summaryStep(rec, ctx) {
   try {
     response = await generate(geminiModelName(), [{ text: `${sessionHeader(rec)}\n\nTranscript:\n${transcriptText(lines)}` }], { schema: SUMMARY_SCHEMA, system: SUMMARY_SYSTEM });
   } catch (err) {
-    if (err.daily) throw new QuotaPause("summary", nextQuotaReset());
+    if (err.daily) throw new QuotaPause("summary", quotaRetryAt());
     throw err;
   }
   const { en, ar, names } = JSON.parse(response.text());

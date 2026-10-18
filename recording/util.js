@@ -85,4 +85,9 @@ function nextQuotaReset() {
   return la.startOfDate(la.addDays(la.dateOf(Date.now()), 1)) + 2 * 60000;
 }
 
-module.exports = { WORK_DIR, sleep, UserError, QuotaPause, newId, localStamp, folderName, threadName, safeName, isAdmin, memberName, participants, nextQuotaReset };
+// When a quota-paused job tries again: in an hour, or at the daily reset if that comes sooner
+function quotaRetryAt() {
+  return Math.min(Date.now() + 60 * 60000, nextQuotaReset());
+}
+
+module.exports = { WORK_DIR, sleep, UserError, QuotaPause, newId, localStamp, folderName, threadName, safeName, isAdmin, memberName, participants, nextQuotaReset, quotaRetryAt };
