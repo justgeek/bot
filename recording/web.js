@@ -1,5 +1,5 @@
-// recording/web.js - the hidden recordings page at /recordings and its API.
-// Nothing links to it (not the dashboard, not the bot); you open it by typing the address.
+// recording/web.js - the recordings page at /recordings and its API.
+// The dashboard's sidebar links to it, passing on the dashboard's ?key=.
 // Set RECORDINGS_KEY to require /recordings?key=... (falls back to DASHBOARD_KEY when only that is set).
 const fs = require("fs");
 const path = require("path");

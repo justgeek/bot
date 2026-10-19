@@ -150,7 +150,7 @@ module.exports = function registerDashboard(app, client) {
     res.sendFile(path.join(__dirname, "dashboard.html"));
   });
 
-  // Voice recordings page: /recordings, deliberately not linked from the dashboard (see recording/web.js)
+  // Voice recordings page: /recordings, linked from the dashboard's sidebar (see recording/web.js)
   require("./recording/web")(app, client);
 
   // ---------- Live snapshot ----------
