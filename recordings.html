@@ -167,6 +167,18 @@
     .result { text-align: left; cursor: pointer; padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
     .result:hover { background: var(--raised); }
     .empty { padding: 30px 16px; text-align: center; color: var(--muted); }
+
+    .progress { padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
+    .progress h3 { font-size: 16px; margin-bottom: 2px; }
+    .step { display: grid; grid-template-columns: 22px minmax(90px, auto) minmax(0, 1fr); gap: 8px; align-items: baseline; }
+    .step b { color: var(--heading); font-weight: 500; }
+    .step.running b { color: var(--accent); }
+    .step.off { opacity: .5; }
+    .step .meter { grid-column: 2 / -1; height: 4px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+    .step .meter > span { display: block; height: 100%; background: var(--accent); transition: width .6s; }
+    .spin { display: inline-block; animation: spin 1.6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
   </style>
 </head>
 
@@ -227,6 +239,7 @@
             return s.avatar ? '<img alt="" title="' + esc(s.name) + '" src="' + esc(s.avatar) + '">' : '<span class="dot" title="' + esc(s.name) + '"></span>';
           }).join("");
           var badges = (r.status === "recording" || r.status === "suspended" ? '<span class="badge live">live</span>' : "") +
+            (r.status === "processing" ? '<span class="badge live">processing</span>' : r.status === "paused" ? '<span class="badge">paused</span>' : r.status === "failed" ? '<span class="badge">failed</span>' : "") +
             (r.has_transcript ? '<span class="badge">transcript</span>' : "") + (r.has_summary ? '<span class="badge">summary</span>' : "") +
             (!r.has_audio && r.status === "done" ? '<span class="badge">text only</span>' : "");
           return '<button class="item' + (current && current.id === r.id ? " sel" : "") + '" data-id="' + esc(r.id) + '">' +
@@ -246,6 +259,7 @@
       // ---------- Detail ----------
       function open(id, seekSec) {
         if (current && current.id === id) { if (seekSec != null) seek(seekSec * 1000); return; }
+        stopPolling();
         pendingSeek = seekSec;
         if ($("audio")) $("audio").pause();
         $("layout").classList.add("has-detail");
@@ -259,12 +273,14 @@
           tab = rec.lines.length ? "transcript" : rec.summary_en ? "summary" : "report";
           renderList();
           renderDetail();
+          startPolling();
         }).catch(function () {
           $("detail").innerHTML = '<div class="card empty">That recording couldn\'t be loaded.</div>';
         });
       }
 
       function closeDetail() {
+        stopPolling();
         if ($("audio")) $("audio").pause();
         $("layout").classList.remove("has-detail");
         history.replaceState(null, "", location.pathname + location.search);
@@ -329,7 +345,8 @@
             '<button class="cbtn" id="mute" title="Mute (M)">🔊</button><input type="range" id="vol" min="0" max="1" step="0.05" aria-label="Volume">' +
             '<select id="track" aria-label="Track">' + trackOptions + "</select>" +
             "</div></div>" :
-            '<div class="card player muted">' + (r.status === "done" ? "The audio of this recording was removed (only the text is kept)." : "The audio isn't ready yet.") + "</div>") +
+            (r.progress ? "" : '<div class="card player muted">' + (r.status === "done" ? "The audio of this recording was removed (only the text is kept)." : r.status === "recording" || r.status === "suspended" ? "Still being recorded." : "The audio isn't ready yet.") + "</div>")) +
+          (r.progress ? '<div class="card progress" id="progress">' + progressHtml(r) + "</div>" : "") +
           '<div class="tabs" role="tablist">' + tabs.map(function (t) { return '<button class="btn' + (tab === t[0] ? " on" : "") + '" data-tab="' + t[0] + '" role="tab">' + t[1] + "</button>"; }).join("") + "</div>" +
           '<div class="card tab-body" id="tab"></div>';
 
@@ -571,6 +588,75 @@
         else if (e.key === "-") zoomBy(0.5);
         else if (e.key === "0") $("zoomall").click();
       });
+
+      // ---------- Processing progress (the same steps as the panel in #record) ----------
+      var STEP_ICON = { done: "✅", running: '<span class="spin">⏳</span>', paused: "⏸️", failed: "❌", off: "➖", pending: "🕒" };
+      // Details are written for Discord: <t:123:R> becomes a local time here
+      function stepDetail(d) {
+        return esc(d || "").replace(/&lt;t:(\d+)(?::[a-zA-Z])?&gt;/g, function (m, sec) {
+          var ms = Number(sec) * 1000, mins = Math.round((ms - Date.now()) / 60000);
+          return new Date(ms).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) + (mins > 0 ? " (in " + human(mins * 60000) + ")" : "");
+        });
+      }
+      // "mixing (40%)", "request 3 of ~12", "speaker track 2 of 7 (...)" -> 0..1
+      function stepFraction(d) {
+        var m = /(\d+)%/.exec(d || "");
+        if (m) return Number(m[1]) / 100;
+        m = /(\d+) of ~?(\d+)/.exec(d || "");
+        return m && Number(m[2]) ? Math.min(1, Number(m[1]) / Number(m[2])) : null;
+      }
+      function progressHtml(r) {
+        var p = r.progress;
+        var title = r.status === "paused" ? "Processing paused" : r.status === "failed" ? "Processing stopped" : p.queued ? "Waiting for its turn…" : "Processing…";
+        return "<h3>" + title + "</h3>" + [["audio", "Audio"], ["transcript", "Transcript"], ["summary", "Summary"]].map(function (s) {
+          var step = p[s[0]] || { state: "pending" }, f = step.state === "running" ? stepFraction(step.detail) : null;
+          return '<div class="step ' + esc(step.state) + '"><span>' + (STEP_ICON[step.state] || "🕒") + "</span><b>" + s[1] + '</b><span class="muted">' + (step.state === "off" ? "off" : stepDetail(step.detail)) + "</span>" +
+            (f != null ? '<div class="meter"><span style="width:' + (f * 100).toFixed(1) + '%"></span></div>' : "") + "</div>";
+        }).join("") +
+          (p.error ? '<div class="muted">Error: ' + esc(p.error) + "</div>" : "") +
+          (r.status === "failed" ? '<div class="muted">Press <b>Retry</b> on its panel in #record to try again.</div>' : "");
+      }
+
+      // While it's processing, check every few seconds; when a step finishes, load what it made
+      var pollTimer = null;
+      function stopPolling() { clearTimeout(pollTimer); pollTimer = null; }
+      function startPolling() {
+        stopPolling();
+        if (!current || !(current.progress || current.status === "recording" || current.status === "suspended")) return;
+        var rec = current;
+        var doneCount = function (r) { return ["audio", "transcript", "summary"].filter(function (k) { return r.progress && r.progress[k] && r.progress[k].state === "done"; }).length; };
+        pollTimer = setTimeout(function () {
+          api("/api/recordings/" + encodeURIComponent(rec.id) + "/progress").then(function (p) {
+            if (current !== rec) return;
+            var changed = p.status !== rec.status || p.has_audio !== rec.has_audio || p.has_transcript !== rec.has_transcript || p.has_summary !== rec.has_summary ||
+              doneCount(p) !== doneCount(rec);
+            var item = list.filter(function (x) { return x.id === rec.id; })[0];
+            if (item) { item.status = p.status; item.has_audio = p.has_audio; item.has_transcript = p.has_transcript; item.has_summary = p.has_summary; }
+            if (changed) { renderList(); return refresh(); }
+            rec.progress = p.progress;
+            if ($("progress") && p.progress) $("progress").innerHTML = progressHtml(rec);
+            startPolling();
+          }).catch(function () { if (current === rec) pollTimer = setTimeout(startPolling, 10000); });
+        }, document.hidden ? 15000 : 3000);
+      }
+      // Reloads the open recording in place: same tab, and the player keeps going if it was already there
+      function refresh() {
+        var rec = current, hadPlayer = !!$("audio");
+        api("/api/recordings/" + encodeURIComponent(rec.id)).then(function (fresh) {
+          if (current !== rec) return;
+          // Same object, so the player (which checks current === its recording) keeps running
+          for (var k in fresh) rec[k] = fresh[k];
+          if (!fresh.progress) rec.progress = null;
+          (fresh.people || []).concat(fresh.speakers || [], fresh.tracks || []).forEach(function (p) { people[p.user_id] = p; });
+          if (hadPlayer && rec.has_audio) {
+            var prog = $("progress");
+            if (rec.progress && prog) prog.innerHTML = progressHtml(rec);
+            else if (prog) prog.remove();
+            renderTab();
+          } else renderDetail();
+          startPolling();
+        }).catch(function () { if (current === rec) pollTimer = setTimeout(startPolling, 10000); });
+      }
 
       // ---------- Tabs ----------
       function renderTab() {

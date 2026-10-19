@@ -8,6 +8,7 @@ const { peaksFromOgg, binsFor } = require("./peaks");
 const { WORK_DIR, participants } = require("./util");
 const drive = require("./drive");
 const transcribe = require("./transcribe");
+const processor = require("./processor");
 const { IDs, MemberColorOverrides } = require("../config");
 
 module.exports = function registerRecordingsPage(app, client) {
@@ -48,8 +49,18 @@ module.exports = function registerRecordingsPage(app, client) {
       has_audio: !!r.outputs?.files?.mix?.id && !r.outputs?.audioDeleted,
       has_transcript: prog.transcript?.state === "done",
       has_summary: prog.summary?.state === "done",
+      // Each step's { state, detail } while it's being made (same as the panel in #record)
+      progress: ["processing", "paused", "failed"].includes(r.status) ? {
+        audio: prog.audio || null,
+        transcript: r.options?.transcribe ? prog.transcript || null : { state: "off" },
+        summary: r.options?.summarize ? prog.summary || null : { state: "off" },
+        queued: r.status === "processing" && !processor.liveRecording(r.id),
+        error: r.status === "failed" ? r.error || null : null,
+      } : null,
     };
   };
+  // The one being processed right now has newer progress in memory than in the database
+  const fresh = (r) => (r && processor.liveRecording(r.id)) || r;
 
   app.get("/recordings", guard, (req, res) => {
     res.set("Cache-Control", "no-store");
@@ -60,7 +71,7 @@ module.exports = function registerRecordingsPage(app, client) {
     try {
       const rows = await store.listRecordings(300);
       res.set("Cache-Control", "no-store");
-      res.json({ recordings: rows.map(summary) });
+      res.json({ recordings: rows.map((r) => summary(fresh(r))) });
     } catch (err) {
       console.error("[API] /api/recordings failed:", err);
       res.status(500).json({ error: "recordings_failed" });
@@ -81,7 +92,7 @@ module.exports = function registerRecordingsPage(app, client) {
 
   app.get("/api/recordings/:id", guard, async (req, res) => {
     try {
-      const rec = await store.getRecording(String(req.params.id));
+      const rec = fresh(await store.getRecording(String(req.params.id)));
       if (!rec || ["deleted", "discarded"].includes(rec.status)) return res.status(404).json({ error: "not_found" });
       const files = rec.outputs?.files || {};
       const lines = await store.getLines(rec.id);
@@ -117,6 +128,20 @@ module.exports = function registerRecordingsPage(app, client) {
     } catch (err) {
       console.error("[API] /api/recordings/:id failed:", err);
       res.status(500).json({ error: "recording_failed" });
+    }
+  });
+
+  // Polled by the page while a recording is being processed (cheap: no transcript lines)
+  app.get("/api/recordings/:id/progress", guard, async (req, res) => {
+    try {
+      const rec = fresh(await store.getRecording(String(req.params.id)));
+      if (!rec || ["deleted", "discarded"].includes(rec.status)) return res.status(404).json({ error: "not_found" });
+      const s = summary(rec);
+      res.set("Cache-Control", "no-store");
+      res.json({ status: s.status, progress: s.progress, has_audio: s.has_audio, has_transcript: s.has_transcript, has_summary: s.has_summary });
+    } catch (err) {
+      console.error("[API] /api/recordings/:id/progress failed:", err);
+      res.status(500).json({ error: "progress_failed" });
     }
   });
 

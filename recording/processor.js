@@ -17,6 +17,7 @@ const { WORK_DIR, QuotaPause, folderName, safeName } = require("./util");
 let client = null;
 const queue = [];
 let running = null;
+let live = null; // the row being processed (its progress is only saved at checkpoints; the recordings page reads it from here)
 let stopping = false;
 
 function init(c) {
@@ -39,11 +40,13 @@ async function pump() {
     console.error(`[Rec] Processing ${running} crashed:`, err);
   } finally {
     running = null;
+    live = null;
     setImmediate(pump);
   }
 }
 
 const isBusy = (id) => running === id || queue.includes(id);
+const liveRecording = (id) => (live && live.id === id ? live : null);
 
 function shutdown() {
   stopping = true;
@@ -391,6 +394,7 @@ async function processRecording(id) {
   rec.status = "processing";
   rec.resume_after = null;
   rec.error = null;
+  live = rec;
   const ctx = makeCtx(rec);
   let step = "audio";
   try {
@@ -486,4 +490,4 @@ async function freeUpSpace(minFreeBytes) {
   return q;
 }
 
-module.exports = { init, enqueue, isBusy, shutdown, updatePanel, deleteRecording, applyRetention, freeUpSpace, buildReport, remux };
+module.exports = { init, enqueue, isBusy, liveRecording, shutdown, updatePanel, deleteRecording, applyRetention, freeUpSpace, buildReport, remux };
