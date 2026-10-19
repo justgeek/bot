@@ -18,7 +18,8 @@ const SAFETY = ["HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH", "HARM_C
 
 // Recordings use their own Gemini key, not the "!!" chat's GEMINI_API_KEY, so they never eat its quota.
 // Free-tier limits count per Google Cloud project: make this key in a different project from the other one.
-const apiKey = () => process.env.RECORDING_GEMINI_API_KEY || "";
+// Backup keys go in the same var, comma separated ("key1,key2,key3"): a timeout or a used-up day moves on to the next one
+const apiKeys = () => (process.env.RECORDING_GEMINI_API_KEY || "").split(",").map((k) => k.trim()).filter(Boolean);
 const geminiModelName = () => process.env.RECORDING_GEMINI_MODEL || "gemini-flash-latest";
 const fallbackModel = () => process.env.RECORDING_GEMINI_FALLBACK_MODEL || null; // e.g. a Flash-Lite model, which gets more free requests
 const NO_KEY = "RECORDING_GEMINI_API_KEY isn't set (Heroku config var), so there's no Gemini to ask";
@@ -136,12 +137,17 @@ class SegmentCutter {
 }
 
 // ---------- Gemini ----------
-function geminiModel(name, { schema, system } = {}) {
-  if (!apiKey()) throw new Error(NO_KEY);
+function geminiModel(key, name, { schema, system } = {}) {
   const generationConfig = { temperature: 0.2 };
   if (schema) Object.assign(generationConfig, { responseMimeType: "application/json", responseSchema: schema });
-  return new GoogleGenerativeAI(apiKey()).getGenerativeModel({ model: name, safetySettings: SAFETY, systemInstruction: system, generationConfig });
+  return new GoogleGenerativeAI(key).getGenerativeModel({ model: name, safetySettings: SAFETY, systemInstruction: system, generationConfig });
 }
+
+// The key that last worked: later requests start with it
+let keyNo = 0;
+// "model|key" -> when to try that key again after it ran out of daily quota (under an hour, so the
+// hourly quota retry asks it again)
+const spentUntil = new Map();
 
 const isDailyQuota = (err) => /PerDay|per day|daily/i.test(JSON.stringify(err.errorDetails || []) + " " + (err.message || ""));
 function retryDelayMs(err) {
@@ -149,30 +155,53 @@ function retryDelayMs(err) {
   return 60000;
 }
 
-// Retries rate limits (per minute) and Google's hiccups; err.daily = the day's quota is used up
+// Retries rate limits (per minute) and Google's hiccups; err.daily = the day's quota is used up on every key.
+// Timeouts and server errors move on to the next key, and so does a key whose day is used up.
 // Streamed, so the answer starts arriving right away: a long transcription answered in one go can take
 // minutes, and Node's fetch drops a request whose reply hasn't started after 5 minutes ("fetch failed")
 async function generate(modelName, parts, opts) {
+  const keys = apiKeys();
+  if (!keys.length) throw new Error(NO_KEY);
+  const fresh = (i) => (spentUntil.get(`${modelName}|${keys[i]}`) || 0) <= Date.now();
+  // The next key after `from` that still has quota (from itself last), or -1
+  const nextKey = (from) => {
+    for (let i = 1; i <= keys.length; i++) if (fresh((from + i) % keys.length)) return (from + i) % keys.length;
+    return -1;
+  };
+  keyNo %= keys.length;
+  if (!fresh(keyNo)) keyNo = Math.max(0, nextKey(keyNo));
+  let failures = 0;
   for (let attempt = 1; ; attempt++) {
+    const label = keys.length > 1 ? `, key ${keyNo + 1}/${keys.length}` : "";
     try {
-      const result = await geminiModel(modelName, opts).generateContentStream({ contents: [{ role: "user", parts }] });
+      const result = await geminiModel(keys[keyNo], modelName, opts).generateContentStream({ contents: [{ role: "user", parts }] });
       return await result.response;
     } catch (err) {
       // "fetch failed" hides the real reason (timeout, connection reset...) in err.cause
       const cause = err.cause?.code || err.cause?.message;
       if (cause && !String(err.message).includes(cause)) err.message += ` (${cause})`;
-      console.warn(`[Rec] Gemini request failed (attempt ${attempt}): ${String(err.message).slice(0, 300)}`);
+      console.warn(`[Rec] Gemini request failed (attempt ${attempt}${label}): ${String(err.message).slice(0, 300)}`);
       const status = Number(err.status) || 0;
       if (status === 429) {
         if (isDailyQuota(err) || attempt > 8) {
+          spentUntil.set(`${modelName}|${keys[keyNo]}`, Date.now() + 50 * 60000);
+          const next = nextKey(keyNo);
+          if (next >= 0) {
+            console.warn(`[Rec] Gemini key ${keyNo + 1} is out of quota for ${modelName}, switching to key ${next + 1}`);
+            keyNo = next;
+            continue;
+          }
           err.daily = true;
           throw err;
         }
         await sleep(retryDelayMs(err) + 1000);
         continue;
       }
-      if ((status >= 500 || !status) && attempt <= 4 && !(err instanceof SyntaxError)) {
-        await sleep(10000 * attempt);
+      failures++;
+      if ((status >= 500 || !status) && failures <= 4 * keys.length && !(err instanceof SyntaxError)) {
+        if (keys.length > 1) keyNo = Math.max(0, nextKey(keyNo));
+        // Waits only once every key has had a go
+        await sleep(10000 * Math.ceil(failures / keys.length));
         continue;
       }
       throw err;
@@ -259,7 +288,7 @@ async function transcriptStep(rec, ctx) {
   const pending = segments.filter((s) => !(s.id in done));
 
   if (pending.length) {
-    if (!apiKey()) throw new Error(NO_KEY);
+    if (!apiKeys().length) throw new Error(NO_KEY);
     const files = await ctx.trackFiles();
     const missing = [...new Set(pending.map((s) => s.user))].filter((u) => !files[u]);
     if (missing.length) throw new Error(`the audio of ${missing.map((u) => names[u] || u).join(", ")} isn't available to transcribe`);
@@ -440,7 +469,7 @@ async function summaryStep(rec, ctx) {
     ctx.progress("summary", "done", "nothing was said to summarize");
     return;
   }
-  if (!apiKey()) throw new Error(NO_KEY);
+  if (!apiKeys().length) throw new Error(NO_KEY);
   let response;
   try {
     response = await generate(geminiModelName(), [{ text: `${sessionHeader(rec)}\n\nTranscript:\n${transcriptText(lines)}` }], { schema: SUMMARY_SCHEMA, system: SUMMARY_SYSTEM });
@@ -490,7 +519,7 @@ const ASK_SYSTEM = [
 const MAX_ASK_CHARS = 600000; // ~200k tokens: stays inside the free tier's tokens-per-minute
 
 async function ask(question) {
-  if (!apiKey()) throw new UserError("RECORDING_GEMINI_API_KEY isn't set yet (Heroku config var).");
+  if (!apiKeys().length) throw new UserError("RECORDING_GEMINI_API_KEY isn't set yet (Heroku config var).");
   const since = new Date(Date.now() - 30 * 86400e3).toISOString();
   const summaries = await store.recentSummaries(since);
   // Read in full the sessions with the most lines matching the question's words (else the latest one)
@@ -528,6 +557,6 @@ async function ask(question) {
   }
 }
 
-const hasGeminiKey = () => !!apiKey();
+const hasGeminiKey = () => apiKeys().length > 0;
 
 module.exports = { normalizeText, buildSegments, SegmentCutter, transcriptStep, summaryStep, search, ask, writeTranscriptFiles, hasGeminiKey };
