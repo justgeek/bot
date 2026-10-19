@@ -85,7 +85,7 @@ function livePanel(view) {
     `**Started:** <t:${unix(view.startedAtMs)}:T> (<t:${unix(view.startedAtMs)}:R>)`,
     `**Duration:** ${hms(view.elapsedMs)} · **Size:** ${size(view.bytes)} · **Speakers:** ${view.speakers}`,
     `**Voice Region:** ${view.region || "?"} · **Voice Server Latency:** ${Number.isFinite(view.pingMs) ? `${Math.round(view.pingMs)}ms` : "?"}`,
-    `**Transcript:** ${onOff(view.options.transcribe)} · **Summary:** ${onOff(view.options.summarize)}`,
+    `**Transcript:** ${onOff(view.options.transcribe)}${view.options.transcribe && view.transcribedMs ? ` (done up to ${hms(view.transcribedMs)})` : ""} · **Summary:** ${onOff(view.options.summarize)}`,
   ].join("\n");
 
   const c = new ContainerBuilder().setAccentColor(suspended || reconnecting ? GREY : RED);

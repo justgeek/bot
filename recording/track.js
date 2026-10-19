@@ -136,4 +136,11 @@ class TrackWriter {
   }
 }
 
-module.exports = { TrackWriter, MS };
+// Adds [startMs, endMs] of someone's speech to their time-ordered list (pauses up to 250 ms merged)
+function addSpeech(list, s, e) {
+  const last = list[list.length - 1];
+  if (last && s - last[1] <= 250) last[1] = Math.max(last[1], e);
+  else list.push([s, e]);
+}
+
+module.exports = { TrackWriter, MS, addSpeech };

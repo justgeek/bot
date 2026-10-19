@@ -5,7 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const { IDs, Recording: cfg } = require("../config");
 const { OggOpusWriter, readOggPackets, isSilence } = require("./ogg");
-const { MS } = require("./track");
+const { MS, addSpeech } = require("./track");
 const ffmpeg = require("./ffmpeg");
 const store = require("./store");
 const drive = require("./drive");
@@ -121,7 +121,6 @@ function makeCtx(rec) {
 function remux(chunks, outFile, totalSamples, name) {
   const w = new OggOpusWriter(outFile, { tags: { ARTIST: name } });
   const speech = [];
-  let cur = null;
   let written = 0;
   for (const c of chunks) {
     const base = c.startMs * MS;
@@ -132,11 +131,7 @@ function remux(chunks, outFile, totalSamples, name) {
       const at = written;
       w.writePacket(packet, samples);
       written += samples;
-      if (isSilence(packet)) continue;
-      const s = Math.round(at / MS);
-      const e = Math.round((at + samples) / MS);
-      if (cur && s - cur[1] <= 250) cur[1] = e;
-      else speech.push((cur = [s, e]));
+      if (!isSilence(packet)) addSpeech(speech, Math.round(at / MS), Math.round((at + samples) / MS));
     }
   }
   if (totalSamples > written) w.writeSilence(totalSamples - written);

@@ -280,11 +280,23 @@ function soundLine(rec, e) {
 }
 
 // ---------- Transcript step (called by processor.js) ----------
+// Speech from `fromMs` on (what was said before it was transcribed during the call, by live.js)
+function speechAfter(speech, fromMs) {
+  const out = {};
+  for (const [user, intervals] of Object.entries(speech || {})) {
+    out[user] = intervals.filter(([, e]) => e > fromMs).map(([s, e]) => [Math.max(s, fromMs), e]);
+  }
+  return out;
+}
+
 async function transcriptStep(rec, ctx) {
   const out = rec.outputs;
-  const segments = buildSegments(out.speech);
+  const live = out.liveTranscript || { untilMs: 0, segments: [] };
+  const liveSegments = live.segments.map((s, i) => ({ id: `L${i + 1}`, user: s.user, start: s.start, end: s.end }));
+  const segments = [...liveSegments, ...buildSegments(speechAfter(out.speech, live.untilMs))];
   const names = Object.fromEntries(Object.entries(rec.speakers || {}).map(([u, s]) => [u, s.name || u]));
   const done = out.transcriptParts || (out.transcriptParts = {});
+  live.segments.forEach((s, i) => (done[`L${i + 1}`] = s.text));
   const pending = segments.filter((s) => !(s.id in done));
 
   if (pending.length) {
@@ -382,6 +394,7 @@ async function transcriptStep(rec, ctx) {
   }
   await store.replaceLines(rec.id, lines);
   delete out.transcriptParts; // the lines now live in recording_lines and on Drive
+  delete out.liveTranscript;
   ctx.progress("transcript", "done", `${lines.length} lines`);
   await ctx.save();
 
@@ -559,4 +572,8 @@ async function ask(question) {
 
 const hasGeminiKey = () => apiKeys().length > 0;
 
-module.exports = { normalizeText, buildSegments, SegmentCutter, transcriptStep, summaryStep, search, ask, writeTranscriptFiles, hasGeminiKey };
+module.exports = {
+  normalizeText, buildSegments, SegmentCutter, transcriptStep, summaryStep, search, ask, writeTranscriptFiles, hasGeminiKey,
+  // for live.js
+  transcribeBatch, vocabulary, geminiModelName, fallbackModel, BATCH_SPEECH_MS, BATCH_BYTES,
+};

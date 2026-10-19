@@ -11,6 +11,7 @@ const store = require("./store");
 const drive = require("./drive");
 const panel = require("./panel");
 const clip = require("./clip");
+const { LiveTranscriber } = require("./live");
 const { WORK_DIR, sleep, UserError, folderName, threadName, memberName, participants } = require("./util");
 
 // The voice library hands over only each packet's Opus payload. This wraps its packet parser (an internal
@@ -96,6 +97,7 @@ class RecordingSession {
     this.part = this.rec.parts || 1;
     this.active = true;
     this.state = "recording";
+    this.live = new LiveTranscriber(this, { chunkMs: cfg.chunkMinutes * 60000, enabled: fresh });
     audio.state.pinnedChannelId = this.channelId;
 
     if (fresh) {
@@ -220,6 +222,7 @@ class RecordingSession {
   }
 
   chunkClosed(c) {
+    this.live?.chunkClosed(c);
     this.queueUpload(async () => {
       let driveFileId = null;
       if (drive.enabled) {
@@ -239,6 +242,7 @@ class RecordingSession {
     if (!this.active) return;
     const now = this.nowMs();
     for (const t of this.tracks.values()) t.tick(now);
+    this.live?.tick(now);
 
     if (this.humans().length) this.emptySince = null;
     else {
@@ -397,6 +401,7 @@ class RecordingSession {
       pingMs: ping?.ws ?? ping?.udp,
       dave: (conn?.state?.networking?.state?.dave?.protocolVersion || 0) > 0,
       options: this.rec.options || {},
+      transcribedMs: this.rec.outputs?.liveTranscript?.untilMs || 0,
       events: this.rec.events,
       state: this.state,
     };
@@ -475,6 +480,11 @@ class RecordingSession {
       } else {
         await this.panelMessage?.edit(panel.endedPanel(this.rec)).catch(() => { });
       }
+      // A live transcript request on its way is worth waiting for (it's a few minutes of work less after)
+      if (this.live) {
+        await this.live.finish(hadAudio ? 180000 : 0);
+        if (hadAudio) await store.saveRecording(this.rec);
+      }
       this.onEnded?.(this.rec, hadAudio);
     })();
     return this.stopping;
@@ -502,6 +512,7 @@ class RecordingSession {
     clearInterval(this.timer);
     clearTimeout(this.panelTimer);
     this.closeTracks();
+    this.live?.finish(0);
     this.rec.status = "suspended";
     this.rec.suspended_at = new Date().toISOString();
     await store.saveRecording(this.rec);
