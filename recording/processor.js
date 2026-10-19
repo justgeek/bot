@@ -193,9 +193,11 @@ function buildReport(rec, speech, durationMs) {
   let longest = null;
   for (const u of users) for (const [s, e] of runs[u]) if (!longest || e - s > longest.ms) longest = { user: u, ms: e - s, at: s };
 
+  // Only turns of 2 s+ count, so "yeah"s and laughs over someone aren't interruptions
   const jumpedIn = {};
   for (const u of users) {
-    for (const [s] of runs[u]) {
+    for (const [s, e] of runs[u]) {
+      if (e - s < 2000) continue;
       if (users.some((o) => o !== u && midRun(runs[o], s))) jumpedIn[u] = (jumpedIn[u] || 0) + 1;
     }
   }
