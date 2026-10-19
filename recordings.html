@@ -116,6 +116,7 @@
     .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .cbtn { background: var(--surface-2); border: 1px solid var(--border); border-radius: 99px; height: 38px; min-width: 38px; padding: 0 12px; cursor: pointer; font-size: 14px; }
     .cbtn:hover { background: var(--raised); }
+    .cbtn.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
     .cbtn.play { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); min-width: 48px; height: 48px; font-size: 20px; }
     .clock { font: 14px ui-monospace, monospace; color: var(--muted); margin: 0 6px; white-space: nowrap; }
     .clock b { color: var(--heading); font-weight: 500; }
@@ -341,6 +342,7 @@
             '<button class="cbtn" id="fwd30" title="Forward 30 s (Shift+→)">30 »</button>' +
             '<span class="clock" id="clock"><b>00:00:00</b> / ' + hms(r.duration_ms) + "</span>" +
             '<span class="grow"></span>' +
+            '<button class="cbtn" id="skipsil" title="Skip the silent stretches while playing (S)">Skip silence</button>' +
             '<select id="speed" aria-label="Speed" title="Speed">' + [0.75, 1, 1.25, 1.5, 1.75, 2].map(function (s) { return '<option value="' + s + '">' + s + "×</option>"; }).join("") + "</select>" +
             '<button class="cbtn" id="mute" title="Mute (M)">🔊</button><input type="range" id="vol" min="0" max="1" step="0.05" aria-label="Volume">' +
             '<select id="track" aria-label="Track">' + trackOptions + "</select>" +
@@ -499,13 +501,48 @@
           tick();
         }).catch(function () { });
 
+        // Skip silence: jump over the gaps between anyone talking (from the activity lanes, so nothing extra is stored)
+        // Only the selected person's speech counts when listening to one track
+        var talk = [], skipOn = load("rec-skip", "0") === "1";
+        var PAD_BEFORE = 300, PAD_AFTER = 500, MIN_GAP = 1500; // shorter pauses are kept, they're part of the conversation
+        var buildTalk = function (track) {
+          var all = [];
+          Object.keys(rec.activity || {}).forEach(function (u) {
+            if (track !== "mix" && u !== track) return;
+            rec.activity[u].forEach(function (r) { all.push([Math.max(0, r[0] - PAD_BEFORE), Math.min(dur, r[1] + PAD_AFTER)]); });
+          });
+          all.sort(function (a, b) { return a[0] - b[0]; });
+          talk = [];
+          all.forEach(function (r) {
+            var last = talk[talk.length - 1];
+            if (last && r[0] - last[1] < MIN_GAP) last[1] = Math.max(last[1], r[1]);
+            else talk.push([r[0], r[1]]);
+          });
+          var silent = dur - talk.reduce(function (n, r) { return n + r[1] - r[0]; }, 0);
+          $("skipsil").title = "Skip the silent stretches while playing (S)" + (talk.length ? " · saves about " + human(silent) : "");
+        };
+        var skipSilence = function () {
+          if (!skipOn || !talk.length || audio.paused || audio.seeking) return;
+          var ms = audio.currentTime * 1000;
+          // First stretch of talk that hasn't ended yet
+          var lo = 0, hi = talk.length;
+          while (lo < hi) { var mid = (lo + hi) >> 1; if (talk[mid][1] <= ms) lo = mid + 1; else hi = mid; }
+          if (lo >= talk.length) { audio.currentTime = dur / 1000; return; } // only silence left
+          if (talk[lo][0] > ms + 50) audio.currentTime = talk[lo][0] / 1000;
+        };
+        var showSkip = function () { $("skipsil").classList.toggle("on", skipOn); };
+        $("skipsil").onclick = function () { skipOn = !skipOn; keep("rec-skip", skipOn ? "1" : "0"); showSkip(); skipSilence(); };
+        buildTalk("mix");
+        showSkip();
+
         // Smooth progress while playing; the transcript follows too
         var raf = null;
-        var loop = function () { if (current !== rec) return; tick(); highlight(audio.currentTime * 1000); raf = audio.paused ? null : requestAnimationFrame(loop); };
-        audio.onplay = function () { $("playbtn").textContent = "⏸"; if (!raf) raf = requestAnimationFrame(loop); };
+        var loop = function () { if (current !== rec) return; skipSilence(); tick(); highlight(audio.currentTime * 1000); raf = audio.paused ? null : requestAnimationFrame(loop); };
+        audio.onplay = function () { $("playbtn").textContent = "⏸"; skipSilence(); if (!raf) raf = requestAnimationFrame(loop); };
         audio.onpause = function () { $("playbtn").textContent = "▶"; tick(); };
         audio.onseeked = audio.onloadedmetadata = tick;
-        audio.ontimeupdate = function () { if (audio.paused) { tick(); highlight(audio.currentTime * 1000); } };
+        // Background tabs pause requestAnimationFrame, so timeupdate keeps the skipping going there
+        audio.ontimeupdate = function () { if (audio.paused) { tick(); highlight(audio.currentTime * 1000); } else skipSilence(); };
 
         // Click or drag anywhere on the waveform/lanes to jump; hovering shows the time
         var msAt = function (ev) { var b = scrub.getBoundingClientRect(); return view.start + Math.min(1, Math.max(0, (ev.clientX - b.left) / b.width)) * view.len; };
@@ -527,6 +564,7 @@
         $("track").onchange = function () {
           var t = audio.currentTime, playing = !audio.paused, rate = audio.playbackRate;
           setSrc(this.value);
+          buildTalk(this.value);
           audio.addEventListener("loadedmetadata", function once() { audio.removeEventListener("loadedmetadata", once); audio.currentTime = t; audio.playbackRate = rate; if (playing) audio.play(); });
         };
       }
@@ -582,6 +620,7 @@
         else if (e.key === "ArrowLeft") { e.preventDefault(); nudge(e.shiftKey ? -30 : -5); }
         else if (e.key === "ArrowRight") { e.preventDefault(); nudge(e.shiftKey ? 30 : 5); }
         else if (e.key === "m" || e.key === "M") $("mute").click();
+        else if (e.key === "s" || e.key === "S") $("skipsil").click();
         else if (e.key === ",") nudge(-1);
         else if (e.key === ".") nudge(1);
         else if (e.key === "+" || e.key === "=") zoomBy(2);
