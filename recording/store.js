@@ -56,11 +56,11 @@ function saveRecording(rec) {
   return serialize(rec.id, () => run("saveRecording", () => supabase.from("recordings").upsert(row)));
 }
 
-async function getRecording(id) {
-  if (memory.has(id)) return memory.get(id);
+async function getRecording(id, { fresh = false } = {}) {
+  if (!fresh && memory.has(id)) return memory.get(id);
   const row = await run("getRecording", () => supabase.from("recordings").select("*").eq("id", id).maybeSingle());
   if (row) memory.set(id, row);
-  return row;
+  return row || memory.get(id) || null;
 }
 
 async function findRecordings(statuses) {

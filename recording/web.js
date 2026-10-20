@@ -92,7 +92,8 @@ module.exports = function registerRecordingsPage(app, client) {
 
   app.get("/api/recordings/:id", guard, async (req, res) => {
     try {
-      const rec = fresh(await store.getRecording(String(req.params.id)));
+      const live = processor.liveRecording(String(req.params.id));
+      const rec = live || (await store.getRecording(String(req.params.id), { fresh: true }));
       if (!rec || ["deleted", "discarded"].includes(rec.status)) return res.status(404).json({ error: "not_found" });
       const files = rec.outputs?.files || {};
       const lines = await store.getLines(rec.id);
