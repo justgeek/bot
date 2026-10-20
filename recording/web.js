@@ -107,7 +107,7 @@ module.exports = function registerRecordingsPage(app, client) {
         summary_ar: rec.summary_ar || null,
         aliases: rec.outputs?.aliases || {},
         // Names for everyone in the activity log, including who joined but never talked
-        people: [...new Map((rec.events || []).filter((e) => e.user).map((e) => [e.user, e.name])).entries()].map(([u, name]) => person(u, name)),
+        people: [...new Map((rec.events || []).filter((e) => e.user).map((e) => [e.user, rec.speakers?.[e.user]?.name || files.tracks?.[e.user]?.name || e.name])).entries()].map(([u, name]) => person(u, name)),
         tracks: Object.entries(files.tracks || {}).map(([u, t]) => ({ ...person(u, t.name), has_audio: !!t.id && !rec.outputs?.audioDeleted })),
         folder_url: rec.drive_folder_id ? drive.folderUrl(rec.drive_folder_id) : null,
         lines: lines.map((l) => ({ start_ms: l.start_ms, end_ms: l.end_ms, user_id: l.user_id, name: l.name, text: l.text })),

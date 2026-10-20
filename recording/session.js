@@ -273,7 +273,11 @@ class RecordingSession {
 
   addEvent(type, user = null, textValue = null, t = this.nowMs()) {
     const e = { t: Math.max(0, Math.round(t)), type };
-    if (user) e.user = user;
+    if (user) {
+      e.user = user;
+      const m = this.channel?.guild?.members.cache.get(user);
+      if (m?.displayName) e.name = m.displayName;
+    }
     if (textValue) e.text = textValue;
     (this.rec.events = this.rec.events || []).push(e);
     this.lastSaved = 0; // saved at the next tick
