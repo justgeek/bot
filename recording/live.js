@@ -49,8 +49,8 @@ class LiveTranscriber {
         return this.giveUp(`reading the audio failed: ${err.message}`);
       }
     }
-    const big = this.pendingMs >= transcribe.BATCH_SPEECH_MS || this.pendingBytes >= transcribe.BATCH_BYTES;
-    if (big && !this.busy) this.send();
+    const hasAudio = this.pending.length > 0;
+    if (hasAudio && !this.busy) this.send();
   }
 
   // Speech in one window, per person (the bot's sounds aren't transcribed), cut into clips

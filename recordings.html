@@ -291,7 +291,7 @@
           (rec.people || []).concat(rec.speakers || [], rec.tracks || []).forEach(function (p) { people[p.user_id] = p; });
           hidden = {};
           filterText = "";
-          tab = rec.lines.length ? "transcript" : rec.summary_en ? "summary" : "report";
+          tab = rec.lines.length || rec.status === "recording" || rec.status === "suspended" ? "transcript" : rec.summary_en ? "summary" : "report";
           renderList();
           renderDetail();
           startPolling();
@@ -749,10 +749,17 @@
         pollTimer = setTimeout(function () {
           api("/api/recordings/" + encodeURIComponent(rec.id) + "/progress").then(function (p) {
             if (current !== rec) return;
+            var currentLineCount = rec.lines ? rec.lines.length : 0;
             var changed = p.status !== rec.status || p.has_audio !== rec.has_audio || p.has_transcript !== rec.has_transcript || p.has_summary !== rec.has_summary ||
-              doneCount(p) !== doneCount(rec);
+              doneCount(p) !== doneCount(rec) || (p.lines_count != null && p.lines_count !== currentLineCount);
             var item = list.filter(function (x) { return x.id === rec.id; })[0];
-            if (item) { item.status = p.status; item.has_audio = p.has_audio; item.has_transcript = p.has_transcript; item.has_summary = p.has_summary; }
+            if (item) {
+              item.status = p.status;
+              item.has_audio = p.has_audio;
+              item.has_transcript = p.has_transcript;
+              item.has_summary = p.has_summary;
+              if (p.duration_ms) item.duration_ms = p.duration_ms;
+            }
             if (changed) { renderList(); return refresh(); }
             rec.progress = p.progress;
             if ($("progress") && p.progress) $("progress").innerHTML = progressHtml(rec);
@@ -774,7 +781,11 @@
             if (rec.progress && prog) prog.innerHTML = progressHtml(rec);
             else if (prog) prog.remove();
             renderTab();
-          } else renderDetail();
+          } else if ($("tab") && (rec.status === "recording" || rec.status === "suspended")) {
+            renderTab();
+          } else {
+            renderDetail();
+          }
           startPolling();
         }).catch(function () { if (current === rec) pollTimer = setTimeout(startPolling, 10000); });
       }
@@ -832,6 +843,10 @@
         }).join("") : '<div class="empty">No lines match.</div>';
         $("lines").onclick = function (e) { var b = e.target.closest(".t"); if (b) seek(Number(b.dataset.t)); };
         lastNow = -1;
+        var linesEl = $("lines");
+        if (linesEl && follow && current && !current.has_audio) {
+          linesEl.scrollTop = linesEl.scrollHeight;
+        }
       }
 
       var lastNow = -1;

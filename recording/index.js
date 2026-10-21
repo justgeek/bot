@@ -518,4 +518,12 @@ async function shutdown() {
   if (active) await Promise.race([active.suspend(), sleep(25000)]);
 }
 
-module.exports = { init, onVoiceStateUpdate, handleCommand, handleInteraction, shutdown, isRecording: () => !!active?.active };
+module.exports = {
+  init,
+  onVoiceStateUpdate,
+  handleCommand,
+  handleInteraction,
+  shutdown,
+  isRecording: () => !!active?.active,
+  activeRecording: (id) => (active?.rec && (!id || active.rec.id === id) ? active.rec : null),
+};

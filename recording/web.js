@@ -9,6 +9,7 @@ const { WORK_DIR, participants } = require("./util");
 const drive = require("./drive");
 const transcribe = require("./transcribe");
 const processor = require("./processor");
+const recorder = require("./index");
 const { IDs, MemberColorOverrides } = require("../config");
 
 module.exports = function registerRecordingsPage(app, client) {
@@ -47,7 +48,7 @@ module.exports = function registerRecordingsPage(app, client) {
         .map(([u, p]) => ({ ...person(u, p.name), speaking_ms: p.speaking_ms, sound_ms: p.sound_ms }))
         .sort((a, b) => b.speaking_ms - a.speaking_ms || b.sound_ms - a.sound_ms),
       has_audio: !!r.outputs?.files?.mix?.id && !r.outputs?.audioDeleted,
-      has_transcript: prog.transcript?.state === "done",
+      has_transcript: prog.transcript?.state === "done" || ((r.outputs?.liveTranscript?.segments?.length || 0) > 0),
       has_summary: prog.summary?.state === "done",
       // Each step's { state, detail } while it's being made (same as the panel in #record)
       progress: ["processing", "paused", "failed"].includes(r.status) ? {
@@ -59,8 +60,8 @@ module.exports = function registerRecordingsPage(app, client) {
       } : null,
     };
   };
-  // The one being processed right now has newer progress in memory than in the database
-  const fresh = (r) => (r && processor.liveRecording(r.id)) || r;
+  // The one being processed or recorded right now has newer progress/state in memory than in the database
+  const fresh = (r) => (r && (recorder.activeRecording(r.id) || processor.liveRecording(r.id))) || r;
 
   app.get("/recordings", guard, (req, res) => {
     res.set("Cache-Control", "no-store");
@@ -92,11 +93,21 @@ module.exports = function registerRecordingsPage(app, client) {
 
   app.get("/api/recordings/:id", guard, async (req, res) => {
     try {
-      const live = processor.liveRecording(String(req.params.id));
-      const rec = live || (await store.getRecording(String(req.params.id), { fresh: true }));
+      const rec = fresh(await store.getRecording(String(req.params.id), { fresh: true }));
       if (!rec || ["deleted", "discarded"].includes(rec.status)) return res.status(404).json({ error: "not_found" });
       const files = rec.outputs?.files || {};
-      const lines = await store.getLines(rec.id);
+      let lines = await store.getLines(rec.id);
+      if (!lines.length && rec.outputs?.liveTranscript?.segments?.length) {
+        lines = rec.outputs.liveTranscript.segments
+          .filter((s) => s.text && s.text.trim())
+          .map((s) => ({
+            start_ms: s.start,
+            end_ms: s.end,
+            user_id: s.user,
+            name: rec.speakers?.[s.user]?.name || person(s.user, s.user).name,
+            text: s.text,
+          }));
+      }
       res.set("Cache-Control", "no-store");
       res.json({
         ...summary(rec),
@@ -138,8 +149,17 @@ module.exports = function registerRecordingsPage(app, client) {
       const rec = fresh(await store.getRecording(String(req.params.id)));
       if (!rec || ["deleted", "discarded"].includes(rec.status)) return res.status(404).json({ error: "not_found" });
       const s = summary(rec);
+      const linesCount = rec.outputs?.liveTranscript?.segments?.length || 0;
       res.set("Cache-Control", "no-store");
-      res.json({ status: s.status, progress: s.progress, has_audio: s.has_audio, has_transcript: s.has_transcript, has_summary: s.has_summary });
+      res.json({
+        status: s.status,
+        progress: s.progress,
+        has_audio: s.has_audio,
+        has_transcript: s.has_transcript,
+        has_summary: s.has_summary,
+        duration_ms: s.duration_ms,
+        lines_count: linesCount,
+      });
     } catch (err) {
       console.error("[API] /api/recordings/:id/progress failed:", err);
       res.status(500).json({ error: "progress_failed" });
