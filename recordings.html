@@ -63,6 +63,11 @@
     @media (max-width: 560px) { header { grid-template-columns: minmax(0, 1fr); } }
     header h1 { font-size: 22px; white-space: nowrap; }
     header h1 a { color: inherit; text-decoration: none; }
+    .brand { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; min-width: 0; }
+    .loginwrap { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px); }
+    .loginwrap[hidden] { display: none; }
+    .login { padding: 20px; display: flex; flex-direction: column; gap: 10px; width: min(340px, 90vw); }
+    .login input { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; outline: none; }
     .search { min-width: 0; }
     .search input { width: 100%; }
     input[type="search"], input[type="text"], select {
@@ -205,13 +210,15 @@
 
 <body>
   <header>
-    <h1><a id="home" href="">🎙️ Recordings</a></h1>
+    <div class="brand"><a class="btn" id="dash" href="/" title="Back to the dashboard">← Dashboard</a><h1><a id="home" href="">🎙️ Recordings</a></h1><span class="muted" id="drivechip"></span></div>
     <div class="search"><input id="q" type="search" placeholder="Search everything that was said…" autocomplete="off" aria-label="Search transcripts"></div>
   </header>
   <main class="layout" id="layout">
     <aside id="list" aria-label="Recordings"><div class="empty">Loading…</div></aside>
     <section id="detail"><div class="card empty">Pick a recording.</div></section>
   </main>
+
+  <div class="loginwrap" id="login" hidden><form class="card login" id="loginform"><h2>🔒 Password</h2><input type="password" id="pw" placeholder="Password" autocomplete="current-password" aria-label="Password"><button class="btn on" type="submit">Enter</button><div class="muted" id="loginerr"></div></form></div>
 
   <script>
     (function () {
@@ -225,6 +232,7 @@
       var withKey = function (url) { return KEY ? url + (url.indexOf("?") < 0 ? "?" : "&") + "key=" + encodeURIComponent(KEY) : url; };
       var api = function (path) {
         return fetch(withKey(path), { cache: "no-store" }).then(function (r) {
+          if (r.status === 401) { showLogin(); throw new Error("401"); }
           if (!r.ok) throw new Error(r.status);
           return r.json();
         });
@@ -241,6 +249,10 @@
       };
       var when = function (iso) { return new Date(iso).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); };
       var REASONS = { stopped: "stopped by hand", empty: "everyone left", max: "hit the time limit", kicked: "bot disconnected", moved: "bot moved", error: "connection error", restart: "bot restarted" };
+
+      $("dash").href = "/" + (KEY ? "?key=" + encodeURIComponent(KEY) : "");
+      var bytes = function (n) { n = Number(n) || 0; var u = ["B", "KB", "MB", "GB", "TB"], i = n ? Math.min(4, Math.floor(Math.log(n) / Math.log(1024))) : 0; return (n / Math.pow(1024, i)).toFixed(i ? 1 : 0) + " " + u[i]; };
+      var driveChip = function (d) { $("drivechip").textContent = d && d.limit ? "☁️ Drive: " + bytes(d.usage) + " of " + bytes(d.limit) + " (" + Math.round(d.usage / d.limit * 100) + "%)" : d ? "☁️ Drive: " + bytes(d.usage) + " used" : ""; };
 
       var list = [];
       var current = null;
@@ -262,10 +274,10 @@
           var badges = (r.status === "recording" || r.status === "suspended" ? '<span class="badge live">live</span>' : "") +
             (r.status === "processing" ? '<span class="badge live">processing</span>' : r.status === "paused" ? '<span class="badge">paused</span>' : r.status === "failed" ? '<span class="badge">failed</span>' : "") +
             (r.has_transcript ? '<span class="badge">transcript</span>' : "") + (r.has_summary ? '<span class="badge">summary</span>' : "") +
-            (!r.has_audio && r.status === "done" ? '<span class="badge">text only</span>' : "");
+            (r.has_audio ? '<span class="badge">🎧 audio</span>' : r.audio_removed ? '<span class="badge" title="' + esc(r.audio_removed_why || "") + '">🧹 audio removed</span>' : "");
           return '<button class="item' + (current && current.id === r.id ? " sel" : "") + '" data-id="' + esc(r.id) + '">' +
             '<div class="when">' + esc(when(r.started_at)) + badges + "</div>" +
-            '<div class="meta">' + esc(r.channel_name || "Voice") + " · " + human(r.duration_ms) + " · " + r.speakers.length + " speakers</div>" +
+            '<div class="meta">' + esc(r.channel_name || "Voice") + " · " + human(r.duration_ms) + " · " + r.speakers.length + " speakers" + (r.size_bytes ? " · " + bytes(r.size_bytes) : "") + "</div>" +
             '<div class="faces">' + faces + "</div></button>";
         }).join("");
       }
@@ -341,7 +353,7 @@
           '<div class="card head">' +
           '<button class="btn back" id="back">← All</button>' +
           "<h2>" + esc(when(r.started_at)) + " · " + esc(r.channel_name || "Voice") + "</h2>" +
-          '<span class="muted">' + human(r.duration_ms) + " · " + r.speakers.length + " speakers" + (r.parts > 1 ? " · " + r.parts + " parts" : "") + (r.end_reason ? " · " + esc(REASONS[r.end_reason] || r.end_reason) : "") + "</span>" +
+          '<span class="muted">' + human(r.duration_ms) + " · " + r.speakers.length + " speakers" + (r.parts > 1 ? " · " + r.parts + " parts" : "") + (r.end_reason ? " · " + esc(REASONS[r.end_reason] || r.end_reason) : "") + (r.audio_removed ? ' · <span class="badge" title="' + esc(r.audio_removed_why || "") + '">🧹 audio removed (text kept)</span>' : r.has_audio ? ' · <span class="badge">🎧 audio available</span>' : "") + (r.audio_removed ? "" : ' · <span id="sizeLabel">' + bytes(r.size_bytes) + "</span>") + "</span>" +
           (r.folder_url ? '<a class="btn" target="_blank" rel="noopener" href="' + esc(r.folder_url) + '">📁 Drive</a>' : "") +
           "</div>" +
           (r.has_audio ?
@@ -760,6 +772,7 @@
               item.has_summary = p.has_summary;
               if (p.duration_ms) item.duration_ms = p.duration_ms;
             }
+            if (p.size_bytes != null) { rec.size_bytes = p.size_bytes; if (item) item.size_bytes = p.size_bytes; if ($("sizeLabel")) $("sizeLabel").textContent = bytes(p.size_bytes); }
             if (changed) { renderList(); return refresh(); }
             rec.progress = p.progress;
             if ($("progress") && p.progress) $("progress").innerHTML = progressHtml(rec);
@@ -809,6 +822,7 @@
 
       var shown = [];
       function renderTranscript(el) {
+        var prevLines = $("lines"), keepTop = prevLines ? prevLines.scrollTop : null; // a refresh must not move the reader
         if (!current.lines.length) {
           el.innerHTML = '<div class="empty">' + (current.has_transcript ? "Nothing was said." : "No transcript for this recording (yet).") + "</div>";
           return;
@@ -826,6 +840,7 @@
         $("find").oninput = function () { filterText = this.value; renderLines(); };
         $("follow").onchange = function () { follow = this.checked; };
         renderLines();
+        if (keepTop != null && $("lines")) $("lines").scrollTop = keepTop;
       }
 
       function renderLines() {
@@ -843,10 +858,6 @@
         }).join("") : '<div class="empty">No lines match.</div>';
         $("lines").onclick = function (e) { var b = e.target.closest(".t"); if (b) seek(Number(b.dataset.t)); };
         lastNow = -1;
-        var linesEl = $("lines");
-        if (linesEl && follow && current && !current.has_audio) {
-          linesEl.scrollTop = linesEl.scrollHeight;
-        }
       }
 
       var lastNow = -1;
@@ -993,11 +1004,28 @@
         else if (current) closeDetail();
       }
       window.addEventListener("hashchange", route);
+      function showLogin(msg) {
+        $("login").hidden = false;
+        $("loginerr").textContent = msg || "";
+        $("pw").focus();
+      }
+      $("loginform").onsubmit = function (e) {
+        e.preventDefault();
+        fetch(withKey("/api/recordings/login"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: $("pw").value }) }).then(function (r) {
+          if (r.ok) { $("login").hidden = true; $("pw").value = ""; boot(); }
+          else $("loginerr").textContent = r.status === 429 ? "Too many tries, wait a minute." : "Wrong password.";
+        }).catch(function () { $("loginerr").textContent = "Couldn't reach the server."; });
+      };
+      function boot() {
       api("/api/recordings").then(function (res) {
         list = res.recordings;
+        driveChip(res.drive);
         renderList();
         route();
-      }).catch(function () { $("list").innerHTML = '<div class="card empty">Couldn\'t load the recordings.</div>'; });
+      }).catch(function (err) {
+        if (String(err && err.message) === "401") return; $("list").innerHTML = '<div class="card empty">Couldn\'t load the recordings.</div>'; });
+      }
+      boot();
     })();
   </script>
 </body>

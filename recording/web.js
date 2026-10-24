@@ -1,7 +1,8 @@
 // recording/web.js - the recordings page at /recordings and its API.
-// The dashboard's sidebar links to it, passing on the dashboard's ?key=.
+// Nothing on the dashboard links to it. RECORDINGS_KEY (?key=...) and RECORDINGS_PASSWORD (asked on the page, kept in a cookie) are both required when both are set.
 // Set RECORDINGS_KEY to require /recordings?key=... (falls back to DASHBOARD_KEY when only that is set).
 const fs = require("fs");
+const crypto = require("crypto");
 const path = require("path");
 const store = require("./store");
 const { peaksFromOgg, binsFor } = require("./peaks");
@@ -13,11 +14,63 @@ const recorder = require("./index");
 const { IDs, MemberColorOverrides } = require("../config");
 
 module.exports = function registerRecordingsPage(app, client) {
+  // RECORDINGS_PASSWORD: asked on the page, remembered in a cookie (changing the password logs everyone out).
+  // Without it the old RECORDINGS_KEY / DASHBOARD_KEY check applies.
+  const password = () => process.env.RECORDINGS_PASSWORD || "";
   const requiredKey = () => process.env.RECORDINGS_KEY || process.env.DASHBOARD_KEY || "";
-  function guard(req, res, next) {
+  const tokenFor = (pw) => crypto.createHash("sha256").update("banha-recordings:" + pw).digest("hex");
+  const safeEq = (a, b) => {
+    const x = Buffer.from(String(a));
+    const y = Buffer.from(String(b));
+    return x.length === y.length && crypto.timingSafeEqual(x, y);
+  };
+  const cookieOf = (req, name) => {
+    const m = new RegExp("(?:^|;\\s*)" + name + "=([^;]*)").exec(req.headers.cookie || "");
+    return m ? decodeURIComponent(m[1]) : "";
+  };
+  // Both checks apply when both are set: the key (?key=...) first, then the password cookie
+  const keyOk = (req) => {
     const required = requiredKey();
-    if (!required || (req.query.key || req.get("x-recordings-key")) === required) return next();
-    res.status(404).send("Not found"); // looks like there's nothing here
+    return !required || safeEq(req.query.key || req.get("x-recordings-key") || "", required);
+  };
+  function guard(req, res, next) {
+    if (!keyOk(req)) return res.status(404).send("Not found"); // looks like there's nothing here
+    if (password() && !safeEq(cookieOf(req, "rec_auth"), tokenFor(password()))) return res.status(401).json({ error: "password_required" });
+    next();
+  }
+  // The page itself needs the key; the password box is shown on the page
+  const pageGuard = (req, res, next) => (keyOk(req) ? next() : res.status(404).send("Not found"));
+
+  const fails = new Map();
+  app.post("/api/recordings/login", require("express").json({ limit: "2kb" }), (req, res) => {
+    if (!keyOk(req)) return res.status(404).send("Not found");
+    const pw = password();
+    if (!pw) return res.json({ ok: true });
+    const ip = String(req.get("x-forwarded-for") || req.ip || "").split(",")[0].trim();
+    const f = fails.get(ip) || { n: 0, until: 0 };
+    if (f.until > Date.now()) return res.status(429).json({ error: "too_many_attempts" });
+    if (!safeEq(String(req.body?.password ?? ""), pw)) {
+      f.n++;
+      if (f.n >= 5) { f.until = Date.now() + 60000; f.n = 0; }
+      fails.set(ip, f);
+      return res.status(401).json({ error: "wrong_password" });
+    }
+    fails.delete(ip);
+    res.cookie("rec_auth", tokenFor(pw), { httpOnly: true, sameSite: "lax", secure: !!req.secure || req.get("x-forwarded-proto") === "https", maxAge: 365 * 86400e3 });
+    res.json({ ok: true });
+  });
+
+  // Drive space, cached for a minute
+  let quotaCache = { at: 0, v: null };
+  async function driveQuota() {
+    if (!drive.enabled) return null;
+    if (Date.now() - quotaCache.at < 60000) return quotaCache.v;
+    try {
+      quotaCache = { at: Date.now(), v: await drive.quota() };
+    } catch {
+      quotaCache.at = Date.now();
+    }
+    return quotaCache.v;
   }
 
   const guild = () => client.guilds.cache.get(IDs.guild);
@@ -48,6 +101,10 @@ module.exports = function registerRecordingsPage(app, client) {
         .map(([u, p]) => ({ ...person(u, p.name), speaking_ms: p.speaking_ms, sound_ms: p.sound_ms }))
         .sort((a, b) => b.speaking_ms - a.speaking_ms || b.sound_ms - a.sound_ms),
       has_audio: !!r.outputs?.files?.mix?.id && !r.outputs?.audioDeleted,
+      audio_removed: !!r.outputs?.audioDeleted,
+      audio_removed_why: r.outputs?.audioDeleted ? String(r.outputs.audioDeleted) : null,
+      // Stored audio once it's on Drive, else the raw audio recorded so far
+      size_bytes: r.outputs?.audioDeleted ? 0 : ((r.outputs?.files?.mix?.size || 0) + Object.values(r.outputs?.files?.tracks || {}).reduce((a, t) => a + (t.size || 0), 0)) || Object.values(r.speakers || {}).reduce((a, s) => a + (s.bytes || 0), 0),
       has_transcript: prog.transcript?.state === "done" || ((r.outputs?.liveTranscript?.segments?.length || 0) > 0),
       has_summary: prog.summary?.state === "done",
       // Each step's { state, detail } while it's being made (same as the panel in #record)
@@ -63,7 +120,7 @@ module.exports = function registerRecordingsPage(app, client) {
   // The one being processed or recorded right now has newer progress/state in memory than in the database
   const fresh = (r) => (r && (recorder.activeRecording(r.id) || processor.liveRecording(r.id))) || r;
 
-  app.get("/recordings", guard, (req, res) => {
+  app.get("/recordings", pageGuard, (req, res) => {
     res.set("Cache-Control", "no-store");
     res.sendFile(path.join(__dirname, "..", "recordings.html"));
   });
@@ -72,7 +129,7 @@ module.exports = function registerRecordingsPage(app, client) {
     try {
       const rows = await store.listRecordings(300);
       res.set("Cache-Control", "no-store");
-      res.json({ recordings: rows.map((r) => summary(fresh(r))) });
+      res.json({ recordings: rows.map((r) => summary(fresh(r))), drive: await driveQuota() });
     } catch (err) {
       console.error("[API] /api/recordings failed:", err);
       res.status(500).json({ error: "recordings_failed" });
@@ -159,6 +216,7 @@ module.exports = function registerRecordingsPage(app, client) {
         has_summary: s.has_summary,
         duration_ms: s.duration_ms,
         lines_count: linesCount,
+        size_bytes: s.size_bytes,
       });
     } catch (err) {
       console.error("[API] /api/recordings/:id/progress failed:", err);

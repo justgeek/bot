@@ -10,6 +10,7 @@ const { readOggPackets, readOggHead, OggOpusWriter } = require("./ogg");
 const { MS } = require("./track");
 const store = require("./store");
 const drive = require("./drive");
+const { mentionsPolitics, POLITICS_RULE } = require("./redact");
 const panel = require("./panel");
 const { sleep, QuotaPause, UserError, nextQuotaReset, quotaRetryAt, localStamp, participants } = require("./util");
 
@@ -213,8 +214,8 @@ const TRANSCRIPT_SCHEMA = {
   type: SchemaType.ARRAY,
   items: {
     type: SchemaType.OBJECT,
-    properties: { id: { type: SchemaType.STRING }, text: { type: SchemaType.STRING } },
-    required: ["id", "text"],
+    properties: { id: { type: SchemaType.STRING }, text: { type: SchemaType.STRING }, redact: { type: SchemaType.BOOLEAN } },
+    required: ["id", "text", "redact"],
   },
 };
 
@@ -233,6 +234,7 @@ function transcribePrompt({ names, games }) {
     "- Do not translate, summarize, censor, fix grammar or add words. Keep slang and swearing as said.",
     '- Mark non-speech only when it matters, briefly in brackets like [laughs] or [unclear]. Use "" when a clip has no speech.',
     "- Never merge clips together and never skip an id.",
+    '- Set "redact": true when the clip talks about Egyptian politics, the Egyptian government, its president, "السيسي" / Sisi, or anyone nicknamed "بلحة" (jokes, insults and praise count, even in passing), and then return "text": "". Otherwise "redact" is false.',
     names.length ? `People in this chat (and their nicknames): ${names.join(", ")}.` : "",
     games.length ? `Games and words that often come up: ${games.join(", ")}.` : "",
   ].filter(Boolean).join("\n");
@@ -249,7 +251,11 @@ async function transcribeBatch(batch, model, vocab) {
     const response = await generate(model, parts, { schema: TRANSCRIPT_SCHEMA, system: transcribePrompt(vocab) });
     const map = {};
     for (const item of JSON.parse(response.text())) {
-      if (item && item.id !== undefined) map[String(item.id).replace(/[[\]\s]/g, "")] = String(item.text || "").trim();
+      if (item && item.id !== undefined) {
+        const text = String(item.text || "").trim();
+        const redact = !!item.redact || mentionsPolitics(text);
+        map[String(item.id).replace(/[[\]\s]/g, "")] = { text: redact ? "" : text, redact };
+      }
     }
     // Ids it skipped get one more (smaller) request
     const missed = batch.filter((s) => !(s.id in map));
@@ -262,7 +268,7 @@ async function transcribeBatch(batch, model, vocab) {
     if (err.daily || !batchProblem) throw err;
     if (batch.length === 1) {
       console.warn(`[Rec] Clip ${batch[0].id} couldn't be transcribed: ${err.message}`);
-      return { [batch[0].id]: "" };
+      return { [batch[0].id]: { text: "", redact: false } };
     }
     console.warn(`[Rec] A transcript batch of ${batch.length} failed (${err.message}), splitting it`);
     const half = Math.ceil(batch.length / 2);
@@ -296,7 +302,10 @@ async function transcriptStep(rec, ctx) {
   const segments = [...liveSegments, ...buildSegments(speechAfter(out.speech, live.untilMs))];
   const names = Object.fromEntries(Object.entries(rec.speakers || {}).map(([u, s]) => [u, s.name || u]));
   const done = out.transcriptParts || (out.transcriptParts = {});
-  live.segments.forEach((s, i) => (done[`L${i + 1}`] = s.text));
+  live.segments.forEach((s, i) => {
+    done[`L${i + 1}`] = s.text;
+    if (s.redact) (out.redactIds = out.redactIds || {})[`L${i + 1}`] = true;
+  });
   const pending = segments.filter((s) => !(s.id in done));
 
   if (pending.length) {
@@ -335,7 +344,11 @@ async function transcriptStep(rec, ctx) {
           throw new QuotaPause("transcript", quotaRetryAt());
         }
       }
-      for (const seg of batch) done[seg.id] = result[seg.id] ?? "";
+      for (const seg of batch) {
+        const r = result[seg.id];
+        done[seg.id] = r ? r.text : "";
+        if (r && r.redact) (out.redactIds = out.redactIds || {})[seg.id] = true;
+      }
       await ctx.save(); // a restart or a quota pause keeps what's done
       batch = [];
       batchMs = 0;
@@ -363,6 +376,10 @@ async function transcriptStep(rec, ctx) {
     }
   }
 
+  // Flagged clips: their text is already empty; their audio is cut in processor.js and the talk-time stats drop them
+  const flagged = out.redactIds || {};
+  out.redact = segments.filter((s) => flagged[s.id]).map(({ user, start, end }) => ({ user, start, end }));
+  ctx.refreshReport();
   const lines = segments
     .map((s) => ({ s, text: (done[s.id] || "").trim() }))
     .filter(({ text }) => text && !/^(\[[^\]]*\]\s*)+$/.test(text))
@@ -376,7 +393,7 @@ async function transcriptStep(rec, ctx) {
 
   // What the bot played goes in the transcript too, credited to whoever played it
   for (const e of rec.events || []) {
-    if (e.type !== "sound") continue;
+    if (e.type !== "sound" || mentionsPolitics(e.text)) continue;
     const line = soundLine(rec, e);
     lines.push({ start_ms: e.t, end_ms: e.t + 2000, user_id: e.user || "bot", name: line.name, text: line.text, norm: normalizeText(line.text) });
   }
@@ -395,6 +412,7 @@ async function transcriptStep(rec, ctx) {
   await store.replaceLines(rec.id, lines);
   delete out.transcriptParts; // the lines now live in recording_lines and on Drive
   delete out.liveTranscript;
+  delete out.redactIds;
   ctx.progress("transcript", "done", `${lines.length} lines`);
   await ctx.save();
 
@@ -410,7 +428,7 @@ async function transcriptStep(rec, ctx) {
 function writeTranscriptFiles(rec, lines, dir) {
   fs.mkdirSync(dir, { recursive: true });
   const nameOf = (u) => rec.speakers?.[u]?.name || u;
-  const notes = (rec.events || []).filter((e) => e.type === "note").map((e) => ({ start_ms: e.t, name: `📝 NOTE (${nameOf(e.user)})`, text: e.text }));
+  const notes = (rec.events || []).filter((e) => e.type === "note" && !mentionsPolitics(e.text)).map((e) => ({ start_ms: e.t, name: `📝 NOTE (${nameOf(e.user)})`, text: e.text }));
   const all = [...lines, ...notes].sort((a, b) => a.start_ms - b.start_ms);
   const started = Date.parse(rec.started_at);
   const head = [
@@ -450,6 +468,7 @@ const SUMMARY_SCHEMA = {
 };
 
 const SUMMARY_SYSTEM = [
+  POLITICS_RULE,
   "You summarize recorded Discord voice sessions of a group of Egyptian friends (mostly gaming nights).",
   'You get the session details and a transcript where each line is "[hh:mm:ss] Speaker: what they said".',
   "Write the same summary twice: `en` in English, and `ar` in Egyptian Arabic (Arabic script, casual Egyptian wording, not formal Arabic).",
@@ -466,7 +485,7 @@ function sessionHeader(rec) {
   const ended = rec.ended_at ? Date.parse(rec.ended_at) : Date.now();
   const lines = [`Session: ${rec.channel_name || "Voice"}, ${localStamp(started)} (Cairo time), ${panel.human(ended - started)} long.`];
   if (rec.report?.speakers?.length) lines.push("Talk time: " + rec.report.speakers.map((s) => `${s.name} ${panel.human(s.talkMs)}`).join(", ") + ".");
-  const notes = (rec.events || []).filter((e) => e.type === "note");
+  const notes = (rec.events || []).filter((e) => e.type === "note" && !mentionsPolitics(e.text));
   if (notes.length) lines.push("Notes added during the recording:\n" + notes.map((e) => `[${panel.hms(e.t)}] ${rec.speakers?.[e.user]?.name || "someone"}: ${e.text}`).join("\n"));
   const clips = (rec.events || []).filter((e) => e.type === "clip");
   if (clips.length) lines.push(`Moments people clipped: ${clips.map((e) => e.text.replace(/`/g, "")).join(", ")}.`);
@@ -527,6 +546,7 @@ const ASK_SYSTEM = [
   "You get summaries of recent sessions and the full transcripts of the most relevant ones ([hh:mm:ss] Speaker: text).",
   "Answer in the language of the question (Egyptian Arabic if they asked in Arabic). Be short and concrete.",
   "Point to where it came from like (16 Oct · 01:23:45 · Mido). If the recordings don't say, just say so - never make things up.",
+  POLITICS_RULE,
 ].join("\n");
 
 const MAX_ASK_CHARS = 600000; // ~200k tokens: stays inside the free tier's tokens-per-minute

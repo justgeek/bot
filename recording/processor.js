@@ -11,6 +11,7 @@ const store = require("./store");
 const drive = require("./drive");
 const panel = require("./panel");
 const transcribe = require("./transcribe");
+const redact = require("./redact");
 const { peaksFromOgg } = require("./peaks");
 const { WORK_DIR, QuotaPause, folderName, safeName } = require("./util");
 
@@ -101,6 +102,18 @@ function makeCtx(rec) {
         if (fs.existsSync(local)) out[userId] = local;
       }
       return out;
+    },
+    // Rebuilds the report card from the speech left after flagged stretches are cut (word counts are kept)
+    refreshReport() {
+      const o = rec.outputs;
+      const cuts = o.redact || [];
+      if (cuts.length) o.speech = redact.subtractCuts(o.speech || {}, cuts);
+      const old = rec.report;
+      rec.report = buildReport(rec, o.speech || {}, Date.parse(rec.ended_at) - Date.parse(rec.started_at));
+      for (const s of rec.report.speakers) {
+        const prev = old?.speakers?.find((x) => x.user === s.user);
+        if (prev && prev.words !== undefined) s.words = prev.words;
+      }
     },
     async postReport() {
       if (rec.outputs.posted.report || !rec.report) return;
@@ -224,10 +237,11 @@ function buildReport(rec, speech, durationMs) {
   };
 }
 
-// Builds the audio one speaker at a time (rebuild their track from its pieces, level + compress it,
-// upload it), saving after each, then mixes the finished tracks. A restart in the middle only redoes the
-// speaker (or the mix) that was in progress.
-async function audioStep(rec, ctx) {
+// Audio, phase 1: rebuilds every speaker's track (from the raw pieces, levelled and compressed) on this disk,
+// one speaker at a time, saving after each. Nothing goes to Drive yet: the transcript looks at the tracks
+// first, so anything that must not be kept is cut out before it's uploaded or mixed. A restart only redoes
+// the speaker that was in progress (tracks lost with the disk are rebuilt from the pieces on Drive).
+async function audioBuild(rec, ctx) {
   const out = rec.outputs;
   out.files = out.files || {};
   out.files.tracks = out.files.tracks || {};
@@ -237,6 +251,7 @@ async function audioStep(rec, ctx) {
   const rawDir = path.join(ctx.dir, "raw");
   const tracksDir = path.join(ctx.dir, "tracks");
   for (const d of [chunksDir, rawDir, tracksDir]) fs.mkdirSync(d, { recursive: true });
+  if (drive.enabled) await drive.recordingFolder(rec, folderName(rec));
 
   const byUser = new Map();
   for (const row of await store.getChunks(rec.id)) {
@@ -254,17 +269,11 @@ async function audioStep(rec, ctx) {
   if (!users.length) throw new Error("no audio was found");
   const totalMs = Date.parse(rec.ended_at) - Date.parse(rec.started_at);
 
-  let folder = null;
-  let tracksFolder = null;
-  if (drive.enabled) {
-    folder = await drive.recordingFolder(rec, folderName(rec));
-    await drive.rename(folder, folderName(rec)); // "start → …" becomes "start → end" now that it's over
-    tracksFolder = await drive.ensureFolder(folder, "tracks");
-  }
-
   let lost = 0;
   for (const [i, userId] of users.entries()) {
-    if (out.files.tracks[userId]?.done) continue;
+    const local = path.join(tracksDir, `${userId}.ogg`);
+    const have = out.files.tracks[userId];
+    if (have?.done || (have?.built && fs.existsSync(local))) continue;
     const name = nameOf(userId);
     ctx.progress("audio", "running", `speaker track ${i + 1} of ${users.length} (${name})`);
     const raws = [];
@@ -298,23 +307,63 @@ async function audioStep(rec, ctx) {
       used.push(...chunks);
     }
     if (!raws.length) continue;
-    const local = path.join(tracksDir, `${userId}.ogg`);
     await ffmpeg.encodeTrack(raws, local, { kbps: cfg.trackKbps });
     for (const f of raws) fs.unlink(f, () => { });
     for (const c of used) fs.unlink(c.file, () => { }); // Drive keeps a copy until the audio is done
-    const entry = { name, done: true };
-    if (tracksFolder) Object.assign(entry, await drive.upload(tracksFolder, `${String(i + 1).padStart(2, "0")} ${safeName(name)}.ogg`, local, "audio/ogg"));
-    out.files.tracks[userId] = entry;
+    out.files.tracks[userId] = { name, built: true, idx: i };
     await ctx.save();
   }
   if (!Object.keys(out.files.tracks).length) throw new Error(lost ? "the audio didn't reach Google Drive before the bot restarted" : "no audio was found");
   if (lost) console.warn(`[Rec] ${rec.id}: ${lost} chunk(s) were lost`);
-  rec.report = buildReport(rec, out.speech, totalMs);
+  ctx.refreshReport();
+  ctx.progress("audio", "running", rec.options?.transcribe ? "tracks ready, waiting for the transcript" : "tracks ready");
   await ctx.save();
+}
 
-  // Everyone mixed together, from the finished (already levelled) tracks
+// Audio, phase 2 (after the transcript): cuts out the flagged stretches, uploads the tracks, mixes and uploads the mix
+async function audioPublish(rec, ctx) {
+  const out = rec.outputs;
+  const tracks = out.files.tracks;
+  const totalMs = Date.parse(rec.ended_at) - Date.parse(rec.started_at);
   const files = await ctx.trackFiles({ all: true });
   ctx.trackPaths = files;
+
+  const cuts = out.redact || [];
+  if (cuts.length) {
+    ctx.refreshReport();
+    for (const [user, list] of Object.entries(redact.cutRanges(cuts))) {
+      const entry = tracks[user];
+      if (!entry || entry.redacted || !files[user]) continue;
+      ctx.progress("audio", "running", `cutting out flagged parts (${entry.name})`);
+      const tmp = files[user] + ".cut.ogg";
+      await ffmpeg.muteRanges(files[user], tmp, list, { kbps: cfg.trackKbps });
+      fs.renameSync(tmp, files[user]);
+      entry.redacted = true;
+      entry.done = false; // a copy uploaded by an older run gets replaced
+      await ctx.save();
+    }
+  }
+
+  let folder = null;
+  let tracksFolder = null;
+  if (drive.enabled) {
+    folder = await drive.recordingFolder(rec, folderName(rec));
+    await drive.rename(folder, folderName(rec)); // "start → …" becomes "start → end" now that it's over
+    tracksFolder = await drive.ensureFolder(folder, "tracks");
+  }
+  const entries = Object.entries(tracks).sort((a, b) => (a[1].idx ?? 99) - (b[1].idx ?? 99));
+  for (const [userId, entry] of entries) {
+    if (entry.done) continue;
+    if (!files[userId]) throw new Error(`the track of ${entry.name} isn't on this disk anymore`);
+    if (tracksFolder) {
+      ctx.progress("audio", "running", `uploading ${entry.name}'s track`);
+      Object.assign(entry, await drive.upload(tracksFolder, `${String((entry.idx ?? 0) + 1).padStart(2, "0")} ${safeName(entry.name)}.ogg`, files[userId], "audio/ogg"));
+    }
+    entry.done = true;
+    await ctx.save();
+  }
+
+  // Everyone mixed together, from the finished (already levelled and cut) tracks
   const mixFile = path.join(ctx.dir, "mix.ogg");
   if (!out.files.mix) {
     ctx.progress("audio", "running", "mixing (0%)");
@@ -395,9 +444,11 @@ async function processRecording(id) {
   const ctx = makeCtx(rec);
   let step = "audio";
   try {
-    if (out.progress.audio?.state !== "done") await audioStep(rec, ctx);
+    if (out.progress.audio?.state !== "done") await audioBuild(rec, ctx);
     step = "transcript";
     if (rec.options?.transcribe && out.progress.transcript?.state !== "done") await transcribe.transcriptStep(rec, ctx);
+    step = "audio";
+    if (out.progress.audio?.state !== "done") await audioPublish(rec, ctx);
     step = "summary";
     if (rec.options?.summarize && out.progress.summary?.state !== "done") await transcribe.summaryStep(rec, ctx);
     step = "finish";

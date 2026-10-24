@@ -494,7 +494,7 @@ async function init(c) {
   processor.init(c);
   settings = await store.getSetting("recording", DEFAULT_SETTINGS);
   audio.onVoiceReady((conn) => active?.attach(conn));
-  if (!process.env.RECORDINGS_KEY && !process.env.DASHBOARD_KEY) {
+  if (!process.env.RECORDINGS_PASSWORD && !process.env.RECORDINGS_KEY && !process.env.DASHBOARD_KEY) {
     console.warn("[Rec] /recordings is open to anyone who finds it - set RECORDINGS_KEY to require /recordings?key=...");
   }
   resuming = true;

@@ -121,7 +121,10 @@ class LiveTranscriber {
     }
     if (this.off) return; // stopped while waiting (the after-call step redoes this part)
     const state = this.state;
-    for (const s of batch) state.segments.push({ user: s.user, start: s.start, end: s.end, text: result[s.id] ?? "" });
+    for (const s of batch) {
+      const r = result[s.id];
+      state.segments.push({ user: s.user, start: s.start, end: s.end, text: r ? r.text : "", ...(r && r.redact ? { redact: true } : {}) });
+    }
     state.untilMs = until;
     console.log(`[Rec] ${this.rec.id}: transcribed live up to ${Math.round(until / 60000)} min (${batch.length} clips)`);
     this.session.lastSaved = 0; // saved at the next tick

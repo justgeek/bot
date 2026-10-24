@@ -71,6 +71,16 @@ async function mix(files, out, { kbps }) {
   await run(args);
 }
 
+// Silences the given [startMs, endMs] stretches (the track keeps its length, so everything stays in sync)
+async function muteRanges(inFile, outFile, ranges, { kbps }) {
+  const filters = [];
+  for (let i = 0; i < ranges.length; i += 80) {
+    const expr = ranges.slice(i, i + 80).map(([a, b]) => `between(t,${(a / 1000).toFixed(3)},${(b / 1000).toFixed(3)})`).join("+");
+    filters.push(`volume=volume=0:enable='${expr}'`);
+  }
+  await run(["-i", inFile, "-af", filters.join(","), "-ac", "1", ...opus(kbps), outFile]);
+}
+
 function killAll() {
   for (const child of running) {
     try {
@@ -79,4 +89,4 @@ function killAll() {
   }
 }
 
-module.exports = { run, opus, encodeTrack, mixTracks, mix, killAll };
+module.exports = { run, opus, encodeTrack, mixTracks, mix, muteRanges, killAll };
