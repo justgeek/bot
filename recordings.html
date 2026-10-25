@@ -342,7 +342,13 @@
         var dark = !matchMedia("(prefers-color-scheme: light)").matches;
         return dark ? lum > 0.25 : lum < 0.8;
       }
-      function colorOf(uid) { var c = people[uid] && people[uid].color; return readable(c) ? c : "var(--heading)"; }
+      // A colour picked by hand for someone (config.js) is used as it is; only Discord's own colours are toned down
+      function colorOf(uid) {
+        var p = people[uid];
+        var c = p && p.color;
+        if (p && p.fixed_color && /^#[0-9a-f]{6}$/i.test(c || "")) return c;
+        return readable(c) ? c : "var(--heading)";
+      }
 
       function renderDetail() {
         var r = current;

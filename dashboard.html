@@ -3426,6 +3426,13 @@
       return Math.max(r, g, b) < 55;
     }
 
+    // Hand-picked colours (config.js) are shown as they are, so a dark one (e.g. a deep blue) gets an outline to stay readable
+    function isDim(hex) {
+      if (!hexOk(hex)) return false;
+      const n = parseInt(hex.slice(1), 16);
+      return (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255 < 0.2;
+    }
+
     function isNearWhite(hex) {
       if (!hexOk(hex)) return false;
       const n = parseInt(hex.slice(1), 16);
@@ -3441,7 +3448,7 @@
 
       let outlineStyle = "";
       if (rawColor) {
-        if (isDarkTheme && isNearBlack(rawColor)) {
+        if (isDarkTheme && (isNearBlack(rawColor) || (p.fixed_color && isDim(rawColor)))) {
           outlineStyle = ";-webkit-text-stroke:0.5px rgba(255,255,255,0.85);paint-order:stroke fill;";
         } else if (!isDarkTheme && isNearWhite(rawColor)) {
           outlineStyle = ";-webkit-text-stroke:0.5px rgba(0,0,0,0.85);paint-order:stroke fill;";

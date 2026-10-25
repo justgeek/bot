@@ -29,8 +29,7 @@ module.exports = {
   MemberColorOverrides: {
     "234236035846897664": "#ff0000", // Moonscarlet: pure red
     "moonscarlet": "#ff0000",
-    "exorcismus": "#181818",        // Exorcismus: black
-    "exorcismus#7611": "#181818",
+    "coldzero96": "#1200fc",        // Coldzero: the blue he has on Discord
   },
 
   // Voice recording (recording/). Auto-record on/off, its channels, min people and the transcript/summary

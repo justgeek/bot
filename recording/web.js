@@ -82,6 +82,8 @@ module.exports = function registerRecordingsPage(app, client) {
       user_id: userId,
       name: m?.displayName || fallbackName || userId,
       color: override || (m?.displayHexColor && m.displayHexColor !== "#000000" ? m.displayHexColor : null),
+      // A hand-picked colour is shown as it is, even where it would be too dark or too bright to read by itself
+      ...(override && { fixed_color: true }),
       avatar: m?.displayAvatarURL({ size: 64, extension: "webp", forceStatic: true }) || null,
     };
   }

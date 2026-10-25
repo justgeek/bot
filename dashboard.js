@@ -399,6 +399,8 @@ module.exports = function registerDashboard(app, client) {
         people[m.id] = {
           name: m.displayName,
           color,
+          // Picked by hand in config.js: kept as it is, so the page only adds an outline when it's hard to read
+          ...(override && { fixed_color: true }),
           avatar: m.displayAvatarURL({ size: 64, extension: "webp", forceStatic: true }),
         };
       });
