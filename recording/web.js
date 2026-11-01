@@ -13,7 +13,8 @@ const processor = require("./processor");
 const recorder = require("./index");
 const { IDs, MemberColorOverrides } = require("../config");
 
-module.exports = function registerRecordingsPage(app, client) {
+module.exports = function registerRecordingsPage(app, client, opts = {}) {
+  const touchViewer = typeof opts.touchViewer === "function" ? opts.touchViewer : () => {};
   // RECORDINGS_PASSWORD: asked on the page, remembered in a cookie (changing the password logs everyone out).
   // Without it the old RECORDINGS_KEY / DASHBOARD_KEY check applies.
   const password = () => process.env.RECORDINGS_PASSWORD || "";
@@ -34,15 +35,25 @@ module.exports = function registerRecordingsPage(app, client) {
     return !required || safeEq(req.query.key || req.get("x-recordings-key") || "", required);
   };
   function guard(req, res, next) {
+    touchViewer(req);
     if (!keyOk(req)) return res.status(404).send("Not found"); // looks like there's nothing here
     if (password() && !safeEq(cookieOf(req, "rec_auth"), tokenFor(password()))) return res.status(401).json({ error: "password_required" });
     next();
   }
   // The page itself needs the key; the password box is shown on the page
-  const pageGuard = (req, res, next) => (keyOk(req) ? next() : res.status(404).send("Not found"));
+  const pageGuard = (req, res, next) => {
+    touchViewer(req);
+    return keyOk(req) ? next() : res.status(404).send("Not found");
+  };
+
+  app.get("/api/recordings/ping", (req, res) => {
+    touchViewer(req);
+    res.json({ ok: true });
+  });
 
   const fails = new Map();
   app.post("/api/recordings/login", require("express").json({ limit: "2kb" }), (req, res) => {
+    touchViewer(req);
     if (!keyOk(req)) return res.status(404).send("Not found");
     const pw = password();
     if (!pw) return res.json({ ok: true });
@@ -183,17 +194,25 @@ module.exports = function registerRecordingsPage(app, client) {
         folder_url: rec.drive_folder_id ? drive.folderUrl(rec.drive_folder_id) : null,
         lines: lines.map((l) => ({ start_ms: l.start_ms, end_ms: l.end_ms, user_id: l.user_id, name: l.name, text: l.text })),
         // "Who's talking" lanes under the waveform: each person's speech, pauses under 2 s joined
-        activity: Object.fromEntries(
-          Object.entries(rec.outputs?.speech || {}).map(([u, iv]) => {
-            const runs = [];
-            for (const [s, e] of iv) {
-              const last = runs[runs.length - 1];
-              if (last && s - last[1] < 2000) last[1] = e;
-              else runs.push([s, e]);
-            }
-            return [u, runs];
-          })
-        ),
+        activity: (() => {
+          const speechObj = { ...(rec.outputs?.speech || {}) };
+          const botSpeech = rec.outputs?.botSpeech || {};
+          for (const [k, iv] of Object.entries(botSpeech)) {
+            const u = k.startsWith("bot-") ? k.slice(4) : k;
+            speechObj[u] = [...(speechObj[u] || []), ...iv].sort((a, b) => a[0] - b[0]);
+          }
+          return Object.fromEntries(
+            Object.entries(speechObj).map(([u, iv]) => {
+              const runs = [];
+              for (const [s, e] of iv) {
+                const last = runs[runs.length - 1];
+                if (last && s - last[1] < 2000) last[1] = Math.max(last[1], e);
+                else runs.push([s, e]);
+              }
+              return [u, runs];
+            })
+          );
+        })(),
         has_peaks: !!rec.outputs?.peaks,
       });
     } catch (err) {

@@ -151,7 +151,7 @@ module.exports = function registerDashboard(app, client) {
   });
 
   // Voice recordings page: /recordings, linked from the dashboard's sidebar (see recording/web.js)
-  require("./recording/web")(app, client);
+  require("./recording/web")(app, client, { touchViewer });
 
   // ---------- Live snapshot ----------
   app.get("/api/overview", guard, async (req, res) => {

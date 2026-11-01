@@ -116,6 +116,7 @@ function livePanel(view) {
 const END_REASONS = {
   stopped: (by) => `⏹️ Stopped${by ? ` by <@${by}>` : ""}.`,
   empty: () => "👋 Everyone left the channel.",
+  alone: () => "⏳ Stopped because 1 person remained alone for 15 minutes.",
   max: () => `⏱️ Reached the ${cfg.maxHours}-hour limit.`,
   kicked: () => "👢 The bot was disconnected from the voice channel.",
   moved: () => "↪️ The bot was moved to another channel.",

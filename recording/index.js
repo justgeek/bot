@@ -81,6 +81,18 @@ async function startRecording(channel, startedBy) {
   if (audio.countHumans(channel) === 0) throw new UserError("Nobody's in that voice channel.");
   starting = true;
   try {
+    const cutLimit = (cfg.resumeWindowMinutes || 30) * 60000;
+    const candidates = await store.findRecordings(["suspended", "recording"]);
+    const match = candidates.reverse().find((r) => {
+      if (r.channel_id !== channel.id) return false;
+      const cutAt = Date.parse(r.suspended_at || r.heartbeat_at || r.started_at);
+      return Date.now() - cutAt < cutLimit;
+    });
+    if (match) {
+      console.log(`[Rec] Resuming recording ${match.id} in #${channel.name} (part ${(match.parts || 1) + 1}).`);
+      return await startSession(match, { fresh: false });
+    }
+
     const rec = {
       id: newId(),
       guild_id: channel.guild.id,
@@ -101,8 +113,13 @@ async function startRecording(channel, startedBy) {
   }
 }
 
-function ended(session, rec, hadAudio) {
+function ended(session, rec, hadAudio, isSuspended = false) {
   if (active === session) active = null;
+  if (isSuspended || rec.status === "suspended") {
+    refreshControlPanel();
+    setTimeout(evaluateAuto, 3000);
+    return;
+  }
   // After someone stopped it (or the bot got kicked/moved), auto-record leaves that channel alone until it empties
   if (rec.end_reason !== "max") autoSnooze = rec.channel_id;
   if (hadAudio) processor.enqueue(rec.id);
@@ -159,7 +176,7 @@ function onVoiceStateUpdate(before, after) {
     if (after.id === client.user.id) {
       // The bot itself was disconnected from voice or dragged elsewhere
       if (active?.active && !active.recovering) {
-        if (!after.channelId && before.channelId === active.channelId) active.stop("kicked");
+        if (!after.channelId && before.channelId === active.channelId) active.recover(true);
         else if (after.channelId && after.channelId !== active.channelId) active.stop("moved");
       }
       return;
@@ -468,6 +485,21 @@ async function resumeAll() {
 async function housekeeping() {
   if (shuttingDown) return;
   try {
+    for (const rec of await store.findRecordings(["suspended"])) {
+      const cutAt = Date.parse(rec.suspended_at || rec.heartbeat_at || rec.started_at);
+      const channel = client.channels.cache.get(rec.channel_id);
+      const humans = channel ? audio.countHumans(channel) : 0;
+      if (Date.now() - cutAt >= (cfg.resumeWindowMinutes || 30) * 60000 || humans === 0) {
+        rec.status = "processing";
+        rec.ended_at = new Date(Math.max(cutAt, Date.parse(rec.started_at))).toISOString();
+        if (!rec.end_reason) rec.end_reason = "kicked";
+        rec.outputs = rec.outputs || {};
+        rec.outputs.progress = { audio: { state: "pending" } };
+        await store.saveRecording(rec);
+        await processor.updatePanel(rec);
+        processor.enqueue(rec.id);
+      }
+    }
     for (const rec of await store.findRecordings(["paused"])) {
       if (Date.parse(rec.resume_after || 0) <= Date.now()) processor.enqueue(rec.id);
     }

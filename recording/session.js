@@ -63,6 +63,7 @@ class RecordingSession {
     this.active = false;
     this.stopping = null;
     this.emptySince = null;
+    this.aloneSince = null;
     this.lastSaved = 0;
     this.lastPanel = 0;
     this.panelTimer = null;
@@ -246,8 +247,17 @@ class RecordingSession {
     for (const t of this.tracks.values()) t.tick(now);
     this.live?.tick(now);
 
-    if (this.humans().length) this.emptySince = null;
-    else {
+    const humans = this.humans();
+    if (humans.length >= 2) {
+      this.emptySince = null;
+      this.aloneSince = null;
+    } else if (humans.length === 1) {
+      this.emptySince = null;
+      if (this.aloneSince === null) this.aloneSince = Date.now();
+      const aloneLimit = (cfg.aloneStopSeconds !== undefined ? cfg.aloneStopSeconds : 900) * 1000;
+      if (aloneLimit > 0 && Date.now() - this.aloneSince >= aloneLimit) return void this.stop("alone");
+    } else {
+      this.aloneSince = null;
       if (this.emptySince === null) this.emptySince = Date.now();
       if (Date.now() - this.emptySince >= (cfg.emptyStopSeconds || 0) * 1000) return void this.stop("empty");
     }
@@ -360,8 +370,8 @@ class RecordingSession {
           return this.reconnected();
         } catch { }
       }
-      for (let attempt = 1; attempt <= 3 && this.active; attempt++) {
-        await sleep(500 * attempt);
+      for (let attempt = 1; attempt <= 4 && this.active; attempt++) {
+        await sleep(1000 * attempt);
         if (!this.active) return;
         try {
           if (conn && conn.state.status !== VoiceConnectionStatus.Destroyed) {
@@ -377,7 +387,7 @@ class RecordingSession {
           console.warn(`[Rec] Reconnect attempt ${attempt} failed: ${err.message}`);
         }
       }
-      if (this.active) this.stop("error");
+      if (this.active) await this.suspendDc("kicked");
     } finally {
       this.recovering = false;
     }
@@ -526,6 +536,26 @@ class RecordingSession {
     await Promise.race([this.uploads, sleep(20000)]);
     await store.saveRecording(this.rec);
     if (this.panelMessage) await this.panelMessage.edit(panel.livePanel(this.view())).catch(() => { });
+  }
+
+  // Bot disconnected from voice channel during session: suspend and allow up to 30 mins to resume
+  async suspendDc(reason = "kicked") {
+    if (this.stopping || !this.active) return;
+    this.active = false;
+    this.state = "suspended";
+    clearInterval(this.timer);
+    clearTimeout(this.panelTimer);
+    this.closeTracks();
+    this.live?.finish(0);
+    this.rec.status = "suspended";
+    this.rec.end_reason = reason;
+    this.rec.suspended_at = new Date().toISOString();
+    this.detachConnection();
+    await store.saveRecording(this.rec);
+    await Promise.race([this.uploads, sleep(10000)]);
+    await store.saveRecording(this.rec);
+    if (this.panelMessage) await this.panelMessage.edit(panel.livePanel(this.view())).catch(() => { });
+    this.onEnded?.(this.rec, false, true);
   }
 }
 

@@ -229,7 +229,28 @@
       } catch (e) { }
 
       var KEY = new URLSearchParams(location.search).get("key") || "";
-      var withKey = function (url) { return KEY ? url + (url.indexOf("?") < 0 ? "?" : "&") + "key=" + encodeURIComponent(KEY) : url; };
+      var VIEWER_ID = "";
+      try {
+        VIEWER_ID = localStorage.getItem("banha-viewer-id") || "";
+        if (!VIEWER_ID) {
+          VIEWER_ID = "v_" + Math.random().toString(36).substring(2, 10);
+          localStorage.setItem("banha-viewer-id", VIEWER_ID);
+        }
+      } catch (e) {
+        if (!VIEWER_ID) VIEWER_ID = "v_" + Math.random().toString(36).substring(2, 10);
+      }
+      var withKey = function (url) {
+        var sep = url.indexOf("?") < 0 ? "?" : "&";
+        var res = url;
+        if (KEY) { res += sep + "key=" + encodeURIComponent(KEY); sep = "&"; }
+        res += sep + "vid=" + encodeURIComponent(VIEWER_ID);
+        return res;
+      };
+      var pingViewer = function () {
+        fetch(withKey("/api/recordings/ping"), { cache: "no-store" }).catch(function () { });
+      };
+      pingViewer();
+      setInterval(pingViewer, 20000);
       var api = function (path) {
         return fetch(withKey(path), { cache: "no-store" }).then(function (r) {
           if (r.status === 401) { showLogin(); throw new Error("401"); }
@@ -248,7 +269,7 @@
         var m = Math.round(ms / 60000); return m < 60 ? m + "m" : Math.floor(m / 60) + "h " + pad(m % 60) + "m";
       };
       var when = function (iso) { return new Date(iso).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); };
-      var REASONS = { stopped: "stopped by hand", empty: "everyone left", max: "hit the time limit", kicked: "bot disconnected", moved: "bot moved", error: "connection error", restart: "bot restarted" };
+      var REASONS = { stopped: "stopped by hand", empty: "everyone left", alone: "1 person left for 15m", max: "hit the time limit", kicked: "bot disconnected", moved: "bot moved", error: "connection error", restart: "bot restarted" };
 
       $("dash").href = "/" + (KEY ? "?key=" + encodeURIComponent(KEY) : "");
       var bytes = function (n) { n = Number(n) || 0; var u = ["B", "KB", "MB", "GB", "TB"], i = n ? Math.min(4, Math.floor(Math.log(n) / Math.log(1024))) : 0; return (n / Math.pow(1024, i)).toFixed(i ? 1 : 0) + " " + u[i]; };
@@ -591,6 +612,14 @@
             if (track !== "mix" && u !== track) return;
             rec.activity[u].forEach(function (r) { all.push([Math.max(0, r[0] - PAD_BEFORE), Math.min(dur, r[1] + PAD_AFTER)]); });
           });
+          // Include TTS and sound events so TTS is never skipped when skip silence is on
+          (rec.events || []).forEach(function (e) {
+            if (e.type !== "sound") return;
+            if (track !== "mix" && e.user && e.user !== track) return;
+            var textLen = (e.text || "").length;
+            var soundDur = Math.max(2000, Math.min(40000, textLen * 65));
+            all.push([Math.max(0, e.t - PAD_BEFORE), Math.min(dur, e.t + soundDur + PAD_AFTER)]);
+          });
           all.sort(function (a, b) { return a[0] - b[0]; });
           talk = [];
           all.forEach(function (r) {
@@ -827,6 +856,16 @@
       }
 
       var shown = [];
+      var formatWallTime = function (msOffset) {
+        if (!current || !current.started_at) return "";
+        var d = new Date(Date.parse(current.started_at) + (msOffset || 0));
+        return d.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      };
+      var updateTranscriptClock = function (ms) {
+        var el = $("transcriptClock");
+        if (el) el.textContent = "📅 " + formatWallTime(ms);
+      };
+
       function renderTranscript(el) {
         var prevLines = $("lines"), keepTop = prevLines ? prevLines.scrollTop : null; // a refresh must not move the reader
         if (!current.lines.length) {
@@ -838,7 +877,8 @@
           return '<button class="chip' + (hidden[u] ? " off" : "") + '" data-user="' + esc(u) + '" style="border-color:' + esc(colorOf(u)) + '">' + esc(nameOf(u)) + "</button>";
         }).join("") +
           '<input type="text" id="find" placeholder="Find in this transcript" value="' + esc(filterText) + '" style="flex:1 1 180px">' +
-          '<label class="muted"><input type="checkbox" id="follow"' + (follow ? " checked" : "") + "> follow audio</label></div>" +
+          '<label class="muted"><input type="checkbox" id="follow"' + (follow ? " checked" : "") + "> follow audio</label>" +
+          '<span class="grow"></span><span class="muted" id="transcriptClock" title="Current playback date/time" style="font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; white-space:nowrap;"></span></div>' +
           '<div class="lines" id="lines"></div>';
         Array.prototype.forEach.call(el.querySelectorAll(".chip"), function (c) {
           c.onclick = function () { hidden[c.dataset.user] = !hidden[c.dataset.user]; c.classList.toggle("off"); renderLines(); };
@@ -846,6 +886,7 @@
         $("find").oninput = function () { filterText = this.value; renderLines(); };
         $("follow").onchange = function () { follow = this.checked; };
         renderLines();
+        var a = $("audio"); updateTranscriptClock(a ? a.currentTime * 1000 : 0);
         if (keepTop != null && $("lines")) $("lines").scrollTop = keepTop;
       }
 
@@ -859,7 +900,7 @@
           return h.replace(new RegExp(n, "gi"), function (m) { return "<mark>" + m + "</mark>"; });
         };
         $("lines").innerHTML = shown.length ? shown.map(function (it, i) {
-          return '<div class="line' + (it.note ? " note" : "") + '" data-i="' + i + '"><button class="t" data-t="' + it.t + '">' + hms(it.t) + "</button>" +
+          return '<div class="line' + (it.note ? " note" : "") + '" data-i="' + i + '"><button class="t" data-t="' + it.t + '" title="' + esc(formatWallTime(it.t)) + '">' + hms(it.t) + "</button>" +
             '<div class="txt"><span class="who" style="color:' + esc(colorOf(it.user)) + '">' + (it.note ? "📝 " : "") + esc(/\((TTS|meme)\)$/.test(it.label || "") || it.user === "bot" ? it.label : nameOf(it.user)) + "</span>" + mark(it.text) + "</div></div>";
         }).join("") : '<div class="empty">No lines match.</div>';
         $("lines").onclick = function (e) { var b = e.target.closest(".t"); if (b) seek(Number(b.dataset.t)); };
@@ -868,6 +909,7 @@
 
       var lastNow = -1;
       function highlight(ms, force) {
+        updateTranscriptClock(ms);
         var linesEl = $("lines");
         if (!linesEl || !shown.length) return;
         var lo = 0, hi = shown.length - 1, idx = -1;

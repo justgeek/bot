@@ -303,6 +303,7 @@ async function audioBuild(rec, ctx) {
       const intervals = remux(chunks, raw, Math.ceil(totalMs * MS), name);
       // Only their own voice is transcribed and counted as talking; the bot's sounds are already in the log
       if (source === userId && !rec.speakers?.[source]?.bot) out.speech[userId] = intervals;
+      else { out.botSpeech = out.botSpeech || {}; out.botSpeech[source] = intervals; }
       raws.push(raw);
       used.push(...chunks);
     }
