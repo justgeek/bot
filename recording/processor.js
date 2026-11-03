@@ -77,6 +77,8 @@ function makeCtx(rec) {
     trackPaths: null,
     save: () => store.saveRecording(rec),
     beat: () => lastBeat,
+    // something is happening that doesn't change the panel (a downloaded piece, an ffmpeg run ticking along)
+    pulse: () => { lastBeat = Date.now(); },
     progress(step, state, detail) {
       rec.outputs.progress[step] = { state, detail };
       lastBeat = Date.now();
@@ -272,14 +274,18 @@ async function audioBuild(rec, ctx) {
   if (!users.length) throw new Error("no audio was found");
   const totalMs = Date.parse(rec.ended_at) - Date.parse(rec.started_at);
 
+  console.log(`[Rec] ${rec.id}: building ${users.length} speaker track(s) from ${[...byUser.values()].reduce((n, l) => n + l.length, 0)} pieces`);
   let lost = 0;
   for (const [i, userId] of users.entries()) {
     const local = path.join(tracksDir, `${userId}.ogg`);
     const have = out.files.tracks[userId];
     if (have?.done || (have?.built && fs.existsSync(local))) continue;
     const name = nameOf(userId);
+    const startedAt = Date.now();
+    console.log(`[Rec] ${rec.id}: ${name}: starting track ${i + 1} of ${users.length}`);
     ctx.progress("audio", "running", `speaker track ${i + 1} of ${users.length} (${name})`);
     const raws = [];
+    let got = 0;
     const used = [];
     for (const source of [userId, `bot-${userId}`].filter((k) => byUser.has(k))) {
       // Their pieces are on this disk, or (after a restart) on Drive
@@ -300,6 +306,8 @@ async function audioBuild(rec, ctx) {
           }
         }
         chunks.push({ file, startMs: Number(row.start_ms) });
+        ctx.pulse();
+        if (++got % 10 === 0) console.log(`[Rec] ${rec.id}: ${name}: ${got} pieces ready`);
       }
       if (!chunks.length) continue;
       const raw = path.join(rawDir, `${source}.ogg`);
@@ -311,10 +319,11 @@ async function audioBuild(rec, ctx) {
       used.push(...chunks);
     }
     if (!raws.length) continue;
-    await ffmpeg.encodeTrack(raws, local, { kbps: cfg.trackKbps });
+    await ffmpeg.encodeTrack(raws, local, { kbps: cfg.trackKbps, onProgress: () => ctx.pulse() });
     for (const f of raws) fs.unlink(f, () => { });
     for (const c of used) fs.unlink(c.file, () => { }); // Drive keeps a copy until the audio is done
     out.files.tracks[userId] = { name, built: true, idx: i };
+    console.log(`[Rec] ${rec.id}: ${name}: track ${i + 1} of ${users.length} is built in ${Math.round((Date.now() - startedAt) / 1000)}s`);
     await ctx.save();
   }
   if (!Object.keys(out.files.tracks).length) throw new Error(lost ? "the audio didn't reach Google Drive before the bot restarted" : "no audio was found");

@@ -20,6 +20,8 @@ const FOLDER = "application/vnd.google-apps.folder";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // A transfer that stops moving never reports an error: without this the audio step would wait on it forever
 const DOWNLOAD_STALL_MS = 2 * 60000;
+// Drive can also just never answer, before a single byte of the file comes back
+const REQUEST_STALL_MS = 2 * 60000;
 
 function statusOf(err) {
   return Number(err?.status || err?.response?.status || (typeof err?.code === "number" ? err.code : 0)) || 0;
@@ -96,7 +98,14 @@ async function upload(parentId, name, source, mimeType = "application/octet-stre
 }
 
 async function download(fileId, dest) {
-  const res = await withRetry("download", () => api.files.get({ fileId, alt: "media" }, { responseType: "stream" }));
+  const res = await withRetry("download", () =>
+    Promise.race([
+      api.files.get({ fileId, alt: "media" }, { responseType: "stream" }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(Object.assign(new Error(`Drive didn't answer the download of ${fileId}`), { transient: true })), REQUEST_STALL_MS)
+      ),
+    ])
+  );
   await new Promise((resolve, reject) => {
     const out = fs.createWriteStream(dest);
     let timer = null;
