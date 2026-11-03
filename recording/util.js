@@ -16,11 +16,11 @@ class UserError extends Error {}
 
 // Gemini's free daily quota is used up: the job waits until `until` (ms) and continues by itself
 class QuotaPause extends Error {
-  constructor(step, until) {
+  constructor(step, until, detail) {
     super(`Gemini daily quota reached (${step})`);
     this.step = step;
     this.until = until;
-    this.detail = `Gemini's free limit is used up - tries again by itself <t:${Math.floor(until / 1000)}:R>`;
+    this.detail = detail || `Gemini's free limit is used up - tries again by itself <t:${Math.floor(until / 1000)}:R>`;
   }
 }
 
@@ -106,4 +106,21 @@ function busyRetryAt() {
   return Date.now() + 10 * 60000;
 }
 
-module.exports = { WORK_DIR, sleep, UserError, QuotaPause, BusyPause, newId, localStamp, folderName, threadName, safeName, isAdmin, memberName, participants, nextQuotaReset, quotaRetryAt, busyRetryAt };
+// A step that stops making progress (a download or an ffmpeg run that hangs) would hold the job forever:
+// after `stallMs` with nothing happening it's given up on and the step is started again by itself
+function watchStep(promise, step, { stallMs = 20 * 60000, everyMs = 30000, beat } = {}) {
+  return new Promise((resolve, reject) => {
+    const stream = setInterval(() => {
+      if (Date.now() - (beat ? beat() : 0) < stallMs) return;
+      clearInterval(stream);
+      const until = busyRetryAt();
+      reject(new QuotaPause(step, until, `Stuck with no progress for ${stallMs / 60000} min - starts this step again by itself <t:${Math.floor(until / 1000)}:R>`));
+    }, everyMs);
+    promise.then(
+      (value) => { clearInterval(stream); resolve(value); },
+      (err) => { clearInterval(stream); reject(err); }
+    );
+  });
+}
+
+module.exports = { WORK_DIR, sleep, UserError, QuotaPause, BusyPause, watchStep, newId, localStamp, folderName, threadName, safeName, isAdmin, memberName, participants, nextQuotaReset, quotaRetryAt, busyRetryAt };

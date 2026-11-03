@@ -13,7 +13,7 @@ const panel = require("./panel");
 const transcribe = require("./transcribe");
 const redact = require("./redact");
 const { peaksFromOgg } = require("./peaks");
-const { WORK_DIR, QuotaPause, folderName, safeName } = require("./util");
+const { WORK_DIR, QuotaPause, busyRetryAt, watchStep, folderName, safeName } = require("./util");
 
 let client = null;
 const queue = [];
@@ -70,13 +70,16 @@ function makeCtx(rec) {
   const dir = path.join(WORK_DIR, rec.id);
   let panelTimer = null;
   let lastPanel = 0;
+  let lastBeat = Date.now(); // when the step last said it did something (the watchdog reads it)
   const ctx = {
     dir,
     lines: null,
     trackPaths: null,
     save: () => store.saveRecording(rec),
+    beat: () => lastBeat,
     progress(step, state, detail) {
       rec.outputs.progress[step] = { state, detail };
+      lastBeat = Date.now();
       if (panelTimer) return;
       panelTimer = setTimeout(() => {
         panelTimer = null;
@@ -445,23 +448,26 @@ async function processRecording(id) {
   const ctx = makeCtx(rec);
   let step = "audio";
   try {
-    if (out.progress.audio?.state !== "done") await audioBuild(rec, ctx);
+    if (out.progress.audio?.state !== "done") await watchStep(audioBuild(rec, ctx), "audio", { beat: ctx.beat });
     step = "transcript";
-    if (rec.options?.transcribe && out.progress.transcript?.state !== "done") await transcribe.transcriptStep(rec, ctx);
+    if (rec.options?.transcribe && out.progress.transcript?.state !== "done") await watchStep(transcribe.transcriptStep(rec, ctx), "transcript", { beat: ctx.beat });
     step = "audio";
-    if (out.progress.audio?.state !== "done") await audioPublish(rec, ctx);
+    if (out.progress.audio?.state !== "done") await watchStep(audioPublish(rec, ctx), "audio", { beat: ctx.beat });
     step = "summary";
-    if (rec.options?.summarize && out.progress.summary?.state !== "done") await transcribe.summaryStep(rec, ctx);
+    if (rec.options?.summarize && out.progress.summary?.state !== "done") await watchStep(transcribe.summaryStep(rec, ctx), "summary", { beat: ctx.beat });
     step = "finish";
-    await finishStep(rec, ctx);
+    await watchStep(finishStep(rec, ctx), "finish", { beat: ctx.beat });
     rec.status = "done";
   } catch (err) {
     if (stopping) return; // the bot is shutting down: it stays "processing" and continues after the restart
-    if (err instanceof QuotaPause) {
+    // Quota/busy pauses, and network or stall trouble inside a step (err.transient): wait and come back
+    if (err instanceof QuotaPause || err.transient) {
+      const until = err.until || busyRetryAt();
+      const at = err.step || step;
       rec.status = "paused";
-      rec.resume_after = new Date(err.until).toISOString();
-      out.progress[err.step] = { state: "paused", detail: err.detail };
-      console.warn(`[Rec] Processing ${id} paused at the ${err.step} step (${err.message}), tries again by itself.`);
+      rec.resume_after = new Date(until).toISOString();
+      out.progress[at] = { state: "paused", detail: err.detail || `Something went wrong (${String(err.message || err).slice(0, 120)}) - tries again by itself <t:${Math.floor(until / 1000)}:R>` };
+      console.warn(`[Rec] Processing ${id} paused at the ${at} step (${err.message}), tries again by itself.`);
     } else {
       console.error(`[Rec] Processing ${id} failed (${step}):`, err);
       rec.status = "failed";

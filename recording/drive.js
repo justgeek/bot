@@ -18,6 +18,8 @@ if (enabled) {
 
 const FOLDER = "application/vnd.google-apps.folder";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// A transfer that stops moving never reports an error: without this the audio step would wait on it forever
+const DOWNLOAD_STALL_MS = 2 * 60000;
 
 function statusOf(err) {
   return Number(err?.status || err?.response?.status || (typeof err?.code === "number" ? err.code : 0)) || 0;
@@ -33,6 +35,8 @@ async function withRetry(label, fn, attempts = 5) {
       const retryable = !status || status === 429 || status >= 500 || (status === 403 && /rate|quota exceeded for quota/i.test(err.message || ""));
       if (!retryable || i >= attempts) {
         err.message = `${label}: ${err.message}`;
+        // A network or Google hiccup: the step waits a few minutes and comes back, it isn't a real failure
+        if (retryable) err.transient = true;
         throw err;
       }
       await sleep(1000 * 2 ** (i - 1));
@@ -95,7 +99,31 @@ async function download(fileId, dest) {
   const res = await withRetry("download", () => api.files.get({ fileId, alt: "media" }, { responseType: "stream" }));
   await new Promise((resolve, reject) => {
     const out = fs.createWriteStream(dest);
-    res.data.on("error", reject).pipe(out).on("finish", resolve).on("error", reject);
+    let timer = null;
+    let done = false;
+    const stop = (err) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      res.data.unpipe(out);
+      res.data.destroy();
+      out.destroy();
+      if (err) {
+        err.transient = true;
+        reject(err);
+      } else resolve();
+    };
+    const beat = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => stop(new Error(`the download of ${fileId} stalled (nothing arrived for ${DOWNLOAD_STALL_MS / 60000} min)`)), DOWNLOAD_STALL_MS);
+    };
+    res.data.on("data", beat);
+    res.data.on("error", (err) => stop(err));
+    res.data.on("aborted", () => stop(new Error(`the download of ${fileId} was cut off`)));
+    out.on("error", (err) => stop(err));
+    out.on("finish", () => stop(null));
+    beat();
+    res.data.pipe(out);
   });
 }
 

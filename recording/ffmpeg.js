@@ -5,33 +5,54 @@ const os = require("os");
 const ffmpegPath = require("ffmpeg-static");
 
 const running = new Set();
+// ffmpeg can sit on a corrupt input for ever without saying anything: killed after this much silence
+const IDLE_MS = 5 * 60000;
 
 // onProgress(ms): how far into the output ffmpeg is
-function run(args, { onProgress } = {}) {
+function run(args, { onProgress, idleMs = IDLE_MS } = {}) {
   return new Promise((resolve, reject) => {
-    const full = ["-hide_banner", "-nostdin", "-loglevel", "error", "-y", ...(onProgress ? ["-progress", "pipe:1", "-nostats"] : []), ...args];
+    // -progress always on: its output doubles as a "still working" signal
+    const full = ["-hide_banner", "-nostdin", "-loglevel", "error", "-progress", "pipe:1", "-nostats", "-y", ...args];
     const child = spawn(ffmpegPath, full, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     running.add(child);
+    let idle = null;
+    let stalled = false;
+    const beat = () => {
+      clearTimeout(idle);
+      idle = setTimeout(() => {
+        stalled = true;
+        try { child.kill("SIGKILL"); } catch { }
+      }, idleMs);
+    };
+    beat();
     try {
       os.setPriority(child.pid, 10);
     } catch { }
     let stderr = "";
     child.stderr.on("data", (d) => {
+      beat();
       stderr = (stderr + d).slice(-4000);
     });
     child.stdout.on("data", (d) => {
+      beat();
       if (!onProgress) return;
       const m = /out_time_us=(\d+)/.exec(String(d));
       if (m) onProgress(Number(m[1]) / 1000);
     });
     child.on("error", (err) => {
       running.delete(child);
+      clearTimeout(idle);
       reject(err);
     });
     child.on("close", (code, signal) => {
       running.delete(child);
+      clearTimeout(idle);
       if (code === 0) resolve();
-      else reject(new Error(`ffmpeg ${signal ? `was stopped (${signal})` : `exited with ${code}`}: ${stderr.trim().split("\n").slice(-3).join(" | ")}`));
+      else {
+        const err = new Error(`ffmpeg ${signal ? `was stopped (${signal})` : `exited with ${code}`}: ${stderr.trim().split("\n").slice(-3).join(" | ")}`);
+        if (stalled) err.transient = true; // it was stuck, not broken: worth another go
+        reject(err);
+      }
     });
   });
 }
