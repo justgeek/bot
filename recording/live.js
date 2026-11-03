@@ -1,4 +1,4 @@
-// recording/live.js - transcribes a recording while it's still going, so after the call only the last
+﻿// recording/live.js - transcribes a recording while it's still going, so after the call only the last
 // stretch (and the summary) is left. Works from the raw 5-minute chunks: every speaker's chunks line up on
 // the same timeline windows, so once a window is over all of its audio is on disk. Requests are as large as
 // the ones made after the call (~15 min of speech), so this costs no extra Gemini quota.
@@ -112,9 +112,10 @@ class LiveTranscriber {
         result = await transcribe.transcribeBatch(batch, this.model, vocab);
         break;
       } catch (err) {
-        if (err.daily && transcribe.fallbackModel() && this.model !== transcribe.fallbackModel()) {
-          this.model = transcribe.fallbackModel();
-          continue;
+        if (err.daily) {
+          const fallbacks = [transcribe.geminiModelName(), ...transcribe.fallbackModels()];
+          const next = fallbacks.find((m) => m !== this.model);
+          if (next) { this.model = next; continue; }
         }
         return this.giveUp(err.daily ? "Gemini's free limit is used up" : `Gemini failed: ${err.message}`);
       }
