@@ -500,6 +500,11 @@ async function housekeeping() {
         processor.enqueue(rec.id);
       }
     }
+    // A job that lost its place (a crash, a restart in the middle of a step, a queue that dropped it) carries on
+    // by itself: its steps pick up from whatever was saved
+    for (const rec of await store.findRecordings(["processing"])) {
+      if (!processor.isBusy(rec.id)) processor.enqueue(rec.id);
+    }
     for (const rec of await store.findRecordings(["paused"])) {
       if (Date.parse(rec.resume_after || 0) <= Date.now()) processor.enqueue(rec.id);
     }

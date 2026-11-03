@@ -178,7 +178,9 @@ function endedPanel(rec) {
     const busy = ["recording", "suspended"].includes(rec.status);
     c.addActionRowComponents(
       row(
-        rec.status === "failed" ? button(`rec:retry:${rec.id}`, "Retry", ButtonStyle.Primary, "🔁") : null,
+        // Retry stays available for a failed job, and for a "processing" one that fell out of the queue (a nudge:
+        // the bot also picks those up by itself on the next housekeeping pass)
+        rec.status === "failed" || rec.status === "processing" ? button(`rec:retry:${rec.id}`, "Retry", ButtonStyle.Primary, "🔁") : null,
         !rec.options?.transcribe ? button(`rec:runtx:${rec.id}`, "Transcribe", ButtonStyle.Primary, "📄", busy) : null,
         !rec.options?.summarize ? button(`rec:runsum:${rec.id}`, "Summarize", ButtonStyle.Primary, "✨", busy) : null,
         button(`rec:del:${rec.id}`, "Delete", ButtonStyle.Danger, "🗑️", busy)
