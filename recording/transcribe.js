@@ -12,7 +12,7 @@ const store = require("./store");
 const drive = require("./drive");
 const { mentionsPolitics, POLITICS_RULE } = require("./redact");
 const panel = require("./panel");
-const { sleep, QuotaPause, BusyPause, UserError, nextQuotaReset, quotaRetryAt, busyRetryAt, localStamp, participants } = require("./util");
+const { sleep, QuotaPause, BusyPause, UserError, nextQuotaReset, quotaRetryAt, busyRetryAt, resetBusyCount, localStamp, participants } = require("./util");
 
 // Same as aiHandler.js: casual voice chat trips the default filters
 const SAFETY = ["HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"].map((category) => ({ category, threshold: "BLOCK_NONE" }));
@@ -37,16 +37,16 @@ const BATCH_BYTES = 12 * 1024 * 1024;
 const BATCH_SEGMENTS = 900;
 
 // ---------- Text helpers ----------
-// For search: lower case, Arabic diacritics dropped and letter variants unified (أ إ آ -> ا, ى -> ي, ة -> ه)
+// For search: lower case, Arabic diacritics dropped and letter variants unified (Ø£ Ø¥ Ø¢ -> Ø§, Ù‰ -> ÙŠ, Ø© -> Ù‡)
 function normalizeText(s) {
   return String(s || "")
     .toLowerCase()
-    .replace(/[ً-ْٰـ]/g, "")
-    .replace(/[أإآٱ]/g, "ا")
-    .replace(/ى/g, "ي")
-    .replace(/ة/g, "ه")
-    .replace(/ؤ/g, "و")
-    .replace(/ئ/g, "ي")
+    .replace(/[Ù‹-Ù’Ù°Ù€]/g, "")
+    .replace(/[Ø£Ø¥Ø¢Ù±]/g, "Ø§")
+    .replace(/Ù‰/g, "ÙŠ")
+    .replace(/Ø©/g, "Ù‡")
+    .replace(/Ø¤/g, "Ùˆ")
+    .replace(/Ø¦/g, "ÙŠ")
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -201,10 +201,10 @@ async function generate(modelName, parts, opts) {
       failures++;
       // Google's side is down right now (503, timeout, reset connection): worth coming back to soon
       const transient = status >= 500 || !status;
-      if (transient && failures <= 4 * keys.length && !(err instanceof SyntaxError)) {
+      if (transient && failures <= 6 * keys.length && !(err instanceof SyntaxError)) {
         if (keys.length > 1) keyNo = Math.max(0, nextKey(keyNo));
-        // Waits only once every key has had a go
-        await sleep(10000 * Math.ceil(failures / keys.length));
+        // Waits only once every key has had a go; doubles each round, capped at 2 min
+        await sleep(Math.min(120000, 10000 * Math.ceil(failures / keys.length)));
         continue;
       }
       // Still down: the step leaves the job paused and the bot comes back to it by itself
@@ -238,7 +238,7 @@ function transcribePrompt({ names, games }) {
     "- Do not translate, summarize, censor, fix grammar or add words. Keep slang and swearing as said.",
     '- Mark non-speech only when it matters, briefly in brackets like [laughs] or [unclear]. Use "" when a clip has no speech.',
     "- Never merge clips together and never skip an id.",
-    '- Set "redact": true when the clip talks about Egyptian politics, the Egyptian government, its president, "السيسي" / Sisi, or anyone nicknamed "بلحة" (jokes, insults and praise count, even in passing), and then return "text": "". Otherwise "redact" is false.',
+    '- Set "redact": true when the clip talks about Egyptian politics, the Egyptian government, its president, "Ø§Ù„Ø³ÙŠØ³ÙŠ" / Sisi, or anyone nicknamed "Ø¨Ù„Ø­Ø©" (jokes, insults and praise count, even in passing), and then return "text": "". Otherwise "redact" is false.',
     names.length ? `People in this chat (and their nicknames): ${names.join(", ")}.` : "",
     games.length ? `Games and words that often come up: ${games.join(", ")}.` : "",
   ].filter(Boolean).join("\n");
@@ -281,12 +281,12 @@ async function transcribeBatch(batch, model, vocab) {
 }
 
 // How a sound the bot played reads in the transcript:
-// "Mido (TTS): hello" · "Mido (meme): 🔊 !bruh" · "Bot: Mido joined" (automatic announcements)
+// "Mido (TTS): hello" Â· "Mido (meme): ðŸ”Š !bruh" Â· "Bot: Mido joined" (automatic announcements)
 function soundLine(rec, e) {
   const who = e.name || rec.speakers?.[e.user]?.name || "Someone";
   if (!e.user) return { name: "Bot", text: e.text || "(sound)" };
   if (e.kind === "tts") return { name: `${who} (TTS)`, text: e.text || "" };
-  return { name: `${who} (meme)`, text: `🔊 ${e.text || "sound"}` };
+  return { name: `${who} (meme)`, text: `ðŸ”Š ${e.text || "sound"}` };
 }
 
 // ---------- Transcript step (called by processor.js) ----------
@@ -338,7 +338,7 @@ async function transcriptStep(rec, ctx) {
           result = await transcribeBatch(batch, model, vocab);
           break;
         } catch (err) {
-          if (err.transient) throw new BusyPause("transcript", busyRetryAt(), err.message);
+          if (err.transient) throw new BusyPause("transcript", busyRetryAt(rec.id), err.message);
           if (!err.daily) throw err;
           if (fallbackModel() && !onFallback) {
             console.warn(`[Rec] ${model} is out of free quota for today, switching to ${fallbackModel()}`);
@@ -424,7 +424,7 @@ async function transcriptStep(rec, ctx) {
   const thread = await ctx.thread();
   if (thread && !out.posted?.transcript) {
     await ctx.postReport();
-    await thread.send({ content: `📄 Transcript (${lines.length} lines)`, files: [{ attachment: filesOut.txt, name: "transcript.txt" }] }).catch((err) => console.warn("[Rec] Couldn't post the transcript:", err.message));
+    await thread.send({ content: `ðŸ“„ Transcript (${lines.length} lines)`, files: [{ attachment: filesOut.txt, name: "transcript.txt" }] }).catch((err) => console.warn("[Rec] Couldn't post the transcript:", err.message));
     out.posted.transcript = true;
     await ctx.save();
   }
@@ -433,7 +433,7 @@ async function transcriptStep(rec, ctx) {
 function writeTranscriptFiles(rec, lines, dir) {
   fs.mkdirSync(dir, { recursive: true });
   const nameOf = (u) => rec.speakers?.[u]?.name || u;
-  const notes = (rec.events || []).filter((e) => e.type === "note" && !mentionsPolitics(e.text)).map((e) => ({ start_ms: e.t, name: `📝 NOTE (${nameOf(e.user)})`, text: e.text }));
+  const notes = (rec.events || []).filter((e) => e.type === "note" && !mentionsPolitics(e.text)).map((e) => ({ start_ms: e.t, name: `ðŸ“ NOTE (${nameOf(e.user)})`, text: e.text }));
   const all = [...lines, ...notes].sort((a, b) => a.start_ms - b.start_ms);
   const started = Date.parse(rec.started_at);
   const head = [
@@ -478,7 +478,7 @@ const SUMMARY_SYSTEM = [
   'You get the session details and a transcript where each line is "[hh:mm:ss] Speaker: what they said".',
   "Write the same summary twice: `en` in English, and `ar` in Egyptian Arabic (Arabic script, casual Egyptian wording, not formal Arabic).",
   "Each one in Discord markdown with these sections as ### headings:",
-  "TL;DR (2-4 bullets) · Timeline (the main stretches and topics, each with its [hh:mm:ss]) · Highlights & funny moments · Plans & decisions (or that there were none) · People (one line per person on what they were up to) · Notes (only if people added notes).",
+  "TL;DR (2-4 bullets) Â· Timeline (the main stretches and topics, each with its [hh:mm:ss]) Â· Highlights & funny moments Â· Plans & decisions (or that there were none) Â· People (one line per person on what they were up to) Â· Notes (only if people added notes).",
   "Highlights & funny moments: list EVERY funny, savage, wholesome or memorable moment in the whole session, in order, not just the best few. One bullet each: who, a few words of context, the quote in its original language, and its [hh:mm:ss].",
   "In `ar`, write the section headings in Arabic too.",
   "Be concrete and only use what is in the transcript. Apart from the highlights, keep each version tight (around 3500 characters).",
@@ -511,7 +511,7 @@ async function summaryStep(rec, ctx) {
   try {
     response = await generate(geminiModelName(), [{ text: `${sessionHeader(rec)}\n\nTranscript:\n${transcriptText(lines)}` }], { schema: SUMMARY_SCHEMA, system: SUMMARY_SYSTEM });
   } catch (err) {
-    if (err.transient) throw new BusyPause("summary", busyRetryAt(), err.message);
+    if (err.transient) throw new BusyPause("summary", busyRetryAt(rec.id), err.message);
     if (err.daily) throw new QuotaPause("summary", quotaRetryAt());
     throw err;
   }
@@ -551,7 +551,7 @@ const ASK_SYSTEM = [
   "You answer questions about a group of Egyptian friends' recorded Discord voice sessions.",
   "You get summaries of recent sessions and the full transcripts of the most relevant ones ([hh:mm:ss] Speaker: text).",
   "Answer in the language of the question (Egyptian Arabic if they asked in Arabic). Be short and concrete.",
-  "Point to where it came from like (16 Oct · 01:23:45 · Mido). If the recordings don't say, just say so - never make things up.",
+  "Point to where it came from like (16 Oct Â· 01:23:45 Â· Mido). If the recordings don't say, just say so - never make things up.",
   POLITICS_RULE,
 ].join("\n");
 
@@ -571,14 +571,14 @@ async function ask(question) {
 
   const parts = [`Question: ${question}`];
   if (summaries.length) {
-    parts.push("Summaries of the last 30 days:\n" + summaries.map((s) => `## ${localStamp(Date.parse(s.started_at))} · ${s.channel_name}\n${s.summary_en}`).join("\n\n"));
+    parts.push("Summaries of the last 30 days:\n" + summaries.map((s) => `## ${localStamp(Date.parse(s.started_at))} Â· ${s.channel_name}\n${s.summary_en}`).join("\n\n"));
   }
   let budget = MAX_ASK_CHARS - parts.join("\n").length;
   for (const id of ids.slice(0, 4)) {
     const rec = await store.getRecording(id);
     const body = transcriptText(await store.getLines(id));
     if (!rec || !body) continue;
-    const block = `Transcript of ${localStamp(Date.parse(rec.started_at))} · ${rec.channel_name}:\n${body}`;
+    const block = `Transcript of ${localStamp(Date.parse(rec.started_at))} Â· ${rec.channel_name}:\n${body}`;
     if (block.length > budget) {
       if (budget > 50000) parts.push(block.slice(0, budget));
       break;

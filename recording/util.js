@@ -1,4 +1,4 @@
-// recording/util.js - small helpers shared by the recorder's modules.
+﻿// recording/util.js - small helpers shared by the recorder's modules.
 const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
@@ -49,17 +49,17 @@ function localStamp(ms) {
   return `${p.date} ${pad(p.hour)}.${pad(p.minute)}`;
 }
 
-// The recording's Drive folder: "2026-10-16 21.56 → 23.40", or "2026-10-16 21.56 → 2026-10-17 03.42" past
-// midnight (server clock). While it's still recording the end is "…"; processing renames it once it's over.
+// The recording's Drive folder: "2026-10-16 21.56 -> 23.40", or "2026-10-16 21.56 -> 2026-10-17 03.42" past
+// midnight (server clock). While it's still recording the end is "..."; processing renames it once it's over.
 function folderName(rec) {
   const start = localStamp(Date.parse(rec.started_at));
-  if (!rec.ended_at) return `${start} → …`;
+  if (!rec.ended_at) return `${start} \u2192 \u2026`;
   const end = localStamp(Date.parse(rec.ended_at));
-  return `${start} → ${end.slice(0, 10) === start.slice(0, 10) ? end.slice(11) : end}`;
+  return `${start} \u2192 ${end.slice(0, 10) === start.slice(0, 10) ? end.slice(11) : end}`;
 }
 
 function threadName(rec) {
-  return `🎙️ ${localStamp(Date.parse(rec.started_at))} · ${rec.channel_name || "Voice"}`.slice(0, 100);
+  return `\uD83C\uDF99\uFE0F ${localStamp(Date.parse(rec.started_at))} \u00B7 ${rec.channel_name || "Voice"}`.slice(0, 100);
 }
 
 // Safe for file names on Drive and on disk
@@ -101,19 +101,31 @@ function quotaRetryAt() {
   return Math.min(Date.now() + 60 * 60000, nextQuotaReset());
 }
 
-// When a job paused because Google was busy comes back to the step it was on
-function busyRetryAt() {
-  return Date.now() + 10 * 60000;
+// When a job paused because Google was busy comes back to the step it was on.
+// Consecutive busy pauses for the same recording back off: 5 min, 10, 20, 30 (capped),
+// so a recording that keeps hitting 503s doesn't hammer the API every 10 min forever.
+const busyPauseCount = new Map(); // recId -> consecutive count; cleared when a step completes cleanly
+function busyRetryAt(recId) {
+  const n = recId ? (busyPauseCount.get(recId) || 0) + 1 : 1;
+  if (recId) busyPauseCount.set(recId, n);
+  const minutes = Math.min(30, 5 * Math.pow(2, n - 1)); // 5, 10, 20, 30, 30, ...
+  return Date.now() + minutes * 60000;
 }
+function resetBusyCount(recId) { if (recId) busyPauseCount.delete(recId); }
 
 // A step that stops making progress (a download or an ffmpeg run that hangs) would hold the job forever:
-// after `stallMs` with nothing happening it's given up on and the step is started again by itself
+// after `stallMs` with nothing happening it's given up on and the step is started again by itself.
+// Use a shorter stallMs for steps that pulse frequently (audio chunk downloads), so a single hung
+// operation doesn't prevent the watchdog from ever firing.
 function watchStep(promise, step, { stallMs = 20 * 60000, everyMs = 30000, beat } = {}) {
   return new Promise((resolve, reject) => {
+    const start = Date.now();
     const stream = setInterval(() => {
-      if (Date.now() - (beat ? beat() : 0) < stallMs) return;
+      // beat() is the timestamp of the last meaningful progress event; use start if no beat provided
+      const lastBeat = beat ? beat() : start;
+      if (Date.now() - lastBeat < stallMs) return;
       clearInterval(stream);
-      const until = busyRetryAt();
+      const until = busyRetryAt(); // processor.js drives the per-recording escalation via its own recId calls
       reject(new QuotaPause(step, until, `Stuck with no progress for ${stallMs / 60000} min - starts this step again by itself <t:${Math.floor(until / 1000)}:R>`));
     }, everyMs);
     promise.then(
@@ -123,4 +135,4 @@ function watchStep(promise, step, { stallMs = 20 * 60000, everyMs = 30000, beat 
   });
 }
 
-module.exports = { WORK_DIR, sleep, UserError, QuotaPause, BusyPause, watchStep, newId, localStamp, folderName, threadName, safeName, isAdmin, memberName, participants, nextQuotaReset, quotaRetryAt, busyRetryAt };
+module.exports = { WORK_DIR, sleep, UserError, QuotaPause, BusyPause, watchStep, resetBusyCount, newId, localStamp, folderName, threadName, safeName, isAdmin, memberName, participants, nextQuotaReset, quotaRetryAt, busyRetryAt };

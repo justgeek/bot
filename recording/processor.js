@@ -1,4 +1,4 @@
-// recording/processor.js - turns a finished recording into the files kept on Google Drive, step by step:
+﻿// recording/processor.js - turns a finished recording into the files kept on Google Drive, step by step:
 // audio (mix + one track per speaker) -> transcript -> summary -> finish. Each finished step is saved in
 // recordings.outputs, so after a bot restart (or a Gemini quota pause) the job continues where it was.
 const fs = require("fs");
@@ -13,7 +13,7 @@ const panel = require("./panel");
 const transcribe = require("./transcribe");
 const redact = require("./redact");
 const { peaksFromOgg } = require("./peaks");
-const { WORK_DIR, QuotaPause, busyRetryAt, watchStep, folderName, safeName } = require("./util");
+const { WORK_DIR, QuotaPause, busyRetryAt, resetBusyCount, watchStep, folderName, safeName } = require("./util");
 
 let client = null;
 const queue = [];
@@ -361,7 +361,7 @@ async function audioPublish(rec, ctx) {
   let tracksFolder = null;
   if (drive.enabled) {
     folder = await drive.recordingFolder(rec, folderName(rec));
-    await drive.rename(folder, folderName(rec)); // "start → …" becomes "start → end" now that it's over
+    await drive.rename(folder, folderName(rec)); // "start â†’ â€¦" becomes "start â†’ end" now that it's over
     tracksFolder = await drive.ensureFolder(folder, "tracks");
   }
   const entries = Object.entries(tracks).sort((a, b) => (a[1].idx ?? 99) - (b[1].idx ?? 99));
@@ -409,7 +409,7 @@ async function audioPublish(rec, ctx) {
     // Without Drive the only copy is this disk; post the mix in the thread when it's small enough
     out.files.local = { mix: mixFile };
     const thread = await ctx.thread();
-    const posted = thread && (await thread.send({ content: "🎧 Mix (Google Drive isn't connected)", files: [{ attachment: mixFile, name: "mix.ogg" }] }).then(() => true, () => false));
+    const posted = thread && (await thread.send({ content: "ðŸŽ§ Mix (Google Drive isn't connected)", files: [{ attachment: mixFile, name: "mix.ogg" }] }).then(() => true, () => false));
     ctx.progress("audio", "done", `mix + ${count} tracks on the bot's disk only (Drive isn't connected)${posted ? "; mix posted in the thread" : ""}`);
   }
   await ctx.save();
@@ -457,7 +457,7 @@ async function processRecording(id) {
   const ctx = makeCtx(rec);
   let step = "audio";
   try {
-    if (out.progress.audio?.state !== "done") await watchStep(audioBuild(rec, ctx), "audio", { beat: ctx.beat });
+    if (out.progress.audio?.state !== "done") await watchStep(audioBuild(rec, ctx), "audio", { stallMs: 5 * 60000, beat: ctx.beat });
     step = "transcript";
     if (rec.options?.transcribe && out.progress.transcript?.state !== "done") await watchStep(transcribe.transcriptStep(rec, ctx), "transcript", { beat: ctx.beat });
     step = "audio";
@@ -466,12 +466,13 @@ async function processRecording(id) {
     if (rec.options?.summarize && out.progress.summary?.state !== "done") await watchStep(transcribe.summaryStep(rec, ctx), "summary", { beat: ctx.beat });
     step = "finish";
     await watchStep(finishStep(rec, ctx), "finish", { beat: ctx.beat });
+    resetBusyCount(id); // clear backoff counter after a clean run
     rec.status = "done";
   } catch (err) {
     if (stopping) return; // the bot is shutting down: it stays "processing" and continues after the restart
     // Quota/busy pauses, and network or stall trouble inside a step (err.transient): wait and come back
     if (err instanceof QuotaPause || err.transient) {
-      const until = err.until || busyRetryAt();
+      const until = err.until || busyRetryAt(id);
       const at = err.step || step;
       rec.status = "paused";
       rec.resume_after = new Date(until).toISOString();
@@ -484,7 +485,7 @@ async function processRecording(id) {
       if (step !== "finish") out.progress[step] = { state: "failed", detail: String(err.message || err).replace(/\s+/g, " ").slice(0, 150) };
       // The full error, where people will see it (the panel only has room for a short version)
       const thread = await ctx.thread();
-      await thread?.send({ content: `❌ Processing stopped at the **${step}** step:\n\`\`\`\n${String(err.message || err).replace(/```/g, "'''").slice(0, 1700)}\n\`\`\`Press **Retry** on the panel to try again. For more details type \`!reclogs\` in #record.`, allowedMentions: { parse: [] } }).catch(() => { });
+      await thread?.send({ content: `âŒ Processing stopped at the **${step}** step:\n\`\`\`\n${String(err.message || err).replace(/```/g, "'''").slice(0, 1700)}\n\`\`\`Press **Retry** on the panel to try again. For more details type \`!reclogs\` in #record.`, allowedMentions: { parse: [] } }).catch(() => { });
     }
   }
   await store.saveRecording(rec);
