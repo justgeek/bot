@@ -20,6 +20,17 @@ class QuotaPause extends Error {
     super(`Gemini daily quota reached (${step})`);
     this.step = step;
     this.until = until;
+    this.detail = `Gemini's free limit is used up - tries again by itself <t:${Math.floor(until / 1000)}:R>`;
+  }
+}
+
+// Google's side was too busy or unreachable (503, timeout, reset connection): the step waits a few minutes
+// and is tried again by itself, as often as it takes - nothing for anyone to press
+class BusyPause extends QuotaPause {
+  constructor(step, until, why) {
+    super(step, until);
+    this.message = `Gemini was busy or unreachable (${step}): ${String(why || "").slice(0, 200)}`;
+    this.detail = `Gemini is busy or unreachable - tries again by itself <t:${Math.floor(until / 1000)}:R>`;
   }
 }
 
@@ -90,4 +101,9 @@ function quotaRetryAt() {
   return Math.min(Date.now() + 60 * 60000, nextQuotaReset());
 }
 
-module.exports = { WORK_DIR, sleep, UserError, QuotaPause, newId, localStamp, folderName, threadName, safeName, isAdmin, memberName, participants, nextQuotaReset, quotaRetryAt };
+// When a job paused because Google was busy comes back to the step it was on
+function busyRetryAt() {
+  return Date.now() + 10 * 60000;
+}
+
+module.exports = { WORK_DIR, sleep, UserError, QuotaPause, BusyPause, newId, localStamp, folderName, threadName, safeName, isAdmin, memberName, participants, nextQuotaReset, quotaRetryAt, busyRetryAt };

@@ -12,7 +12,7 @@ const store = require("./store");
 const drive = require("./drive");
 const { mentionsPolitics, POLITICS_RULE } = require("./redact");
 const panel = require("./panel");
-const { sleep, QuotaPause, UserError, nextQuotaReset, quotaRetryAt, localStamp, participants } = require("./util");
+const { sleep, QuotaPause, BusyPause, UserError, nextQuotaReset, quotaRetryAt, busyRetryAt, localStamp, participants } = require("./util");
 
 // Same as aiHandler.js: casual voice chat trips the default filters
 const SAFETY = ["HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"].map((category) => ({ category, threshold: "BLOCK_NONE" }));
@@ -199,12 +199,16 @@ async function generate(modelName, parts, opts) {
         continue;
       }
       failures++;
-      if ((status >= 500 || !status) && failures <= 4 * keys.length && !(err instanceof SyntaxError)) {
+      // Google's side is down right now (503, timeout, reset connection): worth coming back to soon
+      const transient = status >= 500 || !status;
+      if (transient && failures <= 4 * keys.length && !(err instanceof SyntaxError)) {
         if (keys.length > 1) keyNo = Math.max(0, nextKey(keyNo));
         // Waits only once every key has had a go
         await sleep(10000 * Math.ceil(failures / keys.length));
         continue;
       }
+      // Still down: the step leaves the job paused and the bot comes back to it by itself
+      if (transient && !(err instanceof SyntaxError)) err.transient = true;
       throw err;
     }
   }
@@ -334,6 +338,7 @@ async function transcriptStep(rec, ctx) {
           result = await transcribeBatch(batch, model, vocab);
           break;
         } catch (err) {
+          if (err.transient) throw new BusyPause("transcript", busyRetryAt(), err.message);
           if (!err.daily) throw err;
           if (fallbackModel() && !onFallback) {
             console.warn(`[Rec] ${model} is out of free quota for today, switching to ${fallbackModel()}`);
@@ -506,6 +511,7 @@ async function summaryStep(rec, ctx) {
   try {
     response = await generate(geminiModelName(), [{ text: `${sessionHeader(rec)}\n\nTranscript:\n${transcriptText(lines)}` }], { schema: SUMMARY_SCHEMA, system: SUMMARY_SYSTEM });
   } catch (err) {
+    if (err.transient) throw new BusyPause("summary", busyRetryAt(), err.message);
     if (err.daily) throw new QuotaPause("summary", quotaRetryAt());
     throw err;
   }

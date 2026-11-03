@@ -460,7 +460,8 @@ async function processRecording(id) {
     if (err instanceof QuotaPause) {
       rec.status = "paused";
       rec.resume_after = new Date(err.until).toISOString();
-      out.progress[err.step] = { state: "paused", detail: `Gemini's free limit is used up - tries again by itself <t:${Math.floor(err.until / 1000)}:R>` };
+      out.progress[err.step] = { state: "paused", detail: err.detail };
+      console.warn(`[Rec] Processing ${id} paused at the ${err.step} step (${err.message}), tries again by itself.`);
     } else {
       console.error(`[Rec] Processing ${id} failed (${step}):`, err);
       rec.status = "failed";
