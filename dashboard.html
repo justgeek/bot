@@ -1597,7 +1597,8 @@
     </div>
     <nav class="nav" id="nav"></nav>
     <div class="sidebar-foot">
-      <button id="sideNoticeBtn" class="nav-item notice-btn w-full" title="Late / absence notice - submit before the start time">
+      <button id="sideNoticeBtn" class="nav-item notice-btn w-full"
+        title="Late / absence notice - submit before the start time">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
           stroke-linejoin="round">
           <circle cx="12" cy="13" r="8" />
@@ -1861,9 +1862,12 @@
                     <th class="r" data-sort="seconds">Voice hours</th>
                     <th class="r text-amber-400" data-sort="speaking_seconds">Talk time (Mic)</th>
                     <th class="r" data-sort="talk_ratio_pct">Talk %</th>
-                    <th class="r text-purple-400" data-sort="streaming_seconds" title="Time spent sharing their screen (Go Live)">Stream time</th>
-                    <th class="r text-sky-400" data-sort="muted_seconds" title="Mic muted but still listening">Muted</th>
-                    <th class="r text-slate-400" data-sort="deafened_seconds" title="Deafened (which also mutes; not counted again under Muted)">Deafened</th>
+                    <th class="r text-purple-400" data-sort="streaming_seconds"
+                      title="Time spent sharing their screen (Go Live)">Stream time</th>
+                    <th class="r text-sky-400" data-sort="muted_seconds" title="Mic muted but still listening">Muted
+                    </th>
+                    <th class="r text-slate-400" data-sort="deafened_seconds"
+                      title="Deafened (which also mutes; not counted again under Muted)">Deafened</th>
                     <th class="r" data-sort="sessions">Sessions</th>
                     <th class="r" data-sort="avg_session_seconds">Avg session</th>
                     <th class="r" data-sort="longest_seconds">Longest</th>
@@ -1898,7 +1902,8 @@
                     <th class="r text-amber-400">Mic Talk Time</th>
                     <th class="r text-purple-400">Stream Time</th>
                     <th class="r text-sky-400" title="Mic muted but still listening">Muted</th>
-                    <th class="r text-slate-400" title="Deafened (which also mutes; not counted again under Muted)">Deafened</th>
+                    <th class="r text-slate-400" title="Deafened (which also mutes; not counted again under Muted)">
+                      Deafened</th>
                   </tr>
                 </thead>
                 <tbody id="sessRows"></tbody>
@@ -1991,7 +1996,7 @@
                   class="field w-full mt-1"></label>
 
               <label id="rTargetTimeWrap" class="hidden block text-sm muted">Target Arrival Time
-                <input id="rTargetTime" type="time" value="21:00" class="field w-full mt-1">
+                <input id="rTargetTime" type="time" value="20:00" class="field w-full mt-1">
               </label>
               <label id="rGraceWrap" class="hidden block text-sm muted">Grace Period (Minutes)
                 <input id="rGrace" type="number" min="0" max="120" value="15" class="field w-full mt-1">
@@ -2178,7 +2183,8 @@
   </div>
 
   <!-- ============ Submitted Notices Modal ============ -->
-  <div id="noticesModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="noticesModalTitle">
+  <div id="noticesModal" class="modal-overlay hidden" role="dialog" aria-modal="true"
+    aria-labelledby="noticesModalTitle">
     <div class="card p-6 w-full max-w-5xl mx-4 space-y-4 shadow-2xl flex flex-col" style="max-height: 90vh;">
       <div class="flex items-center justify-between">
         <h3 id="noticesModalTitle" class="text-lg font-bold hd">📋 Submitted Notices</h3>
@@ -3219,12 +3225,14 @@
       sizeChart("cLeader", lead.length * 1.8, 288); // four bars per member need taller rows
       upsert("cLeader", {
         type: "bar",
-        data: { labels: lead.map((m) => m.name), datasets: [
+        data: {
+          labels: lead.map((m) => m.name), datasets: [
             { label: "In voice", data: lead.map((m) => hrs(m.seconds)), backgroundColor: T.accent, borderRadius: 4 },
             { label: "On the mic", data: lead.map((m) => hrs(m.speaking_seconds || 0)), backgroundColor: "#f59e0b", borderRadius: 4 },
             { label: "Muted", data: lead.map((m) => hrs(m.muted_seconds || 0)), backgroundColor: "#38bdf8", borderRadius: 4 },
             { label: "Deafened", data: lead.map((m) => hrs(m.deafened_seconds || 0)), backgroundColor: "#94a3b8", borderRadius: 4 },
-          ] },
+          ]
+        },
         options: {
           indexAxis: "y",
           interaction: { mode: "index", axis: "y", intersect: false },
