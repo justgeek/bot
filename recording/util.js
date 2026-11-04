@@ -14,6 +14,10 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // A message meant for the person who clicked/typed, not a bug
 class UserError extends Error {}
 
+// The job isn't this copy's anymore (another copy of the bot took it over, or someone finished it): stop
+// quietly, without writing over what that copy saved.
+class JobStopped extends Error {}
+
 // Gemini's free daily quota is used up: the job waits until `until` (ms) and continues by itself
 class QuotaPause extends Error {
   constructor(step, until, detail) {
@@ -135,4 +139,4 @@ function watchStep(promise, step, { stallMs = 20 * 60000, everyMs = 30000, beat 
   });
 }
 
-module.exports = { WORK_DIR, sleep, UserError, QuotaPause, BusyPause, watchStep, resetBusyCount, newId, localStamp, folderName, threadName, safeName, isAdmin, memberName, participants, nextQuotaReset, quotaRetryAt, busyRetryAt };
+module.exports = { WORK_DIR, sleep, UserError, JobStopped, QuotaPause, BusyPause, watchStep, resetBusyCount, newId, localStamp, folderName, threadName, safeName, isAdmin, memberName, participants, nextQuotaReset, quotaRetryAt, busyRetryAt };

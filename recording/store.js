@@ -112,6 +112,98 @@ async function deleteChunks(recordingId) {
   await run("deleteChunks", () => supabase.from("recording_chunks").delete().eq("recording_id", recordingId));
 }
 
+// ---------- Who is processing a recording ----------
+// The bot runs on Heroku and, sometimes, a copy of the processor runs on a PC (worker.js). Both see the same
+// rows, so one recording is only worked on by the copy holding its claim. The claim is renewed while it works
+// and is free again once it expires (a restarted dyno, a closed laptop, a killed process), so the other copy
+// picks the job up where it stopped. Without the columns (an older schema.sql) there is nothing to coordinate
+// with, and each copy works on its own.
+let hasClaimCols = true;
+function claimColsMissing(error) {
+  if (!hasClaimCols || !error || !["42703", "PGRST204"].includes(error.code)) return false;
+  if (!/claimed_by|claim_expires_at|claim_step/.test(String(error.message || ""))) return false;
+  hasClaimCols = false;
+  console.warn("[Rec] recordings.claimed_by is missing - run schema.sql, or two copies of the bot can process the same recording.");
+  return true;
+}
+
+// Takes the job if nobody (or nobody still alive) has it. true when this copy may work on it.
+async function claimRecording(id, worker, ttlMs, { force = false } = {}) {
+  if (!supabase || !hasClaimCols) return true;
+  const now = new Date();
+  const until = new Date(now.getTime() + ttlMs).toISOString();
+  try {
+    let q = supabase.from("recordings").update({ claimed_by: worker, claim_expires_at: until }).eq("id", id);
+    // Someone else's claim counts only while it's still being renewed
+    if (!force) q = q.or(`claim_expires_at.is.null,claim_expires_at.lt.${now.toISOString()}`);
+    const { data, error } = await q.select("id");
+    if (error) {
+      if (claimColsMissing(error)) return true;
+      console.error("[Rec] Claiming the recording failed:", error.message || error);
+      return false;
+    }
+    return (data || []).length > 0;
+  } catch (err) {
+    console.error("[Rec] Claiming the recording failed:", err.message || err);
+    return false;
+  }
+}
+
+// Still ours? Renewing is also the heartbeat that keeps the other copy off the job. True when there's no
+// database (or it blips: a lost connection must never throw away work in progress).
+async function renewClaim(id, worker, ttlMs, step = null) {
+  if (!supabase || !hasClaimCols) return true;
+  const until = new Date(Date.now() + ttlMs).toISOString();
+  try {
+    const { data, error } = await supabase
+      .from("recordings")
+      .update({ claim_expires_at: until, ...(step ? { claim_step: step } : {}) })
+      .eq("id", id)
+      .eq("claimed_by", worker)
+      .select("id");
+    if (error) {
+      if (claimColsMissing(error)) return true;
+      console.warn("[Rec] Renewing the claim failed (carrying on):", error.message || error);
+      return true;
+    }
+    return (data || []).length > 0;
+  } catch (err) {
+    console.warn("[Rec] Renewing the claim failed (carrying on):", err.message || err);
+    return true;
+  }
+}
+
+async function releaseClaim(id, worker) {
+  if (!supabase || !hasClaimCols) return;
+  await run("releaseClaim", () =>
+    supabase.from("recordings").update({ claimed_by: null, claim_expires_at: null, claim_step: null }).eq("id", id).eq("claimed_by", worker)
+  );
+}
+
+// ---------- Which processors are around ----------
+// A worker on a PC writes a heartbeat here; the bot on Heroku reads it to give that worker first go at a job.
+async function setProcessorBeat(value) {
+  memorySettings.set("processor", value);
+  if (!supabase) return;
+  try {
+    const { error } = await supabase.from("bot_settings").upsert({ key: "processor", value, updated_at: new Date().toISOString() });
+    if (error && !missingTable(error)) console.error("[Rec] setProcessorBeat failed:", error.message || error);
+  } catch (err) {
+    console.error("[Rec] setProcessorBeat failed:", err.message || err);
+  }
+}
+
+// Straight from the database: what matters is another machine's write, not this process's memory
+async function getProcessorBeat() {
+  const row = await run("getProcessorBeat", () => supabase.from("bot_settings").select("value").eq("key", "processor").maybeSingle());
+  return row?.value || null;
+}
+
+// A recording is going on (or a suspended one may still resume): the worker leaves processing for later
+async function liveRecordingExists() {
+  return (await findRecordings(["recording", "suspended"])).length > 0;
+}
+
 // ---------- Settings ----------
 async function getSetting(key, fallback) {
   const row = await run("getSetting", () => supabase.from("bot_settings").select("value").eq("key", key).maybeSingle());
@@ -170,6 +262,12 @@ module.exports = {
   saveChunk,
   getChunks,
   deleteChunks,
+  claimRecording,
+  renewClaim,
+  releaseClaim,
+  setProcessorBeat,
+  getProcessorBeat,
+  liveRecordingExists,
   getSetting,
   setSetting,
   replaceLines,

@@ -1,8 +1,8 @@
-// recording/ffmpeg.js - runs the bundled ffmpeg (ffmpeg-static) at low priority, so mixing a long recording
-// never starves the bot's own voice connection.
+// recording/ffmpeg.js - runs ffmpeg (ffmpeg-static, or FFMPEG_PATH when set) at low priority, so mixing a
+// long recording never starves the bot's own voice connection.
 const { spawn } = require("child_process");
 const os = require("os");
-const ffmpegPath = require("ffmpeg-static");
+const ffmpegPath = process.env.FFMPEG_PATH || require("ffmpeg-static");
 
 const running = new Set();
 // ffmpeg can sit on a corrupt input for ever without saying anything: killed after this much silence

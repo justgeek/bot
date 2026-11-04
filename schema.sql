@@ -139,6 +139,13 @@ create table if not exists recordings (
 create index if not exists recordings_status_idx  on recordings (status);
 create index if not exists recordings_started_idx on recordings (started_at desc);
 
+-- Which copy of the bot is processing a recording (Heroku, or a PC running `npm run worker`). The claim is
+-- renewed while it works, so only that copy writes; once it expires (a restarted dyno, a closed laptop) the
+-- other copy picks the job up where it stopped.
+alter table recordings add column if not exists claimed_by       text;
+alter table recordings add column if not exists claim_expires_at timestamptz;
+alter table recordings add column if not exists claim_step       text;
+
 -- Raw audio pieces (one per speaker per 5 minutes) uploaded to Drive while recording; removed once processed
 create table if not exists recording_chunks (
   recording_id  text    not null references recordings (id) on delete cascade,
