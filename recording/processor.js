@@ -144,11 +144,22 @@ async function recordChannel() {
   return client?.channels.fetch(IDs.channelRecord).catch(() => null);
 }
 
+// A bot can only edit messages it posted itself, so a copy of the bot started with a different token can't
+// touch a panel another bot posted: worth saying once, not on every progress tick.
+const panelNotOurs = new Set();
 async function updatePanel(rec) {
   if (!rec.panel_message_id) return;
   const channel = await recordChannel();
   const msg = await channel?.messages.fetch(rec.panel_message_id).catch(() => null);
-  await msg?.edit(panel.endedPanel(rec)).catch((err) => console.warn("[Rec] Panel update failed:", err.message));
+  await msg?.edit(panel.endedPanel(rec)).catch((err) => {
+    if (/authored by another user/i.test(err.message || "")) {
+      if (panelNotOurs.has(rec.id)) return;
+      panelNotOurs.add(rec.id);
+      console.warn(`[Rec] ${rec.id}: its panel was posted by a different bot, so this one can't update it. Every copy of the bot needs the same BOT_TOKEN.`);
+      return;
+    }
+    console.warn("[Rec] Panel update failed:", err.message);
+  });
 }
 
 function makeCtx(rec, state = {}) {
