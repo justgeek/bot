@@ -169,7 +169,9 @@ const REQUEST_TIMEOUT_MS = 4 * 60000;
 // minutes) instead of keeping the recording waiting on Google
 const TRY_BUDGET_MS = 3 * 60000;
 
-// Retries rate limits and Google's hiccups, across keys and models; err.daily = every model's day is used up.
+// Retries rate limits and Google's hiccups in the order the keys were meant to be used: the primary model
+// with every key, then the first fallback model with every key, then the next one, and so on. The keys are
+// in separate Google Cloud projects, so each one has its own quota. err.daily = every model's day is used up.
 async function generate(modelName, parts, opts) {
   const keys = apiKeys();
   if (!keys.length) throw new Error(NO_KEY);
@@ -177,44 +179,87 @@ async function generate(modelName, parts, opts) {
   // Keyed by the key itself, not its position: `i` is an index into `keys`
   const spent = (model, i) => (spentUntil.get(`${model}|${keys[i]}`) || 0) > Date.now();
   const coolUntil = (model, i) => spentUntil.get(`${model}|${keys[i]}`) || 0;
-  // The next key/model after `from` that still has room (from itself last), or -1
-  const nextKey = (model, from) => {
-    for (let i = 1; i <= keys.length; i++) if (!spent(model, (from + i) % keys.length)) return (from + i) % keys.length;
+  const outForDay = (model) => spentUntil.has(`${model}|ALL`);
+
+  const allDaily = () => {
+    const err = new Error(`Gemini's free daily quota is used up on ${models.join(", ")}`);
+    err.daily = true;
+    return err;
+  };
+  if (models.every(outForDay)) throw allDaily();
+
+  keyNo %= keys.length;
+  const tried = new Set(); // "model|key index" already asked in this call, so nothing is asked twice
+  const done = new Set(); // models whose every key was asked in this call
+  // The next key on this model that wasn't asked yet and isn't resting (from keyNo around), else -1
+  const freshKey = (model) => {
+    for (let i = 0; i < keys.length; i++) {
+      const at = (keyNo + i) % keys.length;
+      if (!tried.has(`${model}|${at}`) && !spent(model, at)) return at;
+    }
     return -1;
   };
+  // The soonest a key on this model comes off a short (per-minute) rest, else 0 when none is waiting
+  const restingUntil = (model) => {
+    let soonest = 0;
+    for (let i = 0; i < keys.length; i++) {
+      if (tried.has(`${model}|${i}`) || !spent(model, i)) continue;
+      const at = coolUntil(model, i);
+      if (!soonest || at < soonest) soonest = at;
+    }
+    return soonest && soonest - Date.now() <= 5 * 60000 ? soonest : 0;
+  };
+  // The next model in the chain that still has a day left and keys to ask in this call, else -1
   const nextModel = (from) => {
     for (let i = 1; i <= models.length; i++) {
       const at = (from + i) % models.length;
-      if (!spentUntil.has(`${models[at]}|ALL`)) return at;
+      if (!outForDay(models[at]) && !done.has(models[at])) return at;
     }
     return -1;
   };
 
-  let mi = Math.max(0, models.findIndex((m) => !spentUntil.has(`${m}|ALL`)));
-  let failures = 0; // transient failures in a row (503, timeout, reset connection)
-  let modelFails = 0; // how many of those were on the model in use
   const started = Date.now();
-  keyNo %= keys.length;
+  // Waiting for per-minute limits is bounded; a request that hangs is bounded by its own timeout above
+  const budget = Math.max(TRY_BUDGET_MS, 2 * (REQUEST_TIMEOUT_MS + 30000));
+  let mi = Math.max(0, models.findIndex((m) => !outForDay(m)));
+  let slow = 0; // requests that hung until their timeout: Google holding them, not a key's minute
+  let reqNo = 0; // attempts that actually asked Google (switching model isn't one)
 
   for (let attempt = 1; ; attempt++) {
     const model = models[mi];
-    const key = spent(model, keyNo) ? nextKey(model, keyNo) : keyNo;
+    const key = freshKey(model);
     if (key < 0) {
-      // Every key is rate limited on this model: wait for the soonest one to be back (a per-minute limit)
-      if (Date.now() - started > TRY_BUDGET_MS) {
-        const err = new Error(`Gemini is rate limiting every key for ${model}`);
+      const rest = restingUntil(model);
+      if (rest) {
+        // Every key on this model is resting for a minute: wait for the soonest one
+        if (Date.now() - started > budget) {
+          const err = new Error(`Gemini is rate limiting every key for ${model}`);
+          err.transient = true;
+          throw err;
+        }
+        await sleep(Math.max(1000, Math.min(60000, rest - Date.now() + 250)));
+        continue;
+      }
+      // Every key of this model was asked (or is out for the day): on to the next model in the chain
+      done.add(model);
+      const other = nextModel(mi);
+      if (other < 0) {
+        if (models.every(outForDay)) throw allDaily();
+        const err = new Error(`Gemini didn't answer with any key or model (${models.join(", ")})`);
         err.transient = true;
         throw err;
       }
-      const wait = Math.min(...keys.map((_, i) => coolUntil(model, i))) - Date.now();
-      await sleep(Math.max(1000, Math.min(60000, wait + 250)));
+      console.warn(`[Rec] Nothing left to try on ${model}, moving on to ${models[other]}`);
+      mi = other;
+      keyNo = 0; // a new model starts with the first key, not the one the last model happened to be on
       continue;
     }
     keyNo = key;
-    const label = keys.length > 1 ? `, key ${keyNo + 1}/${keys.length}` : "";
+    tried.add(`${model}|${key}`);
+    const label = keys.length > 1 ? `, key ${key + 1}/${keys.length}` : "";
     try {
       // Streamed, so the answer starts arriving right away, and dropped after a few minutes when it doesn't
-      const result = await geminiModel(keys[keyNo], model, opts).generateContentStream(
+      const result = await geminiModel(keys[key], model, opts).generateContentStream(
         { contents: [{ role: "user", parts }] },
         { timeout: REQUEST_TIMEOUT_MS }
       );
@@ -223,54 +268,38 @@ async function generate(modelName, parts, opts) {
       // "fetch failed" hides the real reason (timeout, connection reset...) in err.cause
       const cause = err.cause?.code || err.cause?.message;
       if (cause && !String(err.message).includes(cause)) err.message += ` (${cause})`;
-      console.warn(`[Rec] Gemini request failed (attempt ${attempt}${label}, ${model}): ${String(err.message).slice(0, 300)}`);
+      console.warn(`[Rec] Gemini request failed (attempt ${++reqNo}${label}, ${model}): ${String(err.message).slice(0, 300)}`);
       const status = Number(err.status) || 0;
 
       if (status === 429) {
         const daily = isDailyQuota(err);
-        // A per-minute limit is per key: only that key cools down. A used-up day is per project, so every
-        // key of this model is in the same boat and another model is the way forward.
-        spentUntil.set(`${model}|${keys[keyNo]}`, Date.now() + (daily ? 50 * 60000 : Math.max(5000, retryDelayMs(err))));
-        const next = nextKey(model, keyNo);
-        if (next >= 0) {
-          console.warn(`[Rec] Gemini key ${keyNo + 1} ${daily ? "is out of quota" : "is rate limited"} for ${model}, switching to key ${next + 1}`);
-          continue; // the top of the loop moves to that key
+        // A per-minute limit is only that key's, and a used-up day is only that key's project's too
+        spentUntil.set(`${model}|${keys[key]}`, Date.now() + (daily ? 50 * 60000 : Math.max(5000, retryDelayMs(err))));
+        console.warn(`[Rec] Gemini key ${key + 1}/${keys.length} on ${model} ${daily ? "is out of quota for today" : "is rate limited for a minute"}`);
+        if (daily && keys.every((_, i) => spent(model, i))) {
+          spentUntil.set(`${model}|ALL`, Date.now() + 50 * 60000);
+          console.warn(`[Rec] ${model} has no free quota left today on any key`);
         }
-        if (!daily) continue; // every key limited for a minute: the top of the loop waits for the soonest
-        spentUntil.set(`${model}|ALL`, Date.now() + 50 * 60000);
-        const other = nextModel(mi);
-        if (other < 0) {
-          err.daily = true;
-          throw err;
-        }
-        console.warn(`[Rec] ${model} has no free quota left today, switching to ${models[other]}`);
-        mi = other;
-        modelFails = 0;
-        continue;
+        continue; // the top of the loop takes the next key on this model
       }
 
       // A 503, a timeout or a reset connection: Google's side is having a bad moment, not our quota
       if (status >= 500 || !status) {
-        failures++;
-        modelFails++;
-        // One model being in high demand says nothing about the others: move on after a second try
-        const other = models.length > 1 && modelFails >= 2 ? nextModel(mi) : -1;
-        if (other >= 0) {
-          console.warn(`[Rec] ${model} is having trouble (${status || "no reply"}), trying ${models[other]}`);
-          mi = other;
-          modelFails = 0;
-          continue;
+        // A request that sat there until it was aborted is usually that key's minute being used up (Google
+        // holds the request instead of answering 429): rest that key and ask the next one
+        if (!status) {
+          slow++;
+          spentUntil.set(`${model}|${keys[key]}`, Date.now() + 90 * 1000);
         }
-        // Still nothing: the step leaves the job paused and the bot comes back to it by itself
-        if (Date.now() - started > TRY_BUDGET_MS) {
+        // Two hangs in a row mean Google is holding the requests, not one key: pause instead of burning the
+        // other keys on 4-minute timeouts too. The next try starts after the key that hung last
+        if (slow >= 2 || Date.now() - started > budget) {
+          keyNo = (key + 1) % keys.length;
           err.transient = true;
           throw err;
         }
-        const next = nextKey(model, keyNo);
-        if (next >= 0) keyNo = next;
-        // Short waits while it's only a hiccup, longer once it's clearly not our turn yet
-        await sleep(Math.min(15000, 2000 * failures));
-        continue;
+        await sleep(2000);
+        continue; // the next key on this model
       }
 
       // A model name that doesn't exist (a typo in RECORDING_GEMINI_FALLBACK_MODEL) is worth stepping over,
@@ -281,9 +310,10 @@ async function generate(modelName, parts, opts) {
         if (other >= 0) {
           console.warn(`[Rec] Gemini has no model called ${model}, switching to ${models[other]}`);
           mi = other;
-          modelFails = 0;
           continue;
         }
+        err.daily = true; // nothing else to ask: the step tries the other names it knows
+        throw err;
       }
 
       throw err; // the API answered: a bad request, a blocked reply or a bad key won't fix itself by retrying

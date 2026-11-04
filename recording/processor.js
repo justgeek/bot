@@ -127,7 +127,9 @@ async function startLocalWorker(c, { takeOver: take = false } = {}) {
       console.warn("[Rec] Looking for a recording to process failed:", err.message || err);
     }
   };
-  setInterval(scan, (cfg.workerPollSeconds || 30) * 1000).unref();
+  // Not unref'd: when there's no job running this timer is the only thing keeping the process alive
+  // (the heartbeat is unref'd, and an idle worker used to just exit after "Nothing to process right now")
+  setInterval(scan, (cfg.workerPollSeconds || 30) * 1000);
   await scan();
 }
 
