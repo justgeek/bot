@@ -218,41 +218,46 @@ async function generate(modelName, parts, opts) {
     return -1;
   };
 
-  const started = Date.now();
-  // Waiting for per-minute limits is bounded; a request that hangs is bounded by its own timeout above
+  // Waiting for per-minute limits is bounded; a request that hangs is bounded by its own timeout above.
+  // This budget belongs to one model's turn: a busy model must never eat the time the next model needs.
   const budget = Math.max(TRY_BUDGET_MS, 2 * (REQUEST_TIMEOUT_MS + 30000));
   let mi = Math.max(0, models.findIndex((m) => !outForDay(m)));
   let slow = 0; // requests that hung until their timeout: Google holding them, not a key's minute
   let reqNo = 0; // attempts that actually asked Google (switching model isn't one)
+  let modelStarted = Date.now(); // when this model's turn began
 
-  for (let attempt = 1; ; attempt++) {
+  // Give up on this model for this call and hand over to the next one in the chain. Returns -1 when none is
+  // left, which is the only case where the job pauses: a model being busy is never a reason to stop
+  const advance = (why) => {
+    done.add(models[mi]);
+    const other = nextModel(mi);
+    if (other < 0) return -1;
+    console.warn(`[Rec] ${why}, trying ${models[other]} instead`);
+    mi = other;
+    keyNo = 0; // a new model starts with the first key, not the one the last model happened to be on
+    slow = 0;
+    modelStarted = Date.now();
+    return other;
+  };
+
+  for (;;) {
     const model = models[mi];
     const key = freshKey(model);
     if (key < 0) {
       const rest = restingUntil(model);
       if (rest) {
-        // Every key on this model is resting for a minute: wait for the soonest one
-        if (Date.now() - started > budget) {
-          const err = new Error(`Gemini is rate limiting every key for ${model}`);
-          err.transient = true;
-          throw err;
-        }
+        // Every key on this model is resting for a minute: wait for the soonest one, unless this model has had
+        // its turn already and another one can be asked right now
+        if (Date.now() - modelStarted > budget && advance(`${model} is rate limiting every key`) >= 0) continue;
         await sleep(Math.max(1000, Math.min(60000, rest - Date.now() + 250)));
         continue;
       }
       // Every key of this model was asked (or is out for the day): on to the next model in the chain
-      done.add(model);
-      const other = nextModel(mi);
-      if (other < 0) {
-        if (models.every(outForDay)) throw allDaily();
-        const err = new Error(`Gemini didn't answer with any key or model (${models.join(", ")})`);
-        err.transient = true;
-        throw err;
-      }
-      console.warn(`[Rec] Nothing left to try on ${model}, moving on to ${models[other]}`);
-      mi = other;
-      keyNo = 0; // a new model starts with the first key, not the one the last model happened to be on
-      continue;
+      if (advance(`Nothing left to try on ${model}`) >= 0) continue;
+      if (models.every(outForDay)) throw allDaily();
+      const err = new Error(`Gemini didn't answer with any key or model (${models.join(", ")})`);
+      err.transient = true;
+      throw err;
     }
     keyNo = key;
     tried.add(`${model}|${key}`);
@@ -291,10 +296,13 @@ async function generate(modelName, parts, opts) {
           slow++;
           spentUntil.set(`${model}|${keys[key]}`, Date.now() + 90 * 1000);
         }
-        // Two hangs in a row mean Google is holding the requests, not one key: pause instead of burning the
-        // other keys on 4-minute timeouts too. The next try starts after the key that hung last
-        if (slow >= 2 || Date.now() - started > budget) {
-          keyNo = (key + 1) % keys.length;
+        // Two hangs in a row mean Google is holding the requests, not one key, and a model past its budget is
+        // just busy: hand over to the next model before the remaining keys are burned on 4-minute timeouts.
+        // Only when every model has had its turn does the job pause and come back by itself
+        if (slow >= 2 || Date.now() - modelStarted > budget) {
+          const why = slow >= 2 ? "isn't answering (timeouts)" : `used up ${Math.round((Date.now() - modelStarted) / 60000)} min without an answer`;
+          if (advance(`${model} ${why}`) >= 0) continue;
+          keyNo = (key + 1) % keys.length; // the next run starts after the key that failed last
           err.transient = true;
           throw err;
         }
@@ -306,12 +314,7 @@ async function generate(modelName, parts, opts) {
       // not failing the whole recording for
       if ((status === 404 || status === 400) && /model/i.test(err.message || "") && /not found|does not exist|not supported|unsupported/i.test(err.message || "")) {
         spentUntil.set(`${model}|ALL`, Date.now() + 50 * 60000);
-        const other = nextModel(mi);
-        if (other >= 0) {
-          console.warn(`[Rec] Gemini has no model called ${model}, switching to ${models[other]}`);
-          mi = other;
-          continue;
-        }
+        if (advance(`Gemini has no model called ${model}`) >= 0) continue;
         err.daily = true; // nothing else to ask: the step tries the other names it knows
         throw err;
       }
