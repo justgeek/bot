@@ -150,6 +150,11 @@ let keyNo = 0;
 // "model|key" -> when to try that key again after it ran out of daily quota (under an hour, so the
 // hourly quota retry asks it again)
 const spentUntil = new Map();
+// "model" -> when to try it again after it answered 503 or held every request until the timeout. A 503 is
+// the model being busy for all keys alike, so the batches right after it go straight to the other model.
+const modelRest = new Map();
+// Out of free quota for the day on every key (the mark lasts under an hour, so the hourly retry asks again)
+const daySpent = (model) => (spentUntil.get(`${model}|ALL`) || 0) > Date.now();
 
 const isDailyQuota = (err) => /PerDay|per day|daily/i.test(JSON.stringify(err.errorDetails || []) + " " + (err.message || ""));
 function retryDelayMs(err) {
@@ -165,9 +170,13 @@ const modelChain = (modelName) => [...new Set([modelName, ...fallbackModels()])]
 // in a minute or two, and Node's own give-up is 5 minutes of silence (the "fetch failed" after a long hang).
 // Kept under that, but above a slow-but-healthy answer so a real one is never thrown away.
 const REQUEST_TIMEOUT_MS = 4 * 60000;
-// After this long without an answer the step leaves the job paused (it comes back by itself in a few
-// minutes) instead of keeping the recording waiting on Google
-const TRY_BUDGET_MS = 3 * 60000;
+// How long one model gets to answer before the next one takes over: long enough for a slow reply, short
+// enough that a model Google is 503-ing on doesn't hold the recording. Nothing else here is waited for -
+// only quota (429) earns a wait, and that's handled where it happens
+const MODEL_BUDGET_MS = 90 * 1000;
+// How long a model that answered 503 is passed over: the batches right after it ask the other model at once
+// instead of each paying for one doomed request first
+const MODEL_REST_MS = 3 * 60000;
 
 // Retries rate limits and Google's hiccups in the order the keys were meant to be used: the primary model
 // with every key, then the first fallback model with every key, then the next one, and so on. The keys are
@@ -179,14 +188,15 @@ async function generate(modelName, parts, opts) {
   // Keyed by the key itself, not its position: `i` is an index into `keys`
   const spent = (model, i) => (spentUntil.get(`${model}|${keys[i]}`) || 0) > Date.now();
   const coolUntil = (model, i) => spentUntil.get(`${model}|${keys[i]}`) || 0;
-  const outForDay = (model) => spentUntil.has(`${model}|ALL`);
+  // A model that just answered 503 isn't asked again for a few minutes, not even for its first key
+  const resting = (model) => (modelRest.get(model) || 0) > Date.now();
 
   const allDaily = () => {
     const err = new Error(`Gemini's free daily quota is used up on ${models.join(", ")}`);
     err.daily = true;
     return err;
   };
-  if (models.every(outForDay)) throw allDaily();
+  if (models.every(daySpent)) throw allDaily();
 
   keyNo %= keys.length;
   const tried = new Set(); // "model|key index" already asked in this call, so nothing is asked twice
@@ -213,15 +223,13 @@ async function generate(modelName, parts, opts) {
   const nextModel = (from) => {
     for (let i = 1; i <= models.length; i++) {
       const at = (from + i) % models.length;
-      if (!outForDay(models[at]) && !done.has(models[at])) return at;
+      if (!daySpent(models[at]) && !resting(models[at]) && !done.has(models[at])) return at;
     }
     return -1;
   };
 
-  // Waiting for per-minute limits is bounded; a request that hangs is bounded by its own timeout above.
-  // This budget belongs to one model's turn: a busy model must never eat the time the next model needs.
-  const budget = Math.max(TRY_BUDGET_MS, 2 * (REQUEST_TIMEOUT_MS + 30000));
-  let mi = Math.max(0, models.findIndex((m) => !outForDay(m)));
+  // Start with a model that's free right now: one that just answered 503 is passed over for a few minutes
+  let mi = Math.max(0, models.findIndex((m) => !daySpent(m) && !resting(m)));
   let slow = 0; // requests that hung until their timeout: Google holding them, not a key's minute
   let reqNo = 0; // attempts that actually asked Google (switching model isn't one)
   let modelStarted = Date.now(); // when this model's turn began
@@ -248,13 +256,13 @@ async function generate(modelName, parts, opts) {
       if (rest) {
         // Every key on this model is resting for a minute: wait for the soonest one, unless this model has had
         // its turn already and another one can be asked right now
-        if (Date.now() - modelStarted > budget && advance(`${model} is rate limiting every key`) >= 0) continue;
+        if (Date.now() - modelStarted > MODEL_BUDGET_MS && advance(`${model} is rate limiting every key`) >= 0) continue;
         await sleep(Math.max(1000, Math.min(60000, rest - Date.now() + 250)));
         continue;
       }
       // Every key of this model was asked (or is out for the day): on to the next model in the chain
       if (advance(`Nothing left to try on ${model}`) >= 0) continue;
-      if (models.every(outForDay)) throw allDaily();
+      if (models.every(daySpent)) throw allDaily();
       const err = new Error(`Gemini didn't answer with any key or model (${models.join(", ")})`);
       err.transient = true;
       throw err;
@@ -288,26 +296,26 @@ async function generate(modelName, parts, opts) {
         continue; // the top of the loop takes the next key on this model
       }
 
-      // A 503, a timeout or a reset connection: Google's side is having a bad moment, not our quota
+      // A 503, a timeout or a reset connection: Google's side is having a bad moment, not our quota. None of
+      // this is worth waiting for. A 503 is the model being busy for every key alike, so the next model gets
+      // the very next request; a hang is usually just that key's minute, so another key goes first
       if (status >= 500 || !status) {
-        // A request that sat there until it was aborted is usually that key's minute being used up (Google
-        // holds the request instead of answering 429): rest that key and ask the next one
         if (!status) {
           slow++;
           spentUntil.set(`${model}|${keys[key]}`, Date.now() + 90 * 1000);
         }
-        // Two hangs in a row mean Google is holding the requests, not one key, and a model past its budget is
-        // just busy: hand over to the next model before the remaining keys are burned on 4-minute timeouts.
-        // Only when every model has had its turn does the job pause and come back by itself
-        if (slow >= 2 || Date.now() - modelStarted > budget) {
-          const why = slow >= 2 ? "isn't answering (timeouts)" : `used up ${Math.round((Date.now() - modelStarted) / 60000)} min without an answer`;
-          if (advance(`${model} ${why}`) >= 0) continue;
+        if ((status || slow >= 2) && advance(`${model} ${status ? `is unavailable (${status})` : "isn't answering"}`) >= 0) {
+          modelRest.set(model, Date.now() + MODEL_REST_MS); // later batches skip it entirely for a while
+          continue;
+        }
+        // Every model has had its turn in this call: this model's remaining keys still get a quick pass, and
+        // once its time is up the step pauses instead of hammering Google for minutes
+        if (Date.now() - modelStarted > MODEL_BUDGET_MS) {
           keyNo = (key + 1) % keys.length; // the next run starts after the key that failed last
           err.transient = true;
           throw err;
         }
-        await sleep(2000);
-        continue; // the next key on this model
+        continue; // the next key on this model, right away
       }
 
       // A model name that doesn't exist (a typo in RECORDING_GEMINI_FALLBACK_MODEL) is worth stepping over,
@@ -451,7 +459,7 @@ async function transcriptStep(rec, ctx) {
           if (err.transient) throw new BusyPause("transcript", busyRetryAt(rec.id), err.message);
           if (!err.daily) throw err;
           const fallbacks = fallbackModels();
-          const nextFallback = fallbacks.find((m) => m !== model && !spentUntil.has(`${m}|ALL`));
+          const nextFallback = fallbacks.find((m) => m !== model && !daySpent(m));
           if (nextFallback) {
             console.warn(`[Rec] ${model} is out of free quota for today, switching to ${nextFallback}`);
             spentUntil.set(`${model}|ALL`, Date.now() + 50 * 60000); // remember this model is spent
@@ -622,7 +630,7 @@ async function summaryStep(rec, ctx) {
   let response;
   {
     const allModels = [geminiModelName(), ...fallbackModels()];
-    let summaryModel = allModels.find((m) => !spentUntil.has(`${m}|ALL`)) || allModels[0];
+    let summaryModel = allModels.find((m) => !daySpent(m)) || allModels[0];
     for (;;) {
       try {
         response = await generate(summaryModel, [{ text: `${sessionHeader(rec)}\n\nTranscript:\n${transcriptText(lines)}` }], { schema: SUMMARY_SCHEMA, system: SUMMARY_SYSTEM });
@@ -631,7 +639,7 @@ async function summaryStep(rec, ctx) {
         if (err.transient) throw new BusyPause("summary", busyRetryAt(rec.id), err.message);
         if (!err.daily) throw err;
         spentUntil.set(`${summaryModel}|ALL`, Date.now() + 50 * 60000);
-        const next = allModels.find((m) => !spentUntil.has(`${m}|ALL`));
+        const next = allModels.find((m) => !daySpent(m));
         if (next) { console.warn(`[Rec] ${summaryModel} is out of free quota for today, switching to ${next} for summary`); summaryModel = next; continue; }
         throw new QuotaPause("summary", quotaRetryAt());
       }
