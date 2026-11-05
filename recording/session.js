@@ -15,6 +15,14 @@ const clip = require("./clip");
 const { LiveTranscriber } = require("./live");
 const { WORK_DIR, sleep, UserError, folderName, threadName, memberName, participants } = require("./util");
 
+// 18:00-06:00 Cairo: a night is one recording. When the channel empties for a while, or one person stays alone
+// waiting for the others, the recording keeps going instead of ending and starting a second one later.
+const cairoHour = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", hour: "2-digit", hourCycle: "h23" });
+const atNight = () => {
+  const h = Number(cairoHour.format(new Date()));
+  return h >= 18 || h < 6;
+};
+
 // The voice library hands over only each packet's Opus payload. This wraps its packet parser (an internal
 // of @discordjs/voice 0.19.2, which package.json pins) to also attach the RTP timestamp from the header,
 // so packets can be placed exactly (see track.js). Without it, tracks fall back to arrival times.
@@ -255,11 +263,11 @@ class RecordingSession {
       this.emptySince = null;
       if (this.aloneSince === null) this.aloneSince = Date.now();
       const aloneLimit = (cfg.aloneStopSeconds !== undefined ? cfg.aloneStopSeconds : 900) * 1000;
-      if (aloneLimit > 0 && Date.now() - this.aloneSince >= aloneLimit) return void this.stop("alone");
+      if (aloneLimit > 0 && !atNight() && Date.now() - this.aloneSince >= aloneLimit) return void this.stop("alone");
     } else {
       this.aloneSince = null;
       if (this.emptySince === null) this.emptySince = Date.now();
-      if (Date.now() - this.emptySince >= (cfg.emptyStopSeconds || 0) * 1000) return void this.stop("empty");
+      if (!atNight() && Date.now() - this.emptySince >= (cfg.emptyStopSeconds || 0) * 1000) return void this.stop("empty");
     }
     if (now >= cfg.maxHours * 3600e3) return void this.stop("max");
 

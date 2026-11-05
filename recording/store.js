@@ -199,7 +199,7 @@ async function getProcessorBeat() {
   return row?.value || null;
 }
 
-// A recording is going on (or a suspended one may still resume): the worker leaves processing for later
+// A recording is going on right now (or a suspended one may still resume)
 async function liveRecordingExists() {
   return (await findRecordings(["recording", "suspended"])).length > 0;
 }

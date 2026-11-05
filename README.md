@@ -13,10 +13,10 @@ never repeated. If one copy dies (Heroku restarts, you close the laptop), its cl
 the other copy carries on from the last finished step. A copy that loses the job mid-step stops within ~30 s and
 writes nothing over the winner's work.
 
-**Nothing runs while a recording is going on.** The worker only looks for work while no recording is live, so
-while the bot is in a voice channel the PC stays idle (override with `PROCESS_WHILE_RECORDING=1`). Heroku's bot
-still picks jobs up itself if the PC isn't around; while a worker heartbeat is fresh, Heroku waits ~2 minutes
-first, so the PC normally gets there first.
+**Finished recordings are processed even while a new one is being recorded** - they're different files, so
+there's nothing to protect. The worker on the PC has priority: while its heartbeat is fresh, Heroku's bot waits
+(up to 10 minutes per job) for it to take the job, and only starts it itself if the PC isn't around. Whichever
+copy claims a recording first is the one that does it, so the other never repeats the work.
 
 ### Setup (once)
 

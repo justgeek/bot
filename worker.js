@@ -2,8 +2,8 @@
 //
 // It shares the recordings database with the bot on Heroku: only one of them works on a recording at a
 // time (a claim in the database, renewed while it works), so whichever finishes a step first is the one
-// that counts and the other stops as soon as it notices. It only starts while the bot isn't in a voice
-// channel, so a recording in progress is never touched. No gateway connection: it never appears online
+// that counts and the other stops as soon as it notices. Finished recordings are processed even while a
+// new one is being recorded (they're different files). No gateway connection: it never appears online
 // and can't join voice.
 //
 // Setup: the same variables as Heroku in this folder's .env (BOT_TOKEN, SUPABASE_URL, SUPABASE_KEY,
@@ -13,7 +13,6 @@
 //   RECORDINGS_DIR             where the working files go (default: the OS temp folder; the mix of a long
 //                              night needs a few GB there)
 //   FFMPEG_PATH                a faster ffmpeg than the bundled one, if you have it
-//   PROCESS_WHILE_RECORDING=1  don't wait for the bot to be done with the voice channel
 //
 // npm run worker            pick up finished recordings as they appear
 // npm run worker -- --take  also take over a recording another copy is processing right now (it stops)
@@ -45,7 +44,7 @@ console.log(`[Rec] Working files: ${WORK_DIR}`);
 console.log(`[Rec] Google Drive: ${drive.enabled ? "connected" : "NOT connected - the audio would stay on this PC"}`);
 console.log(`[Rec] Gemini: ${transcribe.hasGeminiKey() ? "key set" : "no RECORDING_GEMINI_API_KEY (transcripts and summaries can't be made)"}`);
 console.log(
-  `[Rec] Watching for finished recordings every ${cfg.workerPollSeconds}s, only while the bot isn't in a voice channel.` +
+  `[Rec] Watching for finished recordings every ${cfg.workerPollSeconds}s.` +
     (takeOver ? " Taking over a job another copy is on." : "")
 );
 

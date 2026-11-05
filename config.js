@@ -45,6 +45,7 @@ module.exports = {
     ignoreBots: true, // don't record other bots (music bots etc.)
     claimTtlSeconds: 180, // a job claimed by a copy of the bot that stops renewing is free again after this (a dyno restart, a closed laptop)
     localProcessorGraceSeconds: 120, // while a worker on a PC is running, wait this long before starting a job here: it's much faster
+    localProcessorWaitSeconds: 600, // while that worker is alive, give it this long to take a job (it's much faster) before this copy does
     workerPollSeconds: 30, // how often `npm run worker` looks for a finished recording to process
     mixKbps: 32, // everyone mixed together, Opus mono
     trackKbps: 24, // one file per speaker, Opus mono

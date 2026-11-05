@@ -45,11 +45,6 @@ function enqueue(id) {
 
 async function pump() {
   if (running || stopping || !queue.length) return;
-  // The worker on a PC waits while the bot is in a voice channel (a recording in progress comes first)
-  if (localMode && !process.env.PROCESS_WHILE_RECORDING && (await store.liveRecordingExists())) {
-    setTimeout(pump, 60000);
-    return;
-  }
   const id = queue[0];
   if (await waitForLocalProcessor(id)) return;
   const claimed = await store.claimRecording(id, WORKER, CLAIM_MS, { force: takeOver });
@@ -80,35 +75,35 @@ async function waitForLocalProcessor(id) {
   const grace = (cfg.localProcessorGraceSeconds || 0) * 1000;
   if (!(grace > 0) || localMode) return false;
   const since = queuedAt.get(id);
-  if (!since || Date.now() - since >= grace) return false;
+  if (!since) return false;
+  // The worker on a PC has priority while it's alive: this copy waits for it rather than starting the job
+  // itself. When it has been sitting in the queue too long, or the worker stops beating (its process is
+  // gone), this copy takes the job over.
+  if (Date.now() - since > (cfg.localProcessorWaitSeconds || 600) * 1000) return false;
   const beat = await store.getProcessorBeat();
-  if (!beat?.name || beat.name === WORKER || Date.now() - Date.parse(beat.at || 0) > Math.max(60000, grace)) return false;
+  if (!beat?.name || beat.name === WORKER || beat.kind !== "local") return false;
+  if (Date.now() - Date.parse(beat.at || 0) > Math.max(60000, grace)) return false;
+  // Already on a job: it has its hands full, so this copy takes this one (the claim settles it either way)
+  if (beat.job) return false;
   setTimeout(pump, 3000);
   return true;
 }
 
 // ---------- The processor-only worker (worker.js on a PC) ----------
 // It doesn't log into the gateway or join voice, so it can't duplicate anything the bot on Heroku does: it
-// only takes finished recordings over the database and processes them here. Nothing is touched while the bot
-// is in a voice channel (a recording in progress), unless PROCESS_WHILE_RECORDING=1.
+// only takes finished recordings over the database and processes them here. A recording that's still going
+// is a different file, so finished jobs are processed even while the bot is in a voice channel.
 async function startLocalWorker(c, { takeOver: take = false } = {}) {
   client = c;
   localMode = true;
   takeOver = take;
-  const beat = () => store.setProcessorBeat({ name: WORKER, kind: "local", at: new Date().toISOString() });
+  const beat = () => store.setProcessorBeat({ name: WORKER, kind: "local", at: new Date().toISOString(), job: running || null });
   await beat();
   setInterval(beat, 30000).unref();
   let lastIdleLog = 0;
   const scan = async () => {
     if (stopping || running || queue.length) return;
     try {
-      if (!process.env.PROCESS_WHILE_RECORDING && (await store.liveRecordingExists())) {
-        if (Date.now() - lastIdleLog > 10 * 60000) {
-          lastIdleLog = Date.now();
-          console.log("[Rec] The bot is in a voice channel (a recording is going on): holding processing until it's over.");
-        }
-        return;
-      }
       const rows = [...(await store.findRecordings(["processing"])), ...(await store.findRecordings(["paused"]))];
       const next = rows
         .filter((r) => r.status !== "paused" || Date.parse(r.resume_after || 0) <= Date.now())
