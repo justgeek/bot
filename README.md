@@ -16,7 +16,9 @@ writes nothing over the winner's work.
 **Finished recordings are processed even while a new one is being recorded** - they're different files, so
 there's nothing to protect. The worker on the PC has priority: while its heartbeat is fresh, Heroku's bot waits
 (up to 10 minutes per job) for it to take the job, and only starts it itself if the PC isn't around. Whichever
-copy claims a recording first is the one that does it, so the other never repeats the work.
+copy claims a recording first is the one that does it, so the other never repeats the work. An idle worker on the
+PC also takes a job over from the other copy (it stops within ~30 s), so running the worker locally means the
+PC does the processing.
 
 ### Setup (once)
 

@@ -19,6 +19,7 @@ const { WORK_DIR, QuotaPause, JobStopped, busyRetryAt, resetBusyCount, watchStep
 let client = null;
 const queue = [];
 const queuedAt = new Map(); // recording id -> when it was queued (the local worker's grace reads it)
+const takeFromRemote = new Set(); // ids the local scan found held by another live copy (the fast PC takes those over)
 let running = null;
 let live = null; // the row being processed (its progress is only saved at checkpoints; the recordings page reads it from here)
 let stopping = false;
@@ -47,7 +48,9 @@ async function pump() {
   if (running || stopping || !queue.length) return;
   const id = queue[0];
   if (await waitForLocalProcessor(id)) return;
-  const claimed = await store.claimRecording(id, WORKER, CLAIM_MS, { force: takeOver });
+  const force = takeOver || takeFromRemote.has(id);
+  takeFromRemote.delete(id);
+  const claimed = await store.claimRecording(id, WORKER, CLAIM_MS, { force });
   queue.shift();
   queuedAt.delete(id);
   if (!claimed) {
@@ -107,10 +110,17 @@ async function startLocalWorker(c, { takeOver: take = false } = {}) {
       const rows = [...(await store.findRecordings(["processing"])), ...(await store.findRecordings(["paused"]))];
       const next = rows
         .filter((r) => r.status !== "paused" || Date.parse(r.resume_after || 0) <= Date.now())
-        .filter((r) => !isBusy(r.id) && !heldElsewhere(r))
+        .filter((r) => !isBusy(r.id))
         .sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at))[0];
       if (next) {
-        console.log(`[Rec] ${next.id}: picked up (${next.status}), processing here on ${WORKER}`);
+        // This PC is the fast copy: when it's idle it takes the job over from the bot on Heroku, which stops
+        // within ~30 s (its claim renewal fails)
+        if (heldElsewhere(next)) {
+          console.log(`[Rec] ${next.id}: taking it over from ${next.claimed_by} (${next.claim_step || next.status})`);
+          takeFromRemote.add(next.id);
+        } else {
+          console.log(`[Rec] ${next.id}: picked up (${next.status}), processing here on ${WORKER}`);
+        }
         enqueue(next.id);
         return;
       }
