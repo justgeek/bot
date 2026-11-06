@@ -107,7 +107,7 @@ async function startLocalWorker(c, { takeOver: take = false } = {}) {
       const rows = [...(await store.findRecordings(["processing"])), ...(await store.findRecordings(["paused"]))];
       const next = rows
         .filter((r) => r.status !== "paused" || Date.parse(r.resume_after || 0) <= Date.now())
-        .filter((r) => !isBusy(r.id))
+        .filter((r) => !isBusy(r.id) && !heldElsewhere(r))
         .sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at))[0];
       if (next) {
         console.log(`[Rec] ${next.id}: picked up (${next.status}), processing here on ${WORKER}`);
@@ -129,6 +129,9 @@ async function startLocalWorker(c, { takeOver: take = false } = {}) {
 }
 
 const isBusy = (id) => running === id || queue.includes(id);
+// Another copy's claim counts only while it keeps being renewed. Without this the worker picked rows the bot on
+// Heroku was already on, failed the claim silently, and logged the same "picked up" line every 30 s.
+const heldElsewhere = (r) => !!r.claimed_by && r.claimed_by !== WORKER && Date.parse(r.claim_expires_at || 0) > Date.now();
 const liveRecording = (id) => (live && live.id === id ? live : null);
 
 function shutdown() {
