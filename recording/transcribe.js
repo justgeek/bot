@@ -304,18 +304,21 @@ async function generate(modelName, parts, opts) {
           slow++;
           spentUntil.set(`${model}|${keys[key]}`, Date.now() + 90 * 1000);
         }
-        if ((status || slow >= 2) && advance(`${model} ${status ? `is unavailable (${status})` : "isn't answering"}`) >= 0) {
-          modelRest.set(model, Date.now() + MODEL_REST_MS); // later batches skip it entirely for a while
-          continue;
-        }
-        // Every model has had its turn in this call: this model's remaining keys still get a quick pass, and
-        // once its time is up the step pauses instead of hammering Google for minutes
-        if (Date.now() - modelStarted > MODEL_BUDGET_MS) {
-          keyNo = (key + 1) % keys.length; // the next run starts after the key that failed last
+        if (status || slow >= 2) {
+          const other = advance(`${model} ${status ? `is unavailable (${status})` : "isn't answering"}`);
+          if (other >= 0) {
+            modelRest.set(model, Date.now() + MODEL_REST_MS); // later batches skip it entirely for a while
+            continue;
+          }
+          // Every model has had its turn and none is free right now: the step pauses instead of hammering Google
+          if (models.every(daySpent)) throw allDaily();
           err.transient = true;
           throw err;
         }
-        continue; // the next key on this model, right away
+        // One hang: usually just this key's minute, so the next key on the same model goes right away.
+        // (This must never pause while a model or key is still untried: one 4-minute abort on the main model
+        // used to end the whole step, without the fallbacks ever being asked.)
+        continue;
       }
 
       // A model name that doesn't exist (a typo in RECORDING_GEMINI_FALLBACK_MODEL) is worth stepping over,
