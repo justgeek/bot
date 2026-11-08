@@ -82,11 +82,11 @@ module.exports = {
     "ahmadgalal": "A G",
     "underageuser": "underage user",
     "hesham": "Hishaam",
-    "fady_": "faadey",
-    "mohamedhammad87": "middohh",
+    "fady_": "faady",
+    "mohamedhammad87": "midoo",
     "basseldesoky": "Supersonic",
     "prollygeek": "TDK",
-    "ibrahimsp": "Heema",
+    "ibrahimsp": "Hima",
     "omda5863": "omdaa",
     "terezee.248": "zeikus",
     "tofa7009": "TOFA",
@@ -96,5 +96,6 @@ module.exports = {
     "abo_hamza_elmasry": "eslam",
     "assalamalssydrshadalssy": "eslam",
     "coldzero96": "helmy",
+    "azx30s": "azx",
   }
 };
