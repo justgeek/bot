@@ -449,19 +449,31 @@ async function getPresenceRows(sinceIso, untilIso) {
   }
 }
 
-async function getTotalVoiceSeconds(excludeAfk = false, client = null) {
+// Uses the total_voice_seconds(p_exclude_afk) SQL RPC (see schema.sql / Supabase SQL editor).
+// Falls back to the old full-scan when the RPC doesn't exist yet so a missing migration
+// never breaks the overview endpoint.
+async function getTotalVoiceSeconds(excludeAfk = false, dbClient = null) {
   if (!supabase) return 0;
   try {
-    const { rows } = await getSessionRows(null, null);
-    const now = Date.now();
-    const intervals = [];
-    for (const r of rows) {
-      if (excludeAfk && isAfkChannel(r.channel_id, r.channel_name, client)) continue;
-      const start = Date.parse(r.joined_at);
-      const end = r.left_at ? Date.parse(r.left_at) : now;
-      if (end > start) intervals.push([start, end]);
+    const { data, error } = await supabase.rpc("total_voice_seconds", { p_exclude_afk: excludeAfk });
+    if (error) {
+      // RPC not created yet — fall back to the full table scan so nothing breaks
+      if (error.code === "PGRST202" || error.code === "42883") {
+        console.warn("[DB] total_voice_seconds RPC missing — run schema.sql to avoid full-table egress.");
+        const { rows } = await getSessionRows(null, null);
+        const now = Date.now();
+        const intervals = [];
+        for (const r of rows) {
+          if (excludeAfk && isAfkChannel(r.channel_id, r.channel_name, dbClient)) continue;
+          const start = Date.parse(r.joined_at);
+          const end = r.left_at ? Date.parse(r.left_at) : now;
+          if (end > start) intervals.push([start, end]);
+        }
+        return unionIntervals(intervals);
+      }
+      throw error;
     }
-    return unionIntervals(intervals);
+    return Number(data) || 0;
   } catch (err) {
     console.error("[DB] getTotalVoiceSeconds failed:", err.message || err);
     return 0;

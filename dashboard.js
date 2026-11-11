@@ -206,7 +206,9 @@ module.exports = function registerDashboard(app, client) {
         .filter((c) => !c.is_afk)
         .reduce((n, c) => n + c.members.length, 0);
 
-      const totalSeconds = await db.getTotalVoiceSeconds(true, client);
+      // Cache the all-time total for 5 min — it's one number, not 50k rows, after the RPC is applied.
+      const totalSeconds = await cached("total_voice_seconds", 5 * 60000,
+        () => db.getTotalVoiceSeconds(true, client));
 
       res.set("Cache-Control", "no-store");
       res.json({
@@ -520,15 +522,14 @@ module.exports = function registerDashboard(app, client) {
       const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 30, 1), 300);
       const kind = ["presence", "voice"].includes(req.query.type) ? req.query.type : "all";
       const { since, until } = windowOf(f);
-      const logs = await db.getRecentLogs(limit, {
-        userId: f.user,
-        channelId: f.channel,
-        status: f.status,
-        device: f.device,
-        kind,
-        sinceIso: since ? new Date(since).toISOString() : null,
-        untilIso: until ? new Date(until).toISOString() : null,
-      });
+      const sinceIso = since ? new Date(since).toISOString() : null;
+      const untilIso = until ? new Date(until).toISOString() : null;
+      // Cache logs for 60 s — they're the second-biggest source of egress (3 queries per call,
+      // fired on every live-poll before this change).
+      const logsKey = `logs:${f.user}:${f.channel}:${f.status}:${f.device}:${kind}:${sinceIso}:${untilIso}:${limit}`;
+      const logs = await cached(logsKey, 60000, () =>
+        db.getRecentLogs(limit, { userId: f.user, channelId: f.channel, status: f.status, device: f.device, kind, sinceIso, untilIso })
+      );
       for (const l of logs) l.name = liveName(l.user_id) || l.display_name || l.username;
       res.set("Cache-Control", "no-store");
       res.json({ logs });

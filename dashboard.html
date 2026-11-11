@@ -3383,7 +3383,6 @@
         lastUpdate = Date.now();
         tick();
       } catch (e) { setConnected(false); }
-      refreshLogs();
     }
 
     async function refreshLogs() {
@@ -3419,9 +3418,10 @@
       } catch (e) { }
     }
 
-    setInterval(() => { if (!document.hidden) refreshLive(); }, 20000);
-    setInterval(() => { if (!document.hidden) refreshStats(); }, 60000);
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshLive(); refreshStats(); } });
+    setInterval(() => { if (!document.hidden) refreshLive(); }, 60000);   // was 20s — slowed to cut egress
+    setInterval(() => { if (!document.hidden) refreshStats(); }, 180000);  // was 60s — slowed to cut egress
+    setInterval(() => { if (!document.hidden) refreshLogs(); }, 120000);   // decoupled from live poll (was every 20s)
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshLive(); refreshStats(); refreshLogs(); } });
 
     let people = {}, lastOverview = null, lastLogs = null, lastSessions = null, lastReport = null, printing = false;
     const chartUsers = {};
