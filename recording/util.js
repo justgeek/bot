@@ -1,4 +1,4 @@
-﻿// recording/util.js - small helpers shared by the recorder's modules.
+// recording/util.js - small helpers shared by the recorder's modules.
 const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
@@ -121,20 +121,33 @@ function resetBusyCount(recId) { if (recId) busyPauseCount.delete(recId); }
 // after `stallMs` with nothing happening it's given up on and the step is started again by itself.
 // Use a shorter stallMs for steps that pulse frequently (audio chunk downloads), so a single hung
 // operation doesn't prevent the watchdog from ever firing.
-function watchStep(promise, step, { stallMs = 20 * 60000, everyMs = 30000, beat } = {}) {
+function watchStep(promise, step, { stallMs = 20 * 60000, everyMs = 30000, beat, signal } = {}) {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason || new JobStopped("another copy of the bot is processing this recording"));
     const start = Date.now();
-    const stream = setInterval(() => {
+    let stream = null;
+    const cleanup = () => {
+      if (stream) clearInterval(stream);
+      signal?.removeEventListener?.("abort", onAbort);
+    };
+    const onAbort = () => {
+      cleanup();
+      reject(signal?.reason || new JobStopped("another copy of the bot is processing this recording"));
+    };
+    if (signal?.addEventListener) {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+    stream = setInterval(() => {
       // beat() is the timestamp of the last meaningful progress event; use start if no beat provided
       const lastBeat = beat ? beat() : start;
       if (Date.now() - lastBeat < stallMs) return;
-      clearInterval(stream);
+      cleanup();
       const until = busyRetryAt(); // processor.js drives the per-recording escalation via its own recId calls
       reject(new QuotaPause(step, until, `Stuck with no progress for ${stallMs / 60000} min - starts this step again by itself <t:${Math.floor(until / 1000)}:R>`));
     }, everyMs);
     promise.then(
-      (value) => { clearInterval(stream); resolve(value); },
-      (err) => { clearInterval(stream); reject(err); }
+      (value) => { cleanup(); resolve(value); },
+      (err) => { cleanup(); reject(err); }
     );
   });
 }

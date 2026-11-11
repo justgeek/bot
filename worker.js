@@ -28,7 +28,12 @@ const { makeRestClient } = require("./recording/rest");
 const { WORK_DIR } = require("./recording/util");
 const { Recording: cfg } = require("./config");
 
-const takeOver = process.argv.includes("--take") || process.env.TAKE_OVER === "1";
+const takeOver =
+  process.argv.includes("--take") ||
+  process.argv.includes("-take") ||
+  process.argv.includes("take") ||
+  process.env.TAKE_OVER === "1" ||
+  process.env.npm_config_take === "true";
 
 if (!process.env.BOT_TOKEN) {
   console.error("BOT_TOKEN isn't set - put it in this folder's .env (the same one Heroku uses).");
@@ -44,8 +49,8 @@ console.log(`[Rec] Working files: ${WORK_DIR}`);
 console.log(`[Rec] Google Drive: ${drive.enabled ? "connected" : "NOT connected - the audio would stay on this PC"}`);
 console.log(`[Rec] Gemini: ${transcribe.hasGeminiKey() ? "key set" : "no RECORDING_GEMINI_API_KEY (transcripts and summaries can't be made)"}`);
 console.log(
-  `[Rec] Watching for finished recordings every ${cfg.workerPollSeconds}s.` +
-    (takeOver ? " Taking over a job another copy is on." : "")
+  `[Rec] Watching for finished recordings every ${cfg.workerPollSeconds || 30}s (local PC takes priority over Heroku).` +
+    (takeOver ? " Force-taking over active jobs." : "")
 );
 
 const client = makeRestClient(process.env.BOT_TOKEN);

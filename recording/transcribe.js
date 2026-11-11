@@ -1,4 +1,4 @@
-﻿// recording/transcribe.js - transcripts (who said what) and summaries with Gemini, made for the free tier:
+// recording/transcribe.js - transcripts (who said what) and summaries with Gemini, made for the free tier:
 // few, large requests, and when the daily quota runs out the job pauses and tries again every hour (or at the reset, if sooner).
 // Who said what is exact without any guessing: every speaker has their own track, and each request
 // carries labelled clips cut from those tracks.
@@ -12,7 +12,7 @@ const store = require("./store");
 const drive = require("./drive");
 const { mentionsPolitics, POLITICS_RULE } = require("./redact");
 const panel = require("./panel");
-const { sleep, QuotaPause, BusyPause, UserError, nextQuotaReset, quotaRetryAt, busyRetryAt, resetBusyCount, localStamp, participants } = require("./util");
+const { sleep, JobStopped, QuotaPause, BusyPause, UserError, nextQuotaReset, quotaRetryAt, busyRetryAt, resetBusyCount, localStamp, participants } = require("./util");
 
 // Same as aiHandler.js: casual voice chat trips the default filters
 const SAFETY = ["HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"].map((category) => ({ category, threshold: "BLOCK_NONE" }));
@@ -178,10 +178,23 @@ const MODEL_BUDGET_MS = 90 * 1000;
 // instead of each paying for one doomed request first
 const MODEL_REST_MS = 3 * 60000;
 
+function sleepWithSignal(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new JobStopped("another copy of the bot is processing this recording"));
+    const t = setTimeout(resolve, ms);
+    const onAbort = () => {
+      clearTimeout(t);
+      reject(new JobStopped("another copy of the bot is processing this recording"));
+    };
+    signal?.addEventListener?.("abort", onAbort, { once: true });
+  });
+}
+
 // Retries rate limits and Google's hiccups in the order the keys were meant to be used: the primary model
 // with every key, then the first fallback model with every key, then the next one, and so on. The keys are
 // in separate Google Cloud projects, so each one has its own quota. err.daily = every model's day is used up.
 async function generate(modelName, parts, opts) {
+  if (opts?.signal?.aborted) throw new JobStopped("another copy of the bot is processing this recording");
   const keys = apiKeys();
   if (!keys.length) throw new Error(NO_KEY);
   const models = modelChain(modelName);
@@ -249,6 +262,7 @@ async function generate(modelName, parts, opts) {
   };
 
   for (;;) {
+    if (opts?.signal?.aborted) throw new JobStopped("another copy of the bot is processing this recording");
     const model = models[mi];
     const key = freshKey(model);
     if (key < 0) {
@@ -257,7 +271,7 @@ async function generate(modelName, parts, opts) {
         // Every key on this model is resting for a minute: wait for the soonest one, unless this model has had
         // its turn already and another one can be asked right now
         if (Date.now() - modelStarted > MODEL_BUDGET_MS && advance(`${model} is rate limiting every key`) >= 0) continue;
-        await sleep(Math.max(1000, Math.min(60000, rest - Date.now() + 250)));
+        await sleepWithSignal(Math.max(1000, Math.min(60000, rest - Date.now() + 250)), opts?.signal);
         continue;
       }
       // Every key of this model was asked (or is out for the day): on to the next model in the chain
@@ -272,12 +286,17 @@ async function generate(modelName, parts, opts) {
     const label = keys.length > 1 ? `, key ${key + 1}/${keys.length}` : "";
     try {
       // Streamed, so the answer starts arriving right away, and dropped after a few minutes when it doesn't
+      const reqOpts = { timeout: REQUEST_TIMEOUT_MS };
+      if (opts?.signal) reqOpts.signal = opts.signal;
       const result = await geminiModel(keys[key], model, opts).generateContentStream(
         { contents: [{ role: "user", parts }] },
-        { timeout: REQUEST_TIMEOUT_MS }
+        reqOpts
       );
       return await result.response;
     } catch (err) {
+      if (opts?.signal?.aborted || err instanceof JobStopped || err.name === "AbortError" || /aborted/i.test(err.message || "")) {
+        throw new JobStopped("another copy of the bot is processing this recording");
+      }
       // "fetch failed" hides the real reason (timeout, connection reset...) in err.cause
       const cause = err.cause?.code || err.cause?.message;
       if (cause && !String(err.message).includes(cause)) err.message += ` (${cause})`;
@@ -366,14 +385,14 @@ function transcribePrompt({ names, games }) {
 }
 
 // Sends one batch; when the reply can't be used (cut off, blocked), splits the batch and tries the halves
-async function transcribeBatch(batch, model, vocab) {
+async function transcribeBatch(batch, model, vocab, opts = {}) {
   const parts = [{ text: `Transcribe these ${batch.length} clips.` }];
   for (const seg of batch) {
     parts.push({ text: `[${seg.id}] ${seg.name}` });
     parts.push({ inlineData: { mimeType: "audio/ogg", data: seg.audio.toString("base64") } });
   }
   try {
-    const response = await generate(model, parts, { schema: TRANSCRIPT_SCHEMA, system: transcribePrompt(vocab) });
+    const response = await generate(model, parts, { schema: TRANSCRIPT_SCHEMA, system: transcribePrompt(vocab), signal: opts?.signal });
     const map = {};
     for (const item of JSON.parse(response.text())) {
       if (item && item.id !== undefined) {
@@ -384,9 +403,10 @@ async function transcribeBatch(batch, model, vocab) {
     }
     // Ids it skipped get one more (smaller) request
     const missed = batch.filter((s) => !(s.id in map));
-    if (missed.length && missed.length < batch.length) Object.assign(map, await transcribeBatch(missed, model, vocab));
+    if (missed.length && missed.length < batch.length) Object.assign(map, await transcribeBatch(missed, model, vocab, opts));
     return map;
   } catch (err) {
+    if (opts?.signal?.aborted || err instanceof JobStopped || err.name === "AbortError") throw err;
     // Only problems with this batch's content are worth splitting for (a cut-off or blocked reply, too big);
     // a bad key or model name would fail for every piece, so those stop the step
     const batchProblem = err instanceof SyntaxError || /blocked|safety|recitation|max_tokens/i.test(err.message || "") || (Number(err.status) === 400 && /size|large|exceed|token/i.test(err.message || ""));
@@ -397,7 +417,7 @@ async function transcribeBatch(batch, model, vocab) {
     }
     console.warn(`[Rec] A transcript batch of ${batch.length} failed (${err.message}), splitting it`);
     const half = Math.ceil(batch.length / 2);
-    return { ...(await transcribeBatch(batch.slice(0, half), model, vocab)), ...(await transcribeBatch(batch.slice(half), model, vocab)) };
+    return { ...(await transcribeBatch(batch.slice(0, half), model, vocab, opts)), ...(await transcribeBatch(batch.slice(half), model, vocab, opts)) };
   }
 }
 
@@ -421,6 +441,7 @@ function speechAfter(speech, fromMs) {
 }
 
 async function transcriptStep(rec, ctx) {
+  if (await ctx.isLost?.({ forceCheck: true })) throw new JobStopped("another copy of the bot is processing this recording");
   const out = rec.outputs;
   const live = out.liveTranscript || { untilMs: 0, segments: [] };
   const liveSegments = live.segments.map((s, i) => ({ id: `L${i + 1}`, user: s.user, start: s.start, end: s.end }));
@@ -451,14 +472,17 @@ async function transcriptStep(rec, ctx) {
 
     const flush = async () => {
       if (!batch.length) return;
+      if (await ctx.isLost?.({ forceCheck: true })) throw new JobStopped("another copy of the bot is processing this recording");
       batchNo++;
       ctx.progress("transcript", "running", `request ${batchNo} of ~${estimate}`);
       let result;
       for (;;) {
+        if (await ctx.isLost?.({ forceCheck: true })) throw new JobStopped("another copy of the bot is processing this recording");
         try {
-          result = await transcribeBatch(batch, model, vocab);
+          result = await transcribeBatch(batch, model, vocab, { signal: ctx.abortSignal });
           break;
         } catch (err) {
+          if (ctx.abortSignal?.aborted || err instanceof JobStopped || err.name === "AbortError") throw err;
           if (err.transient) throw new BusyPause("transcript", busyRetryAt(rec.id), err.message);
           if (!err.daily) throw err;
           const fallbacks = fallbackModels();
@@ -477,6 +501,7 @@ async function transcriptStep(rec, ctx) {
         done[seg.id] = r ? r.text : "";
         if (r && r.redact) (out.redactIds = out.redactIds || {})[seg.id] = true;
       }
+      if (await ctx.isLost?.()) throw new JobStopped("another copy of the bot is processing this recording");
       await ctx.save(); // a restart or a quota pause keeps what's done
       batch = [];
       batchMs = 0;
@@ -486,6 +511,7 @@ async function transcriptStep(rec, ctx) {
     ctx.progress("transcript", "running", `0 of ~${estimate} requests`);
     try {
       for (const seg of pending) {
+        if (await ctx.isLost?.()) throw new JobStopped("another copy of the bot is processing this recording");
         let cutter = cutters.get(seg.user);
         if (!cutter) cutters.set(seg.user, (cutter = new SegmentCutter(files[seg.user])));
         const audioClip = cutter.cut(seg.start, seg.end);
@@ -623,6 +649,7 @@ function sessionHeader(rec) {
 const transcriptText = (lines) => lines.map((l) => `[${panel.hms(l.start_ms)}] ${l.name}: ${l.text}`).join("\n");
 
 async function summaryStep(rec, ctx) {
+  if (await ctx.isLost?.({ forceCheck: true })) throw new JobStopped("another copy of the bot is processing this recording");
   ctx.progress("summary", "running", "writing it");
   const lines = ctx.lines || (await store.getLines(rec.id));
   if (!lines.length) {
@@ -630,15 +657,18 @@ async function summaryStep(rec, ctx) {
     return;
   }
   if (!apiKeys().length) throw new Error(NO_KEY);
+  if (await ctx.isLost?.({ forceCheck: true })) throw new JobStopped("another copy of the bot is processing this recording");
   let response;
   {
     const allModels = [geminiModelName(), ...fallbackModels()];
     let summaryModel = allModels.find((m) => !daySpent(m)) || allModels[0];
     for (;;) {
+      if (await ctx.isLost?.({ forceCheck: true })) throw new JobStopped("another copy of the bot is processing this recording");
       try {
-        response = await generate(summaryModel, [{ text: `${sessionHeader(rec)}\n\nTranscript:\n${transcriptText(lines)}` }], { schema: SUMMARY_SCHEMA, system: SUMMARY_SYSTEM });
+        response = await generate(summaryModel, [{ text: `${sessionHeader(rec)}\n\nTranscript:\n${transcriptText(lines)}` }], { schema: SUMMARY_SCHEMA, system: SUMMARY_SYSTEM, signal: ctx.abortSignal });
         break;
       } catch (err) {
+        if (ctx.abortSignal?.aborted || err instanceof JobStopped || err.name === "AbortError") throw err;
         if (err.transient) throw new BusyPause("summary", busyRetryAt(rec.id), err.message);
         if (!err.daily) throw err;
         spentUntil.set(`${summaryModel}|ALL`, Date.now() + 50 * 60000);
@@ -648,6 +678,7 @@ async function summaryStep(rec, ctx) {
       }
     }
   }
+  if (await ctx.isLost?.()) throw new JobStopped("another copy of the bot is processing this recording");
   const { en, ar, names } = JSON.parse(response.text());
   rec.summary_en = String(en || "").trim();
   rec.summary_ar = String(ar || "").trim();

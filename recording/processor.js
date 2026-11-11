@@ -1,4 +1,4 @@
-﻿// recording/processor.js - turns a finished recording into the files kept on Google Drive, step by step:
+// recording/processor.js - turns a finished recording into the files kept on Google Drive, step by step:
 // audio (mix + one track per speaker) -> transcript -> summary -> finish. Each finished step is saved in
 // recordings.outputs, so after a bot restart (or a Gemini quota pause) the job continues where it was.
 const fs = require("fs");
@@ -28,7 +28,8 @@ let takeOver = false; // the worker was asked to take the job over from the copy
 
 // Which copy of the bot this is, as the claim columns see it ("heroku" on a dyno, the PC's name for
 // worker.js). Two copies share the recordings table; the claim decides which one may work on one at a time.
-const WORKER = String(process.env.PROCESSOR_NAME || os.hostname() || "bot").slice(0, 40);
+const isHeroku = !!process.env.DYNO;
+const WORKER = String(process.env.PROCESSOR_NAME || (isHeroku ? `heroku-${process.env.DYNO}` : (os.hostname() || "bot"))).slice(0, 40);
 const CLAIM_MS = (cfg.claimTtlSeconds || 180) * 1000;
 const CLAIM_BEAT_MS = Math.max(10000, Math.min(30000, Math.round(CLAIM_MS / 3)));
 
@@ -60,6 +61,9 @@ async function pump() {
   }
   takeOver = false;
   running = id;
+  if (localMode) {
+    await store.setProcessorBeat({ name: WORKER, kind: "local", at: new Date().toISOString(), job: id }).catch(() => {});
+  }
   try {
     await processRecording(id);
   } catch (err) {
@@ -67,6 +71,9 @@ async function pump() {
   } finally {
     running = null;
     live = null;
+    if (localMode) {
+      await store.setProcessorBeat({ name: WORKER, kind: "local", at: new Date().toISOString(), job: null }).catch(() => {});
+    }
     await store.releaseClaim(id, WORKER).catch(() => { }); // done, paused or failed: free for whichever copy is around
     setImmediate(pump);
   }
@@ -86,8 +93,11 @@ async function waitForLocalProcessor(id) {
   const beat = await store.getProcessorBeat();
   if (!beat?.name || beat.name === WORKER || beat.kind !== "local") return false;
   if (Date.now() - Date.parse(beat.at || 0) > Math.max(60000, grace)) return false;
-  // Already on a job: it has its hands full, so this copy takes this one (the claim settles it either way)
-  if (beat.job) return false;
+  // Local worker is actively on this job or working on another: let it finish
+  if (beat.job === id || beat.job) {
+    setTimeout(pump, 4000);
+    return true;
+  }
   setTimeout(pump, 3000);
   return true;
 }
@@ -100,9 +110,10 @@ async function startLocalWorker(c, { takeOver: take = false } = {}) {
   client = c;
   localMode = true;
   takeOver = take;
-  const beat = () => store.setProcessorBeat({ name: WORKER, kind: "local", at: new Date().toISOString(), job: running || null });
+  const beat = (currentJob = running || null) =>
+    store.setProcessorBeat({ name: WORKER, kind: "local", at: new Date().toISOString(), job: currentJob });
   await beat();
-  setInterval(beat, 30000).unref();
+  setInterval(() => beat(), 20000).unref();
   let lastIdleLog = 0;
   const scan = async () => {
     if (stopping || running || queue.length) return;
@@ -114,7 +125,7 @@ async function startLocalWorker(c, { takeOver: take = false } = {}) {
         .sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at))[0];
       if (next) {
         // This PC is the fast copy: when it's idle it takes the job over from the bot on Heroku, which stops
-        // within ~30 s (its claim renewal fails)
+        // quickly to save CPU and AI requests
         if (heldElsewhere(next)) {
           console.log(`[Rec] ${next.id}: taking it over from ${next.claimed_by} (${next.claim_step || next.status})`);
           takeFromRemote.add(next.id);
@@ -134,7 +145,7 @@ async function startLocalWorker(c, { takeOver: take = false } = {}) {
   };
   // Not unref'd: when there's no job running this timer is the only thing keeping the process alive
   // (the heartbeat is unref'd, and an idle worker used to just exit after "Nothing to process right now")
-  setInterval(scan, (cfg.workerPollSeconds || 30) * 1000);
+  setInterval(scan, (cfg.workerPollSeconds || 15) * 1000);
   await scan();
 }
 
@@ -172,18 +183,37 @@ async function updatePanel(rec) {
   });
 }
 
-function makeCtx(rec, state = {}) {
+function makeCtx(rec, state = {}, abortController = null) {
   const dir = path.join(WORK_DIR, rec.id);
+  const signal = abortController?.signal || null;
   let panelTimer = null;
   let lastPanel = 0;
   let lastBeat = Date.now(); // when the step last said it did something (the watchdog reads it)
+  let lastCheck = 0;
   const ctx = {
     dir,
     lines: null,
     trackPaths: null,
+    currentStep: "audio",
+    abortSignal: signal,
+    isLost: async ({ forceCheck = false } = {}) => {
+      if (state.lost || signal?.aborted) return true;
+      if (!localMode && (forceCheck || Date.now() - lastCheck > 2500)) {
+        lastCheck = Date.now();
+        const mine = await store.renewClaim(rec.id, WORKER, CLAIM_MS, ctx.currentStep).catch(() => true);
+        if (!mine) {
+          state.lost = true;
+          console.warn(`[Rec] ${rec.id}: another copy of the bot took this job over, stopping here.`);
+          abortController?.abort(new JobStopped("another copy of the bot is processing this recording"));
+          ffmpeg.killAll();
+          return true;
+        }
+      }
+      return false;
+    },
     // Once another copy of the bot has taken the job over, nothing from here may be written anymore
     save: () => {
-      if (state.lost) throw new JobStopped("another copy of the bot is processing this recording");
+      if (state.lost || signal?.aborted) throw new JobStopped("another copy of the bot is processing this recording");
       return store.saveRecording(rec);
     },
     beat: () => lastBeat,
@@ -387,6 +417,7 @@ async function audioBuild(rec, ctx) {
   console.log(`[Rec] ${rec.id}: building ${users.length} speaker track(s) from ${[...byUser.values()].reduce((n, l) => n + l.length, 0)} pieces`);
   let lost = 0;
   for (const [i, userId] of users.entries()) {
+    if (await ctx.isLost?.()) throw new JobStopped("another copy of the bot is processing this recording");
     const local = path.join(tracksDir, `${userId}.ogg`);
     const have = out.files.tracks[userId];
     if (have?.done || (have?.built && fs.existsSync(local))) continue;
@@ -401,6 +432,7 @@ async function audioBuild(rec, ctx) {
       // Their pieces are on this disk, or (after a restart) on Drive
       const chunks = [];
       for (const row of byUser.get(source).sort((a, b) => a.start_ms - b.start_ms)) {
+        if (await ctx.isLost?.()) throw new JobStopped("another copy of the bot is processing this recording");
         const file = path.join(chunksDir, `${row.user_id}_${row.start_ms}.ogg`);
         if (!fs.existsSync(file)) {
           if (!row.drive_file_id || !drive.enabled) {
@@ -429,6 +461,7 @@ async function audioBuild(rec, ctx) {
       used.push(...chunks);
     }
     if (!raws.length) continue;
+    if (await ctx.isLost?.()) throw new JobStopped("another copy of the bot is processing this recording");
     await ffmpeg.encodeTrack(raws, local, { kbps: cfg.trackKbps, onProgress: () => ctx.pulse() });
     for (const f of raws) fs.unlink(f, () => { });
     for (const c of used) fs.unlink(c.file, () => { }); // Drive keeps a copy until the audio is done
@@ -445,6 +478,7 @@ async function audioBuild(rec, ctx) {
 
 // Audio, phase 2 (after the transcript): cuts out the flagged stretches, uploads the tracks, mixes and uploads the mix
 async function audioPublish(rec, ctx) {
+  if (await ctx.isLost?.({ forceCheck: true })) throw new JobStopped("another copy of the bot is processing this recording");
   const out = rec.outputs;
   const tracks = out.files.tracks;
   const totalMs = Date.parse(rec.ended_at) - Date.parse(rec.started_at);
@@ -455,6 +489,7 @@ async function audioPublish(rec, ctx) {
   if (cuts.length) {
     ctx.refreshReport();
     for (const [user, list] of Object.entries(redact.cutRanges(cuts))) {
+      if (await ctx.isLost?.()) throw new JobStopped("another copy of the bot is processing this recording");
       const entry = tracks[user];
       if (!entry || entry.redacted || !files[user]) continue;
       ctx.progress("audio", "running", `cutting out flagged parts (${entry.name})`);
@@ -471,11 +506,12 @@ async function audioPublish(rec, ctx) {
   let tracksFolder = null;
   if (drive.enabled) {
     folder = await drive.recordingFolder(rec, folderName(rec));
-    await drive.rename(folder, folderName(rec)); // "start â†’ â€¦" becomes "start â†’ end" now that it's over
+    await drive.rename(folder, folderName(rec)); // "start → …" becomes "start → end" now that it's over
     tracksFolder = await drive.ensureFolder(folder, "tracks");
   }
   const entries = Object.entries(tracks).sort((a, b) => (a[1].idx ?? 99) - (b[1].idx ?? 99));
   for (const [userId, entry] of entries) {
+    if (await ctx.isLost?.()) throw new JobStopped("another copy of the bot is processing this recording");
     if (entry.done) continue;
     if (!files[userId]) throw new Error(`the track of ${entry.name} isn't on this disk anymore`);
     if (tracksFolder) {
@@ -489,6 +525,7 @@ async function audioPublish(rec, ctx) {
   // Everyone mixed together, from the finished (already levelled and cut) tracks
   const mixFile = path.join(ctx.dir, "mix.ogg");
   if (!out.files.mix) {
+    if (await ctx.isLost?.({ forceCheck: true })) throw new JobStopped("another copy of the bot is processing this recording");
     ctx.progress("audio", "running", "mixing (0%)");
     let lastPct = -1;
     await ffmpeg.mixTracks(Object.values(files), mixFile, {
@@ -566,23 +603,27 @@ async function processRecording(id) {
   rec.error = null;
   live = rec;
   const state = { lost: false };
-  const ctx = makeCtx(rec, state);
+  const abortController = new AbortController();
+  const ctx = makeCtx(rec, state, abortController);
   let step = "audio";
+  ctx.currentStep = step;
 
-  // While this copy works it keeps saying the job is still its own. If it can't (another copy took it over)
-  // the step in progress is dropped: nothing half-finished is saved over what the other one is doing.
+  // On Heroku check every 3.5s so a local worker taking over stops Heroku within seconds, saving CPU & AI requests.
+  const beatIntervalMs = localMode ? CLAIM_BEAT_MS : Math.min(CLAIM_BEAT_MS, 3500);
   const beat = setInterval(() => {
     store.renewClaim(id, WORKER, CLAIM_MS, step).then((mine) => {
       if (mine || state.lost) return;
       state.lost = true;
       console.warn(`[Rec] ${id}: another copy of the bot took this job over, stopping here.`);
+      abortController.abort(new JobStopped("another copy of the bot is processing this recording"));
       ffmpeg.killAll();
     }, () => { });
-  }, CLAIM_BEAT_MS);
+  }, beatIntervalMs);
   beat.unref?.();
 
   // Each step is done once, by whichever copy is on the job: read what's saved before starting one
   const sync = async () => {
+    if (state.lost || ctx.abortSignal?.aborted) throw new JobStopped("another copy of the bot is processing this recording");
     const fresh = await store.getRecording(id, { fresh: true }).catch(() => null);
     if (!fresh) return;
     if (["done", "deleted", "discarded"].includes(fresh.status)) throw new JobStopped(`already ${fresh.status}`);
@@ -599,26 +640,30 @@ async function processRecording(id) {
 
   try {
     await sync();
-    if (out.progress.audio?.state !== "done") await watchStep(audioBuild(rec, ctx), "audio", { stallMs: 5 * 60000, beat: ctx.beat });
+    if (out.progress.audio?.state !== "done") await watchStep(audioBuild(rec, ctx), "audio", { stallMs: 5 * 60000, beat: ctx.beat, signal: ctx.abortSignal });
     step = "transcript";
+    ctx.currentStep = step;
     await sync();
-    if (rec.options?.transcribe && out.progress.transcript?.state !== "done") await watchStep(transcribe.transcriptStep(rec, ctx), "transcript", { beat: ctx.beat });
+    if (rec.options?.transcribe && out.progress.transcript?.state !== "done") await watchStep(transcribe.transcriptStep(rec, ctx), "transcript", { beat: ctx.beat, signal: ctx.abortSignal });
     step = "audio";
+    ctx.currentStep = step;
     await sync();
-    if (out.progress.audio?.state !== "done") await watchStep(audioPublish(rec, ctx), "audio", { beat: ctx.beat });
+    if (out.progress.audio?.state !== "done") await watchStep(audioPublish(rec, ctx), "audio", { beat: ctx.beat, signal: ctx.abortSignal });
     step = "summary";
+    ctx.currentStep = step;
     await sync();
-    if (rec.options?.summarize && out.progress.summary?.state !== "done") await watchStep(transcribe.summaryStep(rec, ctx), "summary", { beat: ctx.beat });
+    if (rec.options?.summarize && out.progress.summary?.state !== "done") await watchStep(transcribe.summaryStep(rec, ctx), "summary", { beat: ctx.beat, signal: ctx.abortSignal });
     step = "finish";
+    ctx.currentStep = step;
     await sync();
-    await watchStep(finishStep(rec, ctx), "finish", { beat: ctx.beat });
+    await watchStep(finishStep(rec, ctx), "finish", { beat: ctx.beat, signal: ctx.abortSignal });
     resetBusyCount(id); // clear backoff counter after a clean run
     rec.status = "done";
   } catch (err) {
     if (stopping) return; // the bot is shutting down: it stays "processing" and continues after the restart
-    if (state.lost || err instanceof JobStopped) {
+    if (state.lost || err instanceof JobStopped || ctx.abortSignal?.aborted) {
       // Another copy has the job now: leave the row exactly as that copy keeps it
-      console.log(`[Rec] ${id}: stopped (${err.message}), another copy is finishing it.`);
+      console.log(`[Rec] ${id}: stopped (${err.message || "taken over"}), another copy is finishing it.`);
       return;
     }
     // Quota/busy pauses, and network or stall trouble inside a step (err.transient): wait and come back
@@ -643,8 +688,8 @@ async function processRecording(id) {
   }
   // Only the copy that still holds the job writes the result down: a takeover in the last second must not
   // be overwritten with this one's older view of it
-  if (!(await store.renewClaim(id, WORKER, CLAIM_MS, "finish"))) {
-    console.log(`[Rec] ${id}: finished, but the job had been taken over in the meantime; leaving the row alone.`);
+  if (state.lost || ctx.abortSignal?.aborted || !(await store.renewClaim(id, WORKER, CLAIM_MS, "finish"))) {
+    console.log(`[Rec] ${id}: finished or yielded, but the job had been taken over; leaving the row alone.`);
     return;
   }
   await store.saveRecording(rec);
