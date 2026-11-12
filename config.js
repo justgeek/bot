@@ -37,7 +37,7 @@ module.exports = {
   Recording: {
     chunkMinutes: 5, // raw audio goes to Drive in pieces this long while recording, so a restart risks at most one
     maxHours: 12, // safety cap per recording
-    emptyStopSeconds: 600, // stop once the channel has had no people for this long (0 = as soon as the last one leaves)
+    emptyStopSeconds: 120, // stop once the channel has had no people for this long (0 = as soon as the last one leaves)
     aloneStopSeconds: 900, // stop once only 1 person has remained alone for this long (15 mins)
     autoMinPeople: 2, // default people needed for auto-record to start
     autoStartDelaySeconds: 5, // the channel must stay that full this long (ignores quick join/leave)
