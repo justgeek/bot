@@ -49,6 +49,22 @@ const ROW_COLUMNS = [
 ];
 const pick = (rec) => Object.fromEntries(ROW_COLUMNS.filter((k) => rec[k] !== undefined).map((k) => [k, rec[k]]));
 
+// outputs.peaks and outputs.speech are most of a finished recording's row (~230 KB each, 7.9 MB for the
+// whole table). The list, the queue scans and the page's fast poll never read them, so those reads ask
+// PostgREST for just the parts they use and put the row back together below. Supabase bills egress, so
+// this is the difference between a few KB and a few MB per read.
+const LIGHT_OUTPUTS =
+  "progress:outputs->progress, files:outputs->files, audioDeleted:outputs->audioDeleted, liveTranscript:outputs->liveTranscript";
+function rehydrateOutputs(row) {
+  if (!row) return row;
+  const { progress, files, audioDeleted, liveTranscript, ...rest } = row;
+  const outputs = {};
+  for (const [k, v] of [["progress", progress], ["files", files], ["audioDeleted", audioDeleted], ["liveTranscript", liveTranscript]]) {
+    if (v != null) outputs[k] = v;
+  }
+  return { ...rest, outputs };
+}
+
 // ---------- Recordings ----------
 function saveRecording(rec) {
   memory.set(rec.id, rec);
@@ -63,8 +79,23 @@ async function getRecording(id, { fresh = false } = {}) {
   return row || memory.get(id) || null;
 }
 
-async function findRecordings(statuses) {
-  const rows = await run("findRecordings", () => supabase.from("recordings").select("*").in("status", statuses).order("started_at", { ascending: true }), []);
+// Status and progress only, for the recordings page poll that runs every few seconds. Deliberately not
+// put in `memory`: a trimmed row must never be saved back over the audio blobs.
+async function getRecordingLight(id) {
+  const cols = "id, channel_name, status, started_at, ended_at, speakers, " + LIGHT_OUTPUTS;
+  const row = await run("getRecordingLight", () => supabase.from("recordings").select(cols).eq("id", id).maybeSingle());
+  if (row) return rehydrateOutputs(row);
+  return memory.get(id) || null;
+}
+
+// light: trimmed rows for the queue scans and retention (no peaks/speech). They are never cached in
+// `memory`, because a row without those blobs must not be written back over the saved one.
+async function findRecordings(statuses, { light = false } = {}) {
+  const cols = light
+    ? "id, status, started_at, ended_at, resume_after, drive_folder_id, claimed_by, claim_expires_at, claim_step, " + LIGHT_OUTPUTS
+    : "*";
+  const rows = await run("findRecordings", () => supabase.from("recordings").select(cols).in("status", statuses).order("started_at", { ascending: true }), []);
+  if (light) return rows.map(rehydrateOutputs);
   for (const r of rows) if (!memory.has(r.id)) memory.set(r.id, r);
   const ids = new Set(rows.map((r) => r.id));
   for (const r of memory.values()) if (statuses.includes(r.status) && !ids.has(r.id)) rows.push(r);
@@ -73,9 +104,9 @@ async function findRecordings(statuses) {
 
 // Newest first, without the bulky columns
 async function listRecordings(limit = 50) {
-  const cols = "id, channel_id, channel_name, started_by, started_at, ended_at, end_reason, status, speakers, drive_folder_id, outputs, options";
+  const cols = "id, channel_id, channel_name, started_by, started_at, ended_at, end_reason, status, speakers, drive_folder_id, options, " + LIGHT_OUTPUTS;
   const rows = await run("listRecordings", () => supabase.from("recordings").select(cols).not("status", "in", "(deleted,discarded)").order("started_at", { ascending: false }).limit(limit), null);
-  if (rows) return rows;
+  if (rows) return rows.map(rehydrateOutputs);
   return [...memory.values()].filter((r) => !["deleted", "discarded"].includes(r.status)).sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at)).slice(0, limit);
 }
 
@@ -201,7 +232,7 @@ async function getProcessorBeat() {
 
 // A recording is going on right now (or a suspended one may still resume)
 async function liveRecordingExists() {
-  return (await findRecordings(["recording", "suspended"])).length > 0;
+  return (await findRecordings(["recording", "suspended"], { light: true })).length > 0;
 }
 
 // ---------- Settings ----------
@@ -257,6 +288,7 @@ module.exports = {
   saveRecording,
   getRecording,
   findRecordings,
+  getRecordingLight,
   listRecordings,
   recentSummaries,
   saveChunk,

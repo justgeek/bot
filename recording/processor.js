@@ -118,7 +118,8 @@ async function startLocalWorker(c, { takeOver: take = false } = {}) {
   const scan = async () => {
     if (stopping || running || queue.length) return;
     try {
-      const rows = [...(await store.findRecordings(["processing"])), ...(await store.findRecordings(["paused"]))];
+      // Trimmed rows: the scan only reads status/claims. Polled every ~15 s, so the audio blobs matter here.
+      const rows = [...(await store.findRecordings(["processing"], { light: true })), ...(await store.findRecordings(["paused"], { light: true }))];
       const next = rows
         .filter((r) => r.status !== "paused" || Date.parse(r.resume_after || 0) <= Date.now())
         .filter((r) => !isBusy(r.id))
@@ -711,6 +712,9 @@ async function deleteRecording(rec, byUserId) {
 // Deletes a recording's audio for good (mix, speaker tracks, clips); transcripts, summaries and info stay.
 // why: shown on its panel ("after 30 days" / "to free up Drive space")
 async function removeAudio(rec, why) {
+  // The retention scans pass trimmed rows (no peaks/speech), and this saves the whole record: load the
+  // full row first so nothing already saved is lost.
+  rec = (await store.getRecording(String(rec.id), { fresh: true }).catch(() => null)) || rec;
   const out = rec.outputs || (rec.outputs = {});
   if (out.files?.mix?.id) await drive.remove(out.files.mix.id);
   await drive.trashChild(rec.drive_folder_id, "tracks", { permanent: true });
@@ -722,7 +726,7 @@ async function removeAudio(rec, why) {
 
 // Finished recordings that still have audio on Drive, oldest first
 async function withAudio() {
-  return (await store.findRecordings(["done"]))
+  return (await store.findRecordings(["done"], { light: true }))
     .filter((r) => !r.outputs?.audioDeleted && r.drive_folder_id && r.outputs?.files?.mix?.id)
     .sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at));
 }

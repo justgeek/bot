@@ -221,10 +221,11 @@ module.exports = function registerRecordingsPage(app, client, opts = {}) {
     }
   });
 
-  // Polled by the page while a recording is being processed (cheap: no transcript lines)
+  // Polled by the page every few seconds while a recording is being processed (cheap: no transcript
+  // lines, no audio blobs - the full row is ~300 KB and this used to download it on every poll)
   app.get("/api/recordings/:id/progress", guard, async (req, res) => {
     try {
-      const rec = fresh(await store.getRecording(String(req.params.id)));
+      const rec = fresh(await store.getRecordingLight(String(req.params.id)));
       if (!rec || ["deleted", "discarded"].includes(rec.status)) return res.status(404).json({ error: "not_found" });
       const s = summary(rec);
       const linesCount = rec.outputs?.liveTranscript?.segments?.length || 0;
