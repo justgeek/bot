@@ -445,6 +445,7 @@
         var col = function (v, d) { return css.getPropertyValue(v).trim() || d; };
         var C = { played: col("--accent", "#e5253f"), rest: col("--border", "#3b1c20"), flat: col("--muted", "#8f867b") };
         var peaks = null;
+        var laneWidth = -1; // the width the lanes were last painted at (see tick)
         var MIN_VIEW = 10000; // zoomed all the way in: 10 seconds across
         view = { start: 0, len: dur };
 
@@ -563,10 +564,17 @@
           $("playhead").style.display = p < 0 || p > 1 ? "none" : "";
           $("playhead").style.left = (p * 100).toFixed(3) + "%";
           $("clock").innerHTML = "<b>" + hms(ms) + "</b> / " + hms(dur);
+          // The waveform comes back by itself on the next tick; a lane painted before its canvas had a width
+          // (or while the tab was in the background) used to stay blank until a zoom or a scroll.
+          if (wave.clientWidth !== laneWidth) { laneWidth = wave.clientWidth; drawLanes(); drawLaneMarks(); }
           drawWave();
         };
         drawPlayer = function () { drawLanes(); drawLaneMarks(); drawMarks(); zoomLabel(); tick(); };
         drawPlayer();
+        // The waveform redraws itself on every playback tick, the lanes never did: a canvas measured before it had
+        // a width (the player is built inside markup that has just been replaced) painted nothing and stayed blank
+        // until a zoom, a pan or a window resize. Paint once more after layout, and whenever the player is resized.
+        requestAnimationFrame(function () { laneWidth = -1; drawPlayer(); });
 
         // Zoom around a moment (the mouse position, or the playhead): factor > 1 zooms in
         zoomBy = function (factor, aroundMs) {
@@ -724,6 +732,8 @@
       }
 
       window.addEventListener("resize", function () { drawPlayer(); });
+      // A tab in the background may have painted nothing; the lanes are the part that never catches up on its own
+      document.addEventListener("visibilitychange", function () { if (!document.hidden) drawPlayer(); });
       // Space: tap to play/pause; hold it and move the mouse to drag the zoomed-in waveform along (playback stays put)
       var space = { down: false, moved: 0, x: null };
       var spaceOff = function () { space.down = false; document.body.classList.remove("space"); };
