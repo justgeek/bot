@@ -110,8 +110,14 @@ async function startLocalWorker(c, { takeOver: take = false } = {}) {
   client = c;
   localMode = true;
   takeOver = take;
+  // The heartbeat also holds the claim on the job being worked on: a dyno that starts (or a copy that was left
+  // running from before an update) can't take it away for more than 20 s, so the fast PC is the one that
+  // finishes the recording. Only the row being finished stops this.
   const beat = (currentJob = running || null) =>
-    store.setProcessorBeat({ name: WORKER, kind: "local", at: new Date().toISOString(), job: currentJob });
+    Promise.all([
+      store.setProcessorBeat({ name: WORKER, kind: "local", at: new Date().toISOString(), job: currentJob }),
+      currentJob ? store.claimRecording(currentJob, WORKER, CLAIM_MS, { force: true, anyStatus: true }).catch(() => false) : null,
+    ]);
   await beat();
   setInterval(() => beat(), 20000).unref();
   let lastIdleLog = 0;
@@ -130,8 +136,8 @@ async function startLocalWorker(c, { takeOver: take = false } = {}) {
         // quickly to save CPU and AI requests. It doesn't take it from another PC worker that is really on it,
         // or the two would keep pulling the same job back and forth.
         if (heldElsewhere(next)) {
-          const beat = await store.getProcessorBeat().catch(() => null);
-          const holderIsLocal = beat?.kind === "local" && beat.name === next.claimed_by && Date.now() - Date.parse(beat.at || 0) < 60000;
+          const liveBeat = await store.getProcessorBeat().catch(() => null);
+          const holderIsLocal = liveBeat?.kind === "local" && liveBeat.name === next.claimed_by && Date.now() - Date.parse(liveBeat.at || 0) < 60000;
           if (holderIsLocal) {
             console.log(`[Rec] ${next.id}: ${next.claimed_by} is on it (${next.claim_step || next.status}), leaving it there`);
             return;
@@ -423,11 +429,15 @@ async function audioBuild(rec, ctx) {
 
   console.log(`[Rec] ${rec.id}: building ${users.length} speaker track(s) from ${[...byUser.values()].reduce((n, l) => n + l.length, 0)} pieces`);
   let lost = 0;
+  let skipped = 0;
   for (const [i, userId] of users.entries()) {
     if (await ctx.isLost?.()) throw new JobStopped("another copy of the bot is processing this recording");
     const local = path.join(tracksDir, `${userId}.ogg`);
     const have = out.files.tracks[userId];
-    if (have?.done || (have?.built && fs.existsSync(local))) continue;
+    if (have?.done || (have?.built && fs.existsSync(local))) {
+      skipped++;
+      continue;
+    }
     const name = nameOf(userId);
     const startedAt = Date.now();
     console.log(`[Rec] ${rec.id}: ${name}: starting track ${i + 1} of ${users.length}`);
@@ -477,6 +487,7 @@ async function audioBuild(rec, ctx) {
     await ctx.save();
   }
   if (!Object.keys(out.files.tracks).length) throw new Error(lost ? "the audio didn't reach Google Drive before the bot restarted" : "no audio was found");
+  if (skipped) console.log(`[Rec] ${rec.id}: ${skipped} track(s) were already built, skipped them`);
   if (lost) console.warn(`[Rec] ${rec.id}: ${lost} chunk(s) were lost`);
   ctx.refreshReport();
   ctx.progress("audio", "running", rec.options?.transcribe ? "tracks ready, waiting for the transcript" : "tracks ready");
@@ -600,14 +611,29 @@ async function processRecording(id) {
 
   // On Heroku check every 3.5s so a local worker taking over stops Heroku within seconds, saving CPU & AI requests.
   const beatIntervalMs = localMode ? CLAIM_BEAT_MS : Math.min(CLAIM_BEAT_MS, 3500);
+  let reclaimed = false; // already said "took it back" for this grab, so the log isn't spammed every 30 s
   const beat = setInterval(async () => {
     if (state.lost) return;
     const mine = await store.renewClaim(id, WORKER, CLAIM_MS, step).catch(() => true);
-    if (mine) return;
-    // The worker on a PC is the fast copy and has priority: when another copy grabbed the job, take it straight
-    // back and carry on with the step instead of dropping it (and the request in flight) every few seconds.
-    if (localMode && (await store.claimRecording(id, WORKER, CLAIM_MS, { force: true }).catch(() => false))) {
-      console.warn(`[Rec] ${id}: another copy grabbed the job, took it back (${WORKER} is the fast processor).`);
+    if (mine) { reclaimed = false; return; }
+    // A worker on a PC is the fast copy and owns the job: take it straight back from whoever grabbed it and
+    // carry on with the step. Stopping here restarted the track build from zero every time the other copy
+    // helped itself to the job, which is why a recording never got past the first speaker.
+    if (localMode) {
+      const row = await store.getRecording(id, { fresh: true }).catch(() => null);
+      if (row && ["done", "deleted", "discarded"].includes(row.status)) {
+        state.lost = true;
+        abortController.abort(new JobStopped(`already ${row.status}`));
+        ffmpeg.killAll();
+        return;
+      }
+      if (await store.claimRecording(id, WORKER, CLAIM_MS, { force: true, anyStatus: true }).catch(() => false)) {
+        if (!reclaimed) console.warn(`[Rec] ${id}: ${row?.claimed_by || "another copy"} grabbed the job, took it back (${WORKER} is the fast processor).`);
+        reclaimed = true;
+        return;
+      }
+      // Couldn't yet: keep working and try again on the next beat rather than throwing the step away
+      console.warn(`[Rec] ${id}: couldn't take the job back from ${row?.claimed_by || "another copy"} yet, carrying on`);
       return;
     }
     state.lost = true;

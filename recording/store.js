@@ -165,14 +165,17 @@ function claimColsMissing(error) {
 }
 
 // Takes the job if nobody (or nobody still alive) has it. true when this copy may work on it.
-async function claimRecording(id, worker, ttlMs, { force = false } = {}) {
+// anyStatus: a worker on a PC taking its own job back also claims one that is still "recording"/"suspended" by
+// a stale row - it only refuses a finished, deleted or discarded one.
+async function claimRecording(id, worker, ttlMs, { force = false, anyStatus = false } = {}) {
   if (!supabase || !hasClaimCols) return true;
   const now = new Date();
   const until = new Date(now.getTime() + ttlMs).toISOString();
   try {
-    // Only a recording that still needs work can be claimed: never a finished/deleted one (a copy that lost the
-    // job must not pull it back after the other copy already finished it)
-    let q = supabase.from("recordings").update({ claimed_by: worker, claim_expires_at: until }).eq("id", id).in("status", ["processing", "paused"]);
+    // Never a finished/deleted recording: a copy that lost the job must not pull it back after another copy
+    // already finished it
+    let q = supabase.from("recordings").update({ claimed_by: worker, claim_expires_at: until }).eq("id", id);
+    q = anyStatus ? q.not("status", "in", "(done,deleted,discarded)") : q.in("status", ["processing", "paused"]);
     // Someone else's claim counts only while it's still being renewed
     if (!force) q = q.or(`claim_expires_at.is.null,claim_expires_at.lt.${now.toISOString()}`);
     const { data, error } = await q.select("id");
