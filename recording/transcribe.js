@@ -10,7 +10,6 @@ const { readOggPackets, readOggHead, OggOpusWriter } = require("./ogg");
 const { MS } = require("./track");
 const store = require("./store");
 const drive = require("./drive");
-const { mentionsPolitics, POLITICS_RULE } = require("./redact");
 const panel = require("./panel");
 const { sleep, JobStopped, QuotaPause, BusyPause, UserError, nextQuotaReset, quotaRetryAt, busyRetryAt, resetBusyCount, localStamp, participants } = require("./util");
 
@@ -145,15 +144,10 @@ function geminiModel(key, name, { schema, system } = {}) {
   return new GoogleGenerativeAI(key).getGenerativeModel({ model: name, safetySettings: SAFETY, systemInstruction: system, generationConfig });
 }
 
-// The key that last worked: later requests start with it
-let keyNo = 0;
-// "model|key" -> when to try that key again after it ran out of daily quota (under an hour, so the
-// hourly quota retry asks it again)
+// "model|key" -> when that key may be asked again (a per-minute limit of a few seconds, or out for the day).
+// Nothing here sleeps: a failed attempt moves straight on to the next key or model.
 const spentUntil = new Map();
-// "model" -> when to try it again after it answered 503 or held every request until the timeout. A 503 is
-// the model being busy for all keys alike, so the batches right after it go straight to the other model.
-const modelRest = new Map();
-// Out of free quota for the day on every key (the mark lasts under an hour, so the hourly retry asks again)
+// Out of free quota for the day on every key of that model
 const daySpent = (model) => (spentUntil.get(`${model}|ALL`) || 0) > Date.now();
 
 const isDailyQuota = (err) => /PerDay|per day|daily/i.test(JSON.stringify(err.errorDetails || []) + " " + (err.message || ""));
@@ -162,48 +156,23 @@ function retryDelayMs(err) {
   return 60000;
 }
 
-// The models to try, in order: the one asked for, then the fallbacks from the env. A model that's having a
-// bad day is stepped over instead of hammered, so a spike on one model doesn't stall a whole recording
-// while the lite models are answering fine.
+// The models to try, in order: the one asked for, then the fallbacks from the env
 const modelChain = (modelName) => [...new Set([modelName, ...fallbackModels()])];
-// How long one request may go without an answer before it's dropped: a batch that started replying is done
-// in a minute or two, and Node's own give-up is 5 minutes of silence (the "fetch failed" after a long hang).
-// Kept under that, but above a slow-but-healthy answer so a real one is never thrown away.
+// How long one request may go without an answer before it's dropped. A 15-minute batch is answered in a
+// minute or two on the flash models; anything slower is Google holding the request.
 const REQUEST_TIMEOUT_MS = 4 * 60000;
-// How long one model gets to answer before the next one takes over: long enough for a slow reply, short
-// enough that a model Google is 503-ing on doesn't hold the recording. Nothing else here is waited for -
-// only quota (429) earns a wait, and that's handled where it happens
-const MODEL_BUDGET_MS = 90 * 1000;
-// How long a model that answered 503 is passed over: the batches right after it ask the other model at once
-// instead of each paying for one doomed request first
-const MODEL_REST_MS = 3 * 60000;
 
-function sleepWithSignal(ms, signal) {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) return reject(new JobStopped("another copy of the bot is processing this recording"));
-    const t = setTimeout(resolve, ms);
-    const onAbort = () => {
-      clearTimeout(t);
-      reject(new JobStopped("another copy of the bot is processing this recording"));
-    };
-    signal?.addEventListener?.("abort", onAbort, { once: true });
-  });
-}
-
-// Retries rate limits and Google's hiccups in the order the keys were meant to be used: the primary model
-// with every key, then the first fallback model with every key, then the next one, and so on. The keys are
-// in separate Google Cloud projects, so each one has its own quota. err.daily = every model's day is used up.
+// Asks Google in one strict order and never waits while an option is still untried:
+//   primary model with key 1, key 2, key 3... -> first fallback model with key 1, key 2... -> next fallback...
+// A 503, a timeout, a reply that can't be parsed, a per-minute 429: straight to the next key (and when a model
+// runs out of keys or daily quota, straight to the next model). The keys are separate Google Cloud projects,
+// so each has its own quota. err.daily = every model's day is used up; err.transient = Google was busy or
+// unreachable on every model/key (the job pauses and comes back by itself).
 async function generate(modelName, parts, opts) {
   if (opts?.signal?.aborted) throw new JobStopped("another copy of the bot is processing this recording");
   const keys = apiKeys();
   if (!keys.length) throw new Error(NO_KEY);
   const models = modelChain(modelName);
-  // Keyed by the key itself, not its position: `i` is an index into `keys`
-  const spent = (model, i) => (spentUntil.get(`${model}|${keys[i]}`) || 0) > Date.now();
-  const coolUntil = (model, i) => spentUntil.get(`${model}|${keys[i]}`) || 0;
-  // A model that just answered 503 isn't asked again for a few minutes, not even for its first key
-  const resting = (model) => (modelRest.get(model) || 0) > Date.now();
-
   const allDaily = () => {
     const err = new Error(`Gemini's free daily quota is used up on ${models.join(", ")}`);
     err.daily = true;
@@ -211,155 +180,77 @@ async function generate(modelName, parts, opts) {
   };
   if (models.every(daySpent)) throw allDaily();
 
-  keyNo %= keys.length;
-  const tried = new Set(); // "model|key index" already asked in this call, so nothing is asked twice
-  const done = new Set(); // models whose every key was asked in this call
-  // The next key on this model that wasn't asked yet and isn't resting (from keyNo around), else -1
-  const freshKey = (model) => {
+  let reqNo = 0;
+  let lastErr = null;
+  for (const model of models) {
+    if (daySpent(model)) continue;
     for (let i = 0; i < keys.length; i++) {
-      const at = (keyNo + i) % keys.length;
-      if (!tried.has(`${model}|${at}`) && !spent(model, at)) return at;
-    }
-    return -1;
-  };
-  // The soonest a key on this model comes off a short (per-minute) rest, else 0 when none is waiting
-  const restingUntil = (model) => {
-    let soonest = 0;
-    for (let i = 0; i < keys.length; i++) {
-      if (tried.has(`${model}|${i}`) || !spent(model, i)) continue;
-      const at = coolUntil(model, i);
-      if (!soonest || at < soonest) soonest = at;
-    }
-    return soonest && soonest - Date.now() <= 5 * 60000 ? soonest : 0;
-  };
-  // The next model in the chain that still has a day left and keys to ask in this call, else -1
-  const nextModel = (from) => {
-    for (let i = 1; i <= models.length; i++) {
-      const at = (from + i) % models.length;
-      if (!daySpent(models[at]) && !resting(models[at]) && !done.has(models[at])) return at;
-    }
-    return -1;
-  };
-
-  // Start with a model that's free right now: one that just answered 503 is passed over for a few minutes
-  let mi = Math.max(0, models.findIndex((m) => !daySpent(m) && !resting(m)));
-  let slow = 0; // requests that hung until their timeout: Google holding them, not a key's minute
-  let reqNo = 0; // attempts that actually asked Google (switching model isn't one)
-  let modelStarted = Date.now(); // when this model's turn began
-
-  // Give up on this model for this call and hand over to the next one in the chain. Returns -1 when none is
-  // left, which is the only case where the job pauses: a model being busy is never a reason to stop
-  const advance = (why) => {
-    done.add(models[mi]);
-    const other = nextModel(mi);
-    if (other < 0) return -1;
-    console.warn(`[Rec] ${why}, trying ${models[other]} instead`);
-    mi = other;
-    keyNo = 0; // a new model starts with the first key, not the one the last model happened to be on
-    slow = 0;
-    modelStarted = Date.now();
-    return other;
-  };
-
-  for (;;) {
-    if (opts?.signal?.aborted) throw new JobStopped("another copy of the bot is processing this recording");
-    const model = models[mi];
-    const key = freshKey(model);
-    if (key < 0) {
-      const rest = restingUntil(model);
-      if (rest) {
-        // Every key on this model is resting for a minute: wait for the soonest one, unless this model has had
-        // its turn already and another one can be asked right now
-        if (Date.now() - modelStarted > MODEL_BUDGET_MS && advance(`${model} is rate limiting every key`) >= 0) continue;
-        await sleepWithSignal(Math.max(1000, Math.min(60000, rest - Date.now() + 250)), opts?.signal);
-        continue;
-      }
-      // Every key of this model was asked (or is out for the day): on to the next model in the chain
-      if (advance(`Nothing left to try on ${model}`) >= 0) continue;
-      if (models.every(daySpent)) throw allDaily();
-      const err = new Error(`Gemini didn't answer with any key or model (${models.join(", ")})`);
-      err.transient = true;
-      throw err;
-    }
-    keyNo = key;
-    tried.add(`${model}|${key}`);
-    const label = keys.length > 1 ? `, key ${key + 1}/${keys.length}` : "";
-    try {
-      // Streamed, so the answer starts arriving right away, and dropped after a few minutes when it doesn't
-      const reqOpts = { timeout: REQUEST_TIMEOUT_MS };
-      if (opts?.signal) reqOpts.signal = opts.signal;
-      const result = await geminiModel(keys[key], model, opts).generateContentStream(
-        { contents: [{ role: "user", parts }] },
-        reqOpts
-      );
-      return await result.response;
-    } catch (err) {
-      if (opts?.signal?.aborted || err instanceof JobStopped || err.name === "AbortError" || /aborted/i.test(err.message || "")) {
-        throw new JobStopped("another copy of the bot is processing this recording");
-      }
-      // "fetch failed" hides the real reason (timeout, connection reset...) in err.cause
-      const cause = err.cause?.code || err.cause?.message;
-      if (cause && !String(err.message).includes(cause)) err.message += ` (${cause})`;
-      console.warn(`[Rec] Gemini request failed (attempt ${++reqNo}${label}, ${model}): ${String(err.message).slice(0, 300)}`);
-      const status = Number(err.status) || 0;
-
-      if (status === 429) {
-        const daily = isDailyQuota(err);
-        // A per-minute limit is only that key's, and a used-up day is only that key's project's too
-        spentUntil.set(`${model}|${keys[key]}`, Date.now() + (daily ? 50 * 60000 : Math.max(5000, retryDelayMs(err))));
-        console.warn(`[Rec] Gemini key ${key + 1}/${keys.length} on ${model} ${daily ? "is out of quota for today" : "is rate limited for a minute"}`);
-        if (daily && keys.every((_, i) => spent(model, i))) {
-          spentUntil.set(`${model}|ALL`, Date.now() + 50 * 60000);
-          console.warn(`[Rec] ${model} has no free quota left today on any key`);
+      if (opts?.signal?.aborted) throw new JobStopped("another copy of the bot is processing this recording");
+      const key = keys[i];
+      if ((spentUntil.get(`${model}|${key}`) || 0) > Date.now()) continue;
+      const label = keys.length > 1 ? `, key ${i + 1}/${keys.length}` : "";
+      try {
+        reqNo++;
+        const request = { contents: [{ role: "user", parts }] };
+        const reqOpts = { timeout: REQUEST_TIMEOUT_MS };
+        if (opts?.signal) reqOpts.signal = opts.signal;
+        // Not streamed: a stream that breaks halfway ("Failed to parse stream") leaves nothing usable, and the
+        // answer takes about as long either way. The timeout above is what gives up on a held request.
+        const result = await geminiModel(key, model, opts).generateContent(request, reqOpts);
+        return result.response;
+      } catch (err) {
+        if (opts?.signal?.aborted || err instanceof JobStopped || err.name === "AbortError" || /aborted/i.test(err.message || "")) {
+          throw new JobStopped("another copy of the bot is processing this recording");
         }
-        continue; // the top of the loop takes the next key on this model
-      }
+        // "fetch failed" hides the real reason (timeout, connection reset...) in err.cause
+        const cause = err.cause?.code || err.cause?.message;
+        if (cause && !String(err.message).includes(cause)) err.message += ` (${cause})`;
+        const status = Number(err.status) || 0;
+        console.warn(`[Rec] Gemini request failed (attempt ${reqNo}${label}, ${model}): ${String(err.message).slice(0, 300)}`);
 
-      // A 503, a timeout or a reset connection: Google's side is having a bad moment, not our quota. None of
-      // this is worth waiting for. A 503 is the model being busy for every key alike, so the next model gets
-      // the very next request; a hang is usually just that key's minute, so another key goes first
-      if (status >= 500 || !status) {
-        if (!status) {
-          slow++;
-          spentUntil.set(`${model}|${keys[key]}`, Date.now() + 90 * 1000);
-        }
-        if (status || slow >= 2) {
-          const other = advance(`${model} ${status ? `is unavailable (${status})` : "isn't answering"}`);
-          if (other >= 0) {
-            modelRest.set(model, Date.now() + MODEL_REST_MS); // later batches skip it entirely for a while
-            continue;
+        if (status === 429) {
+          const daily = isDailyQuota(err);
+          spentUntil.set(`${model}|${key}`, Date.now() + (daily ? 50 * 60000 : Math.max(5000, retryDelayMs(err))));
+          console.warn(`[Rec] Gemini key ${i + 1}/${keys.length} on ${model} ${daily ? "is out of quota for today" : "is rate limited for a minute"}`);
+          if (daily && keys.every((k) => (spentUntil.get(`${model}|${k}`) || 0) > Date.now())) {
+            spentUntil.set(`${model}|ALL`, Date.now() + 50 * 60000);
+            console.warn(`[Rec] ${model} has no free quota left today on any key`);
           }
-          // Every model has had its turn and none is free right now: the step pauses instead of hammering Google
-          if (models.every(daySpent)) throw allDaily();
-          err.transient = true;
-          throw err;
+          continue; // the next key on this model, right away
         }
-        // One hang: usually just this key's minute, so the next key on the same model goes right away.
-        // (This must never pause while a model or key is still untried: one 4-minute abort on the main model
-        // used to end the whole step, without the fallbacks ever being asked.)
-        continue;
-      }
 
-      // A model name that doesn't exist (a typo in RECORDING_GEMINI_FALLBACK_MODEL) is worth stepping over,
-      // not failing the whole recording for
-      if ((status === 404 || status === 400) && /model/i.test(err.message || "") && /not found|does not exist|not supported|unsupported/i.test(err.message || "")) {
-        spentUntil.set(`${model}|ALL`, Date.now() + 50 * 60000);
-        if (advance(`Gemini has no model called ${model}`) >= 0) continue;
-        err.daily = true; // nothing else to ask: the step tries the other names it knows
-        throw err;
-      }
+        // A model name that doesn't exist (a typo in RECORDING_GEMINI_MODEL / _FALLBACK_MODEL) fails for every
+        // key, so it steps over this model instead of spending a request per key on it
+        if ((status === 404 || status === 400) && /model/i.test(err.message || "") && /not found|does not exist|not supported|unsupported/i.test(err.message || "")) {
+          spentUntil.set(`${model}|ALL`, Date.now() + 50 * 60000);
+          console.warn(`[Rec] Gemini has no model called ${model}, trying the next model`);
+          break;
+        }
 
-      throw err; // the API answered: a bad request, a blocked reply or a bad key won't fix itself by retrying
+        // A 503, a timeout, a reset connection or an answer that can't be parsed: nothing to wait for - the next
+        // key on this model is asked straight away. When a model's keys are all like that, the next model is.
+        if (status === 0 || status >= 500 || /parse/i.test(err.message || "")) {
+          lastErr = err;
+          continue;
+        }
+
+        throw err; // the API answered: a bad request, a blocked reply or a bad key won't fix itself by retrying
+      }
     }
   }
+
+  if (models.every(daySpent)) throw allDaily();
+  const err = lastErr || new Error(`Gemini didn't answer with any key or model (${models.join(", ")})`);
+  err.transient = true;
+  throw err;
 }
 
 const TRANSCRIPT_SCHEMA = {
   type: SchemaType.ARRAY,
   items: {
     type: SchemaType.OBJECT,
-    properties: { id: { type: SchemaType.STRING }, text: { type: SchemaType.STRING }, redact: { type: SchemaType.BOOLEAN } },
-    required: ["id", "text", "redact"],
+    properties: { id: { type: SchemaType.STRING }, text: { type: SchemaType.STRING } },
+    required: ["id", "text"],
   },
 };
 
@@ -378,7 +269,6 @@ function transcribePrompt({ names, games }) {
     "- Do not translate, summarize, censor, fix grammar or add words. Keep slang and swearing as said.",
     '- Mark non-speech only when it matters, briefly in brackets like [laughs] or [unclear]. Use "" when a clip has no speech.',
     "- Never merge clips together and never skip an id.",
-    '- Set "redact": true when the clip talks about Egyptian politics, the Egyptian government, its president, "Ã˜Â§Ã™â€žÃ˜Â³Ã™Å Ã˜Â³Ã™Å " / Sisi, or anyone nicknamed "Ã˜Â¨Ã™â€žÃ˜Â­Ã˜Â©" (jokes, insults and praise count, even in passing), and then return "text": "". Otherwise "redact" is false.',
     names.length ? `People in this chat (and their nicknames): ${names.join(", ")}.` : "",
     games.length ? `Games and words that often come up: ${games.join(", ")}.` : "",
   ].filter(Boolean).join("\n");
@@ -395,11 +285,7 @@ async function transcribeBatch(batch, model, vocab, opts = {}) {
     const response = await generate(model, parts, { schema: TRANSCRIPT_SCHEMA, system: transcribePrompt(vocab), signal: opts?.signal });
     const map = {};
     for (const item of JSON.parse(response.text())) {
-      if (item && item.id !== undefined) {
-        const text = String(item.text || "").trim();
-        const redact = !!item.redact || mentionsPolitics(text);
-        map[String(item.id).replace(/[[\]\s]/g, "")] = { text: redact ? "" : text, redact };
-      }
+      if (item && item.id !== undefined) map[String(item.id).replace(/[[\]\s]/g, "")] = { text: String(item.text || "").trim() };
     }
     // Ids it skipped get one more (smaller) request
     const missed = batch.filter((s) => !(s.id in map));
@@ -413,7 +299,7 @@ async function transcribeBatch(batch, model, vocab, opts = {}) {
     if (err.daily || !batchProblem) throw err;
     if (batch.length === 1) {
       console.warn(`[Rec] Clip ${batch[0].id} couldn't be transcribed: ${err.message}`);
-      return { [batch[0].id]: { text: "", redact: false } };
+      return { [batch[0].id]: { text: "" } };
     }
     console.warn(`[Rec] A transcript batch of ${batch.length} failed (${err.message}), splitting it`);
     const half = Math.ceil(batch.length / 2);
@@ -450,7 +336,6 @@ async function transcriptStep(rec, ctx) {
   const done = out.transcriptParts || (out.transcriptParts = {});
   live.segments.forEach((s, i) => {
     done[`L${i + 1}`] = s.text;
-    if (s.redact) (out.redactIds = out.redactIds || {})[`L${i + 1}`] = true;
   });
   const pending = segments.filter((s) => !(s.id in done));
 
@@ -463,8 +348,7 @@ async function transcriptStep(rec, ctx) {
     const pendingMs = pending.reduce((a, s) => a + s.end - s.start, 0);
     const estimate = Math.max(1, Math.ceil(pendingMs / BATCH_SPEECH_MS));
     const cutters = new Map();
-    let model = geminiModelName();
-    let onFallback = false;
+    const model = geminiModelName();
     let batch = [];
     let batchMs = 0;
     let batchBytes = 0;
@@ -476,30 +360,18 @@ async function transcriptStep(rec, ctx) {
       batchNo++;
       ctx.progress("transcript", "running", `request ${batchNo} of ~${estimate}`);
       let result;
-      for (;;) {
-        if (await ctx.isLost?.({ forceCheck: true })) throw new JobStopped("another copy of the bot is processing this recording");
-        try {
-          result = await transcribeBatch(batch, model, vocab, { signal: ctx.abortSignal });
-          break;
-        } catch (err) {
-          if (ctx.abortSignal?.aborted || err instanceof JobStopped || err.name === "AbortError") throw err;
-          if (err.transient) throw new BusyPause("transcript", busyRetryAt(rec.id), err.message);
-          if (!err.daily) throw err;
-          const fallbacks = fallbackModels();
-          const nextFallback = fallbacks.find((m) => m !== model && !daySpent(m));
-          if (nextFallback) {
-            console.warn(`[Rec] ${model} is out of free quota for today, switching to ${nextFallback}`);
-            spentUntil.set(`${model}|ALL`, Date.now() + 50 * 60000); // remember this model is spent
-            model = nextFallback;
-            continue;
-          }
-          throw new QuotaPause("transcript", quotaRetryAt());
-        }
+      try {
+        result = await transcribeBatch(batch, model, vocab, { signal: ctx.abortSignal });
+      } catch (err) {
+        if (ctx.abortSignal?.aborted || err instanceof JobStopped || err.name === "AbortError") throw err;
+        // generate() already asked every key on every model in order, so there's nothing left to switch to here
+        if (err.transient) throw new BusyPause("transcript", busyRetryAt(rec.id), err.message);
+        if (err.daily) throw new QuotaPause("transcript", quotaRetryAt());
+        throw err;
       }
       for (const seg of batch) {
         const r = result[seg.id];
         done[seg.id] = r ? r.text : "";
-        if (r && r.redact) (out.redactIds = out.redactIds || {})[seg.id] = true;
       }
       if (await ctx.isLost?.()) throw new JobStopped("another copy of the bot is processing this recording");
       await ctx.save(); // a restart or a quota pause keeps what's done
@@ -530,9 +402,6 @@ async function transcriptStep(rec, ctx) {
     }
   }
 
-  // Flagged clips: their text is already empty; their audio is cut in processor.js and the talk-time stats drop them
-  const flagged = out.redactIds || {};
-  out.redact = segments.filter((s) => flagged[s.id]).map(({ user, start, end }) => ({ user, start, end }));
   ctx.refreshReport();
   const lines = segments
     .map((s) => ({ s, text: (done[s.id] || "").trim() }))
@@ -547,7 +416,7 @@ async function transcriptStep(rec, ctx) {
 
   // What the bot played goes in the transcript too, credited to whoever played it
   for (const e of rec.events || []) {
-    if (e.type !== "sound" || mentionsPolitics(e.text)) continue;
+    if (e.type !== "sound") continue;
     const line = soundLine(rec, e);
     lines.push({ start_ms: e.t, end_ms: e.t + 2000, user_id: e.user || "bot", name: line.name, text: line.text, norm: normalizeText(line.text) });
   }
@@ -566,7 +435,6 @@ async function transcriptStep(rec, ctx) {
   await store.replaceLines(rec.id, lines);
   delete out.transcriptParts; // the lines now live in recording_lines and on Drive
   delete out.liveTranscript;
-  delete out.redactIds;
   ctx.progress("transcript", "done", `${lines.length} lines`);
   await ctx.save();
 
@@ -582,7 +450,7 @@ async function transcriptStep(rec, ctx) {
 function writeTranscriptFiles(rec, lines, dir) {
   fs.mkdirSync(dir, { recursive: true });
   const nameOf = (u) => rec.speakers?.[u]?.name || u;
-  const notes = (rec.events || []).filter((e) => e.type === "note" && !mentionsPolitics(e.text)).map((e) => ({ start_ms: e.t, name: `Ã°Å¸â€œÂ NOTE (${nameOf(e.user)})`, text: e.text }));
+  const notes = (rec.events || []).filter((e) => e.type === "note").map((e) => ({ start_ms: e.t, name: `Ã°Å¸â€œÂ NOTE (${nameOf(e.user)})`, text: e.text }));
   const all = [...lines, ...notes].sort((a, b) => a.start_ms - b.start_ms);
   const started = Date.parse(rec.started_at);
   const head = [
@@ -622,7 +490,6 @@ const SUMMARY_SCHEMA = {
 };
 
 const SUMMARY_SYSTEM = [
-  POLITICS_RULE,
   "You summarize recorded Discord voice sessions of a group of Egyptian friends (mostly gaming nights).",
   'You get the session details and a transcript where each line is "[hh:mm:ss] Speaker: what they said".',
   "Write the same summary twice: `en` in English, and `ar` in Egyptian Arabic (Arabic script, casual Egyptian wording, not formal Arabic).",
@@ -639,7 +506,7 @@ function sessionHeader(rec) {
   const ended = rec.ended_at ? Date.parse(rec.ended_at) : Date.now();
   const lines = [`Session: ${rec.channel_name || "Voice"}, ${localStamp(started)} (Cairo time), ${panel.human(ended - started)} long.`];
   if (rec.report?.speakers?.length) lines.push("Talk time: " + rec.report.speakers.map((s) => `${s.name} ${panel.human(s.talkMs)}`).join(", ") + ".");
-  const notes = (rec.events || []).filter((e) => e.type === "note" && !mentionsPolitics(e.text));
+  const notes = (rec.events || []).filter((e) => e.type === "note");
   if (notes.length) lines.push("Notes added during the recording:\n" + notes.map((e) => `[${panel.hms(e.t)}] ${rec.speakers?.[e.user]?.name || "someone"}: ${e.text}`).join("\n"));
   const clips = (rec.events || []).filter((e) => e.type === "clip");
   if (clips.length) lines.push(`Moments people clipped: ${clips.map((e) => e.text.replace(/`/g, "")).join(", ")}.`);
@@ -716,7 +583,6 @@ const ASK_SYSTEM = [
   "You get summaries of recent sessions and the full transcripts of the most relevant ones ([hh:mm:ss] Speaker: text).",
   "Answer in the language of the question (Egyptian Arabic if they asked in Arabic). Be short and concrete.",
   "Point to where it came from like (16 Oct Ã‚Â· 01:23:45 Ã‚Â· Mido). If the recordings don't say, just say so - never make things up.",
-  POLITICS_RULE,
 ].join("\n");
 
 const MAX_ASK_CHARS = 600000; // ~200k tokens: stays inside the free tier's tokens-per-minute

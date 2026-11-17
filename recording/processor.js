@@ -12,7 +12,6 @@ const store = require("./store");
 const drive = require("./drive");
 const panel = require("./panel");
 const transcribe = require("./transcribe");
-const redact = require("./redact");
 const { peaksFromOgg } = require("./peaks");
 const { WORK_DIR, QuotaPause, JobStopped, busyRetryAt, resetBusyCount, watchStep, folderName, safeName } = require("./util");
 
@@ -84,21 +83,22 @@ async function pump() {
 async function waitForLocalProcessor(id) {
   const grace = (cfg.localProcessorGraceSeconds || 0) * 1000;
   if (!(grace > 0) || localMode) return false;
-  const since = queuedAt.get(id);
-  if (!since) return false;
-  // The worker on a PC has priority while it's alive: this copy waits for it rather than starting the job
-  // itself. When it has been sitting in the queue too long, or the worker stops beating (its process is
-  // gone), this copy takes the job over.
-  if (Date.now() - since > (cfg.localProcessorWaitSeconds || 600) * 1000) return false;
+  if (!queuedAt.has(id)) return false;
+  // While a worker on a PC is alive this copy waits for it, however long the job takes. It used to take the
+  // job anyway after 10 minutes, and that is what had the two copies pulling the same recording back and forth
+  // ("picked up" / "stopped" every few seconds, each time throwing away the Gemini request in flight).
+  // The moment the worker stops beating (closed laptop, killed process) this copy takes the job over.
   const beat = await store.getProcessorBeat();
   if (!beat?.name || beat.name === WORKER || beat.kind !== "local") return false;
   if (Date.now() - Date.parse(beat.at || 0) > Math.max(60000, grace)) return false;
-  // Local worker is actively on this job or working on another: let it finish
-  if (beat.job === id || beat.job) {
-    setTimeout(pump, 4000);
-    return true;
+  // A worker that beats but hasn't started this job for a quarter of an hour is stuck (its scan failing, a
+  // folder it can't write to): this copy takes over rather than leaving the recording waiting for ever.
+  const since = queuedAt.get(id);
+  if (!beat.job && since && Date.now() - since > 15 * 60000) {
+    console.warn(`[Rec] ${id}: ${beat.name} has been idle for 15 min without starting it, starting here instead`);
+    return false;
   }
-  setTimeout(pump, 3000);
+  setTimeout(pump, 4000);
   return true;
 }
 
@@ -118,16 +118,24 @@ async function startLocalWorker(c, { takeOver: take = false } = {}) {
   const scan = async () => {
     if (stopping || running || queue.length) return;
     try {
-      // Trimmed rows: the scan only reads status/claims. Polled every ~15 s, so the audio blobs matter here.
-      const rows = [...(await store.findRecordings(["processing"], { light: true })), ...(await store.findRecordings(["paused"], { light: true }))];
+      // Scan rows: status and claim only. This runs every 30 s, and a full row carries the live transcript and
+      // the speech map (megabytes on a long night), which was most of the Supabase egress.
+      const rows = [...(await store.findRecordings(["processing"], { scan: true })), ...(await store.findRecordings(["paused"], { scan: true }))];
       const next = rows
         .filter((r) => r.status !== "paused" || Date.parse(r.resume_after || 0) <= Date.now())
         .filter((r) => !isBusy(r.id))
         .sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at))[0];
       if (next) {
         // This PC is the fast copy: when it's idle it takes the job over from the bot on Heroku, which stops
-        // quickly to save CPU and AI requests
+        // quickly to save CPU and AI requests. It doesn't take it from another PC worker that is really on it,
+        // or the two would keep pulling the same job back and forth.
         if (heldElsewhere(next)) {
+          const beat = await store.getProcessorBeat().catch(() => null);
+          const holderIsLocal = beat?.kind === "local" && beat.name === next.claimed_by && Date.now() - Date.parse(beat.at || 0) < 60000;
+          if (holderIsLocal) {
+            console.log(`[Rec] ${next.id}: ${next.claimed_by} is on it (${next.claim_step || next.status}), leaving it there`);
+            return;
+          }
           console.log(`[Rec] ${next.id}: taking it over from ${next.claimed_by} (${next.claim_step || next.status})`);
           takeFromRemote.add(next.id);
         } else {
@@ -249,11 +257,9 @@ function makeCtx(rec, state = {}, abortController = null) {
       }
       return out;
     },
-    // Rebuilds the report card from the speech left after flagged stretches are cut (word counts are kept)
+    // Rebuilds the report card from the speech found (word counts are kept)
     refreshReport() {
       const o = rec.outputs;
-      const cuts = o.redact || [];
-      if (cuts.length) o.speech = redact.subtractCuts(o.speech || {}, cuts);
       const old = rec.report;
       rec.report = buildReport(rec, o.speech || {}, Date.parse(rec.ended_at) - Date.parse(rec.started_at));
       for (const s of rec.report.speakers) {
@@ -477,7 +483,7 @@ async function audioBuild(rec, ctx) {
   await ctx.save();
 }
 
-// Audio, phase 2 (after the transcript): cuts out the flagged stretches, uploads the tracks, mixes and uploads the mix
+// Audio, phase 2 (after the transcript): uploads the tracks, mixes and uploads the mix
 async function audioPublish(rec, ctx) {
   if (await ctx.isLost?.({ forceCheck: true })) throw new JobStopped("another copy of the bot is processing this recording");
   const out = rec.outputs;
@@ -485,23 +491,6 @@ async function audioPublish(rec, ctx) {
   const totalMs = Date.parse(rec.ended_at) - Date.parse(rec.started_at);
   const files = await ctx.trackFiles({ all: true });
   ctx.trackPaths = files;
-
-  const cuts = out.redact || [];
-  if (cuts.length) {
-    ctx.refreshReport();
-    for (const [user, list] of Object.entries(redact.cutRanges(cuts))) {
-      if (await ctx.isLost?.()) throw new JobStopped("another copy of the bot is processing this recording");
-      const entry = tracks[user];
-      if (!entry || entry.redacted || !files[user]) continue;
-      ctx.progress("audio", "running", `cutting out flagged parts (${entry.name})`);
-      const tmp = files[user] + ".cut.ogg";
-      await ffmpeg.muteRanges(files[user], tmp, list, { kbps: cfg.trackKbps });
-      fs.renameSync(tmp, files[user]);
-      entry.redacted = true;
-      entry.done = false; // a copy uploaded by an older run gets replaced
-      await ctx.save();
-    }
-  }
 
   let folder = null;
   let tracksFolder = null;
@@ -611,14 +600,20 @@ async function processRecording(id) {
 
   // On Heroku check every 3.5s so a local worker taking over stops Heroku within seconds, saving CPU & AI requests.
   const beatIntervalMs = localMode ? CLAIM_BEAT_MS : Math.min(CLAIM_BEAT_MS, 3500);
-  const beat = setInterval(() => {
-    store.renewClaim(id, WORKER, CLAIM_MS, step).then((mine) => {
-      if (mine || state.lost) return;
-      state.lost = true;
-      console.warn(`[Rec] ${id}: another copy of the bot took this job over, stopping here.`);
-      abortController.abort(new JobStopped("another copy of the bot is processing this recording"));
-      ffmpeg.killAll();
-    }, () => { });
+  const beat = setInterval(async () => {
+    if (state.lost) return;
+    const mine = await store.renewClaim(id, WORKER, CLAIM_MS, step).catch(() => true);
+    if (mine) return;
+    // The worker on a PC is the fast copy and has priority: when another copy grabbed the job, take it straight
+    // back and carry on with the step instead of dropping it (and the request in flight) every few seconds.
+    if (localMode && (await store.claimRecording(id, WORKER, CLAIM_MS, { force: true }).catch(() => false))) {
+      console.warn(`[Rec] ${id}: another copy grabbed the job, took it back (${WORKER} is the fast processor).`);
+      return;
+    }
+    state.lost = true;
+    console.warn(`[Rec] ${id}: another copy of the bot took this job over, stopping here.`);
+    abortController.abort(new JobStopped("another copy of the bot is processing this recording"));
+    ffmpeg.killAll();
   }, beatIntervalMs);
   beat.unref?.();
 

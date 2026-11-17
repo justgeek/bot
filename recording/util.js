@@ -106,13 +106,13 @@ function quotaRetryAt() {
 }
 
 // When a job paused because Google was busy comes back to the step it was on.
-// Consecutive busy pauses for the same recording back off: 5 min, 10, 20, 30 (capped),
-// so a recording that keeps hitting 503s doesn't hammer the API every 10 min forever.
+// Consecutive busy pauses for the same recording back off: 2 min, 4, 8, 15 (capped), so a recording that
+// keeps hitting 503s doesn't hammer the API, but doesn't sit idle for half an hour either.
 const busyPauseCount = new Map(); // recId -> consecutive count; cleared when a step completes cleanly
 function busyRetryAt(recId) {
   const n = recId ? (busyPauseCount.get(recId) || 0) + 1 : 1;
   if (recId) busyPauseCount.set(recId, n);
-  const minutes = Math.min(30, 5 * Math.pow(2, n - 1)); // 5, 10, 20, 30, 30, ...
+  const minutes = Math.min(15, 2 * Math.pow(2, n - 1)); // 2, 4, 8, 15, 15, ...
   return Date.now() + minutes * 60000;
 }
 function resetBusyCount(recId) { if (recId) busyPauseCount.delete(recId); }

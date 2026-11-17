@@ -37,7 +37,7 @@ module.exports = {
   Recording: {
     chunkMinutes: 5, // raw audio goes to Drive in pieces this long while recording, so a restart risks at most one
     maxHours: 12, // safety cap per recording
-    emptyStopSeconds: 120, // stop once the channel has had no people for this long (0 = as soon as the last one leaves)
+    emptyStopSeconds: 120, // stop (and process) once only the bot is left in the channel, night or day (0 = right away)
     aloneStopSeconds: 900, // stop once only 1 person has remained alone for this long (15 mins)
     autoMinPeople: 2, // default people needed for auto-record to start
     autoStartDelaySeconds: 5, // the channel must stay that full this long (ignores quick join/leave)
@@ -45,7 +45,6 @@ module.exports = {
     ignoreBots: true, // don't record other bots (music bots etc.)
     claimTtlSeconds: 180, // a job claimed by a copy of the bot that stops renewing is free again after this (a dyno restart, a closed laptop)
     localProcessorGraceSeconds: 120, // while a worker on a PC is running, wait this long before starting a job here: it's much faster
-    localProcessorWaitSeconds: 600, // while that worker is alive, give it this long to take a job (it's much faster) before this copy does
     workerPollSeconds: 30, // how often `npm run worker` looks for a finished recording to process
     mixKbps: 32, // everyone mixed together, Opus mono
     trackKbps: 24, // one file per speaker, Opus mono

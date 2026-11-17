@@ -7,7 +7,6 @@ const { IDs, Recording: cfg } = require("../config");
 const audio = require("../audioManager");
 const { TrackWriter, MS } = require("./track");
 const { isSilence } = require("./ogg");
-const { mentionsPolitics } = require("./redact");
 const store = require("./store");
 const drive = require("./drive");
 const panel = require("./panel");
@@ -189,7 +188,6 @@ class RecordingSession {
   onBotPacket(packet) {
     if (!this.active) return;
     const playing = audio.state.nowPlaying;
-    if (playing && mentionsPolitics(playing.text)) return; // sounds about that topic aren't recorded at all
     if (!playing && isSilence(packet)) return; // the player's trailing silence after a sound
     const key = playing?.userId ? `bot-${playing.userId}` : "bot";
     // (join/leave announcements are recorded but not logged: the log already says who joined/left)
@@ -265,9 +263,12 @@ class RecordingSession {
       const aloneLimit = (cfg.aloneStopSeconds !== undefined ? cfg.aloneStopSeconds : 900) * 1000;
       if (aloneLimit > 0 && !atNight() && Date.now() - this.aloneSince >= aloneLimit) return void this.stop("alone");
     } else {
+      // Everyone left and only the bot is in the channel: after emptyStopSeconds (2 min) it leaves too, and
+      // the recording is processed. At night as well - a channel nobody is in is just silence to transcribe,
+      // and auto-record starts a new recording when people come back.
       this.aloneSince = null;
       if (this.emptySince === null) this.emptySince = Date.now();
-      if (!atNight() && Date.now() - this.emptySince >= (cfg.emptyStopSeconds || 0) * 1000) return void this.stop("empty");
+      if (Date.now() - this.emptySince >= (cfg.emptyStopSeconds || 0) * 1000) return void this.stop("empty");
     }
     if (now >= cfg.maxHours * 3600e3) return void this.stop("max");
 
@@ -318,7 +319,6 @@ class RecordingSession {
   async note(userId, textValue) {
     const t = this.nowMs();
     const clean = String(textValue).trim().slice(0, 1000);
-    if (mentionsPolitics(clean)) throw new UserError("Notes about that topic aren't saved.");
     this.addEvent("note", userId, clean, t);
     await this.thread?.send({ content: `📝 <@${userId}> at \`${panel.hms(t)}\`: ${clean}`, allowedMentions: { parse: [] } }).catch(() => { });
   }

@@ -48,6 +48,12 @@ console.log(`[Rec] Processor worker on ${process.env.PROCESSOR_NAME || os.hostna
 console.log(`[Rec] Working files: ${WORK_DIR}`);
 console.log(`[Rec] Google Drive: ${drive.enabled ? "connected" : "NOT connected - the audio would stay on this PC"}`);
 console.log(`[Rec] Gemini: ${transcribe.hasGeminiKey() ? "key set" : "no RECORDING_GEMINI_API_KEY (transcripts and summaries can't be made)"}`);
+// The order requests are made in: the primary model with every key, then each fallback model with every key
+const geminiKeys = (process.env.RECORDING_GEMINI_API_KEY || "").split(",").filter((k) => k.trim()).length;
+const geminiOrder = [process.env.RECORDING_GEMINI_MODEL || "gemini-flash-latest", ...(process.env.RECORDING_GEMINI_FALLBACK_MODEL || "").split(",")]
+  .map((m) => m.trim())
+  .filter(Boolean);
+console.log(`[Rec] Gemini order: ${geminiOrder.join(" -> ")} (each one with key 1..${geminiKeys || "?"}, no waiting between fails)`);
 console.log(
   `[Rec] Watching for finished recordings every ${cfg.workerPollSeconds || 30}s (local PC takes priority over Heroku).` +
     (takeOver ? " Force-taking over active jobs." : "")

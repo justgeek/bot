@@ -446,7 +446,12 @@ async function playInteraction(i, recId, startMs) {
 // Recordings a restart cut off are resumed when people are still there (else finished and processed);
 // processing that was interrupted carries on
 async function resumeAll() {
-  for (const rec of await store.findRecordings(["recording", "suspended", "processing", "paused"])) {
+  // recording/suspended rows are written back below, so they come in full; the rest only need enqueueing
+  const resumeRows = [
+    ...(await store.findRecordings(["recording", "suspended"])),
+    ...(await store.findRecordings(["processing", "paused"], { scan: true })),
+  ];
+  for (const rec of resumeRows) {
     try {
       if (rec.status === "recording" || rec.status === "suspended") {
         // A "recording" row with a fresh heartbeat may still belong to another copy of the bot that's shutting down
@@ -502,10 +507,10 @@ async function housekeeping() {
     }
     // A job that lost its place (a crash, a restart in the middle of a step, a queue that dropped it) carries on
     // by itself: its steps pick up from whatever was saved
-    for (const rec of await store.findRecordings(["processing"])) {
+    for (const rec of await store.findRecordings(["processing"], { scan: true })) {
       if (!processor.isBusy(rec.id)) processor.enqueue(rec.id);
     }
-    for (const rec of await store.findRecordings(["paused"])) {
+    for (const rec of await store.findRecordings(["paused"], { scan: true })) {
       if (Date.parse(rec.resume_after || 0) <= Date.now()) processor.enqueue(rec.id);
     }
     if (settings.retentionDays > 0 && Date.now() - lastRetention > 3600e3) {

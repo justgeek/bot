@@ -102,6 +102,9 @@ module.exports = function registerRecordingsPage(app, client, opts = {}) {
   const summary = (r) => {
     const end = r.ended_at ? Date.parse(r.ended_at) : Date.now();
     const prog = r.outputs?.progress || {};
+    // A worker (this bot or the one on a PC) is on it right now: its claim is still being renewed. Without
+    // this the page said "waiting for its turn" while npm run worker was already transcribing.
+    const claimed = !!r.claimed_by && Date.parse(r.claim_expires_at || 0) > Date.now();
     return {
       id: r.id,
       channel_name: r.channel_name,
@@ -125,7 +128,8 @@ module.exports = function registerRecordingsPage(app, client, opts = {}) {
         audio: prog.audio || null,
         transcript: r.options?.transcribe ? prog.transcript || null : { state: "off" },
         summary: r.options?.summarize ? prog.summary || null : { state: "off" },
-        queued: r.status === "processing" && !processor.liveRecording(r.id),
+        queued: r.status === "processing" && !processor.liveRecording(r.id) && !claimed,
+        claimed_by: claimed ? r.claimed_by : null,
         error: r.status === "failed" ? r.error || null : null,
       } : null,
     };

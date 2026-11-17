@@ -90,11 +90,17 @@ async function getRecordingLight(id) {
 
 // light: trimmed rows for the queue scans and retention (no peaks/speech). They are never cached in
 // `memory`, because a row without those blobs must not be written back over the saved one.
-async function findRecordings(statuses, { light = false } = {}) {
-  const cols = light
+// scan: status and claim only, for the "is there something to process" polls that run every 30 s. The live
+// transcript and the file list grow all night, so reading them on every poll is megabytes of egress a day.
+const SCAN_COLUMNS = "id, status, started_at, resume_after, claimed_by, claim_expires_at, claim_step";
+async function findRecordings(statuses, { light = false, scan = false } = {}) {
+  const cols = scan
+    ? SCAN_COLUMNS
+    : light
     ? "id, status, started_at, ended_at, resume_after, drive_folder_id, claimed_by, claim_expires_at, claim_step, " + LIGHT_OUTPUTS
     : "*";
   const rows = await run("findRecordings", () => supabase.from("recordings").select(cols).in("status", statuses).order("started_at", { ascending: true }), []);
+  if (scan) return rows.map((r) => ({ ...r, outputs: {} }));
   if (light) return rows.map(rehydrateOutputs);
   for (const r of rows) if (!memory.has(r.id)) memory.set(r.id, r);
   const ids = new Set(rows.map((r) => r.id));
@@ -104,7 +110,7 @@ async function findRecordings(statuses, { light = false } = {}) {
 
 // Newest first, without the bulky columns
 async function listRecordings(limit = 50) {
-  const cols = "id, channel_id, channel_name, started_by, started_at, ended_at, end_reason, status, speakers, drive_folder_id, options, " + LIGHT_OUTPUTS;
+  const cols = "id, channel_id, channel_name, started_by, started_at, ended_at, end_reason, status, speakers, drive_folder_id, options, claimed_by, claim_expires_at, " + LIGHT_OUTPUTS;
   const rows = await run("listRecordings", () => supabase.from("recordings").select(cols).not("status", "in", "(deleted,discarded)").order("started_at", { ascending: false }).limit(limit), null);
   if (rows) return rows.map(rehydrateOutputs);
   return [...memory.values()].filter((r) => !["deleted", "discarded"].includes(r.status)).sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at)).slice(0, limit);
@@ -164,7 +170,9 @@ async function claimRecording(id, worker, ttlMs, { force = false } = {}) {
   const now = new Date();
   const until = new Date(now.getTime() + ttlMs).toISOString();
   try {
-    let q = supabase.from("recordings").update({ claimed_by: worker, claim_expires_at: until }).eq("id", id);
+    // Only a recording that still needs work can be claimed: never a finished/deleted one (a copy that lost the
+    // job must not pull it back after the other copy already finished it)
+    let q = supabase.from("recordings").update({ claimed_by: worker, claim_expires_at: until }).eq("id", id).in("status", ["processing", "paused"]);
     // Someone else's claim counts only while it's still being renewed
     if (!force) q = q.or(`claim_expires_at.is.null,claim_expires_at.lt.${now.toISOString()}`);
     const { data, error } = await q.select("id");
@@ -232,7 +240,7 @@ async function getProcessorBeat() {
 
 // A recording is going on right now (or a suspended one may still resume)
 async function liveRecordingExists() {
-  return (await findRecordings(["recording", "suspended"], { light: true })).length > 0;
+  return (await findRecordings(["recording", "suspended"], { scan: true })).length > 0;
 }
 
 // ---------- Settings ----------

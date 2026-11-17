@@ -4,12 +4,19 @@
 // the ones made after the call (~15 min of speech), so this costs no extra Gemini quota.
 // What's been sent is kept in rec.outputs.liveTranscript = { untilMs, segments: [{ user, start, end, text }] }:
 // everything before untilMs is transcribed, transcriptStep (transcribe.js) does the rest after the call.
-// Any trouble (quota, errors, a bot restart) just stops it; the after-call step then does more.
+// Google being busy (503), a per-minute limit or a request that fails doesn't end it: the clips go back in
+// line and are asked again a little later, while the rest of the call is still being read from disk. Only
+// when Gemini's day is used up does it stop, and the after-call step then picks up from untilMs.
 const { readOggPackets, isSilence } = require("./ogg");
 const { MS, addSpeech } = require("./track");
 const transcribe = require("./transcribe");
 
 const GRACE_MS = 3000; // after a window ends, before its chunks are read (tracks close theirs 200 ms late)
+// Clips waiting for Gemini are held in memory (about 25 KB per minute of speech). If it stays unreachable
+// this long, the live transcript stops here and the after-call step does the rest from the tracks.
+const MAX_PENDING_MS = 60 * 60000;
+const MAX_PENDING_BYTES = 48 * 1024 * 1024;
+const RETRY_MS = [15000, 30000, 60000, 120000, 300000]; // waiting only while nothing else can be asked
 
 class LiveTranscriber {
   // enabled: false after a bot restart (the earlier part's chunks aren't on this disk any more)
@@ -19,11 +26,12 @@ class LiveTranscriber {
     this.off = !enabled;
     this.chunks = new Map(); // window start (ms) -> [{ userId, startMs, file }]
     this.nextWindow = this.state.untilMs;
-    this.pending = []; // [{ user, start, end, audio }]: cut, not sent yet
+    this.pending = []; // [{ user, start, end, until, audio }]: cut, not sent yet
     this.pendingMs = 0;
     this.pendingBytes = 0;
     this.busy = null;
-    this.model = null;
+    this.failures = 0;
+    this.retryAt = 0;
   }
 
   get rec() { return this.session.rec; }
@@ -49,8 +57,8 @@ class LiveTranscriber {
         return this.giveUp(`reading the audio failed: ${err.message}`);
       }
     }
-    const hasAudio = this.pending.length > 0;
-    if (hasAudio && !this.busy) this.send();
+    if (Date.now() < this.retryAt) return; // Google is having a moment: the clips wait, the call goes on
+    if (this.pending.length && !this.busy) this.send();
   }
 
   // Speech in one window, per person (the bot's sounds aren't transcribed), cut into clips
@@ -79,7 +87,7 @@ class LiveTranscriber {
         if (!cutter) cutters.set(chunk.file, (cutter = new transcribe.SegmentCutter(chunk.file)));
         const audio = cutter.cut(seg.start - chunk.startMs, seg.end - chunk.startMs);
         if (!audio) continue;
-        this.pending.push({ user: seg.user, start: seg.start, end: seg.end, audio });
+        this.pending.push({ user: seg.user, start: seg.start, end: seg.end, until: end, audio });
         this.pendingMs += seg.end - seg.start;
         this.pendingBytes += audio.length;
       }
@@ -88,46 +96,62 @@ class LiveTranscriber {
     }
     this.chunks.delete(w);
     this.nextWindow = end;
+    if (this.pendingMs > MAX_PENDING_MS || this.pendingBytes > MAX_PENDING_BYTES) {
+      this.giveUp("Gemini is too far behind, the rest is done after the call");
+    }
   }
 
   send() {
     const batch = this.pending;
-    const until = this.nextWindow;
     this.pending = [];
     this.pendingMs = 0;
     this.pendingBytes = 0;
-    this.busy = this.request(batch, until).finally(() => {
+    this.busy = this.request(batch).finally(() => {
       this.busy = null;
     });
   }
 
-  async request(segs, until) {
+  // Back in line, in front of the newer clips (the transcript has to stay in order)
+  requeue(batch) {
+    this.pending = [...batch, ...this.pending];
+    for (const s of batch) {
+      this.pendingMs += s.end - s.start;
+      this.pendingBytes += s.audio.length;
+    }
+  }
+
+  async request(segs) {
     const names = Object.fromEntries(Object.entries(this.rec.speakers || {}).map(([u, s]) => [u, s.name || u]));
     const batch = segs.map((s, i) => ({ ...s, id: String(i + 1), name: names[s.user] || s.user }));
     const vocab = transcribe.vocabulary(this.rec);
-    this.model = this.model || transcribe.geminiModelName();
     let result;
-    for (;;) {
-      try {
-        result = await transcribe.transcribeBatch(batch, this.model, vocab);
-        break;
-      } catch (err) {
-        if (err.daily) {
-          const fallbacks = [transcribe.geminiModelName(), ...transcribe.fallbackModels()];
-          const next = fallbacks.find((m) => m !== this.model);
-          if (next) { this.model = next; continue; }
-        }
-        return this.giveUp(err.daily ? "Gemini's free limit is used up" : `Gemini failed: ${err.message}`);
-      }
+    try {
+      // generate() (transcribe.js) asks the model, then its fallbacks, key by key, with no waiting
+      result = await transcribe.transcribeBatch(batch, transcribe.geminiModelName(), vocab);
+    } catch (err) {
+      if (this.off) return;
+      if (err.daily) return this.giveUp("Gemini's free limit is used up for now");
+      // Nothing is thrown away: the clips wait here and are asked again a little later
+      this.requeue(batch);
+      const wait = RETRY_MS[Math.min(this.failures, RETRY_MS.length - 1)];
+      this.failures++;
+      this.retryAt = Date.now() + wait;
+      console.warn(
+        `[Rec] ${this.rec.id}: live transcript request failed (${String(err.message || err).slice(0, 160)}), ` +
+          `trying again in ${Math.round(wait / 1000)}s; the recording carries on`
+      );
+      return;
     }
     if (this.off) return; // stopped while waiting (the after-call step redoes this part)
+    this.failures = 0;
+    this.retryAt = 0;
     const state = this.state;
     for (const s of batch) {
       const r = result[s.id];
-      state.segments.push({ user: s.user, start: s.start, end: s.end, text: r ? r.text : "", ...(r && r.redact ? { redact: true } : {}) });
+      state.segments.push({ user: s.user, start: s.start, end: s.end, text: r ? r.text : "" });
     }
-    state.untilMs = until;
-    console.log(`[Rec] ${this.rec.id}: transcribed live up to ${Math.round(until / 60000)} min (${batch.length} clips)`);
+    state.untilMs = Math.max(state.untilMs, ...batch.map((s) => s.until || 0));
+    console.log(`[Rec] ${this.rec.id}: transcribed live up to ${Math.round(state.untilMs / 60000)} min (${batch.length} clips)`);
     this.session.lastSaved = 0; // saved at the next tick
     this.session.refreshPanel(true);
   }
@@ -137,6 +161,8 @@ class LiveTranscriber {
     console.warn(`[Rec] ${this.rec.id}: live transcript stopped (${why}); the rest is done after the call`);
     this.off = true;
     this.pending = [];
+    this.pendingMs = 0;
+    this.pendingBytes = 0;
     this.chunks.clear();
   }
 
@@ -145,6 +171,8 @@ class LiveTranscriber {
     if (this.busy) await Promise.race([this.busy, new Promise((r) => setTimeout(r, maxMs))]);
     this.off = true;
     this.pending = [];
+    this.pendingMs = 0;
+    this.pendingBytes = 0;
     this.chunks.clear();
   }
 }
