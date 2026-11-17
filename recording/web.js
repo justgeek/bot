@@ -99,6 +99,13 @@ module.exports = function registerRecordingsPage(app, client, opts = {}) {
     };
   }
 
+  // How many lines the live transcript has: the detail view has the whole array, the list and the poll only the
+  // two numbers the light rows carry, so both work here
+  const liveTranscriptLines = (r) => {
+    const live = r.outputs?.liveTranscript || {};
+    return live.segments?.length || live.count || 0;
+  };
+
   const summary = (r) => {
     const end = r.ended_at ? Date.parse(r.ended_at) : Date.now();
     const prog = r.outputs?.progress || {};
@@ -121,7 +128,7 @@ module.exports = function registerRecordingsPage(app, client, opts = {}) {
       audio_removed_why: r.outputs?.audioDeleted ? String(r.outputs.audioDeleted) : null,
       // Stored audio once it's on Drive, else the raw audio recorded so far
       size_bytes: r.outputs?.audioDeleted ? 0 : ((r.outputs?.files?.mix?.size || 0) + Object.values(r.outputs?.files?.tracks || {}).reduce((a, t) => a + (t.size || 0), 0)) || Object.values(r.speakers || {}).reduce((a, s) => a + (s.bytes || 0), 0),
-      has_transcript: prog.transcript?.state === "done" || ((r.outputs?.liveTranscript?.segments?.length || 0) > 0),
+      has_transcript: prog.transcript?.state === "done" || !!liveTranscriptLines(r),
       has_summary: prog.summary?.state === "done",
       // Each step's { state, detail } while it's being made (same as the panel in #record)
       progress: ["processing", "paused", "failed"].includes(r.status) ? {
@@ -232,7 +239,7 @@ module.exports = function registerRecordingsPage(app, client, opts = {}) {
       const rec = fresh(await store.getRecordingLight(String(req.params.id)));
       if (!rec || ["deleted", "discarded"].includes(rec.status)) return res.status(404).json({ error: "not_found" });
       const s = summary(rec);
-      const linesCount = rec.outputs?.liveTranscript?.segments?.length || 0;
+      const linesCount = liveTranscriptLines(rec);
       res.set("Cache-Control", "no-store");
       res.json({
         status: s.status,

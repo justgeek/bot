@@ -53,15 +53,19 @@ const pick = (rec) => Object.fromEntries(ROW_COLUMNS.filter((k) => rec[k] !== un
 // whole table). The list, the queue scans and the page's fast poll never read them, so those reads ask
 // PostgREST for just the parts they use and put the row back together below. Supabase bills egress, so
 // this is the difference between a few KB and a few MB per read.
+// The live transcript is the one part of a row that grows all night (a 10-hour call is a few hundred KB). The
+// list, the scans and the page's 3-second progress poll only need "how far it got" and "how many lines", so
+// they ask for those two numbers rather than the whole array. Supabase bills every byte it sends back.
 const LIGHT_OUTPUTS =
-  "progress:outputs->progress, files:outputs->files, audioDeleted:outputs->audioDeleted, liveTranscript:outputs->liveTranscript";
+  "progress:outputs->progress, files:outputs->files, audioDeleted:outputs->audioDeleted, liveUntil:outputs->liveTranscript->untilMs, liveCount:outputs->liveTranscript->count";
 function rehydrateOutputs(row) {
   if (!row) return row;
-  const { progress, files, audioDeleted, liveTranscript, ...rest } = row;
+  const { progress, files, audioDeleted, liveUntil, liveCount, ...rest } = row;
   const outputs = {};
-  for (const [k, v] of [["progress", progress], ["files", files], ["audioDeleted", audioDeleted], ["liveTranscript", liveTranscript]]) {
+  for (const [k, v] of [["progress", progress], ["files", files], ["audioDeleted", audioDeleted]]) {
     if (v != null) outputs[k] = v;
   }
+  if (liveUntil != null || liveCount != null) outputs.liveTranscript = { untilMs: Number(liveUntil) || 0, count: Number(liveCount) || 0 };
   return { ...rest, outputs };
 }
 

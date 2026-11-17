@@ -37,7 +37,9 @@ class LiveTranscriber {
   get rec() { return this.session.rec; }
   get state() {
     const out = (this.rec.outputs = this.rec.outputs || {});
-    return (out.liveTranscript = out.liveTranscript || { untilMs: 0, segments: [] });
+    const live = (out.liveTranscript = out.liveTranscript || { untilMs: 0, segments: [] });
+    if (!Array.isArray(live.segments)) live.segments = []; // a light row only carries untilMs/count
+    return live;
   }
   get enabled() { return !this.off && !!this.rec.options?.transcribe && transcribe.hasGeminiKey(); }
 
@@ -150,6 +152,7 @@ class LiveTranscriber {
       const r = result[s.id];
       state.segments.push({ user: s.user, start: s.start, end: s.end, text: r ? r.text : "" });
     }
+    state.count = state.segments.length; // the light rows and the page's poll read this instead of the whole array
     state.untilMs = Math.max(state.untilMs, ...batch.map((s) => s.until || 0));
     console.log(`[Rec] ${this.rec.id}: transcribed live up to ${Math.round(state.untilMs / 60000)} min (${batch.length} clips)`);
     this.session.lastSaved = 0; // saved at the next tick

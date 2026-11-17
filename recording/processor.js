@@ -51,13 +51,15 @@ async function pump() {
   const force = takeOver || takeFromRemote.has(id);
   takeFromRemote.delete(id);
   const claimed = await store.claimRecording(id, WORKER, CLAIM_MS, { force });
-  queue.shift();
-  queuedAt.delete(id);
   if (!claimed) {
-    // The other copy of the bot is on this one (its claim is still fresh): leave it to that one
-    setImmediate(pump);
+    // Another copy is on this one (its claim is still fresh): leave it to that one and look again in a few
+    // seconds. This used to retry immediately, which hammered Supabase with thousands of claim writes a minute
+    // (and those are what the free tier is measured in).
+    setTimeout(pump, 5000);
     return;
   }
+  queue.shift();
+  queuedAt.delete(id);
   takeOver = false;
   running = id;
   if (localMode) {
@@ -98,7 +100,7 @@ async function waitForLocalProcessor(id) {
     console.warn(`[Rec] ${id}: ${beat.name} has been idle for 15 min without starting it, starting here instead`);
     return false;
   }
-  setTimeout(pump, 4000);
+  setTimeout(pump, 15000);
   return true;
 }
 
@@ -111,15 +113,16 @@ async function startLocalWorker(c, { takeOver: take = false } = {}) {
   localMode = true;
   takeOver = take;
   // The heartbeat also holds the claim on the job being worked on: a dyno that starts (or a copy that was left
-  // running from before an update) can't take it away for more than 20 s, so the fast PC is the one that
-  // finishes the recording. Only the row being finished stops this.
+  // running from before an update) can't take it away for more than 30 s, so the fast PC is the one that
+  // finishes the recording. Only the row being finished stops this. Every extra beat is a Supabase request,
+  // so it stays at 30 s (the claim lasts 3 minutes: plenty of room).
   const beat = (currentJob = running || null) =>
     Promise.all([
       store.setProcessorBeat({ name: WORKER, kind: "local", at: new Date().toISOString(), job: currentJob }),
       currentJob ? store.claimRecording(currentJob, WORKER, CLAIM_MS, { force: true, anyStatus: true }).catch(() => false) : null,
     ]);
   await beat();
-  setInterval(() => beat(), 20000).unref();
+  setInterval(() => beat(), 30000).unref();
   let lastIdleLog = 0;
   const scan = async () => {
     if (stopping || running || queue.length) return;
@@ -609,8 +612,9 @@ async function processRecording(id) {
   let step = "audio";
   ctx.currentStep = step;
 
-  // On Heroku check every 3.5s so a local worker taking over stops Heroku within seconds, saving CPU & AI requests.
-  const beatIntervalMs = localMode ? CLAIM_BEAT_MS : Math.min(CLAIM_BEAT_MS, 3500);
+  // On Heroku check every 15 s so a local worker taking over stops it quickly. (It was 3.5 s, which was 25k
+  // claim writes a day for nothing: the PC's own heartbeat takes the job within 30 s anyway.)
+  const beatIntervalMs = localMode ? CLAIM_BEAT_MS : Math.min(CLAIM_BEAT_MS, 15000);
   let reclaimed = false; // already said "took it back" for this grab, so the log isn't spammed every 30 s
   const beat = setInterval(async () => {
     if (state.lost) return;
