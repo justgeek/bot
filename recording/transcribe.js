@@ -189,6 +189,8 @@ async function generate(modelName, parts, opts) {
       const key = keys[i];
       if ((spentUntil.get(`${model}|${key}`) || 0) > Date.now()) continue;
       const label = keys.length > 1 ? `, key ${i + 1}/${keys.length}` : "";
+      // Counts as progress for the step's watchdog: walking every key and model is work, not a stall
+      opts?.onAttempt?.();
       try {
         reqNo++;
         const request = { contents: [{ role: "user", parts }] };
@@ -282,7 +284,12 @@ async function transcribeBatch(batch, model, vocab, opts = {}) {
     parts.push({ inlineData: { mimeType: "audio/ogg", data: seg.audio.toString("base64") } });
   }
   try {
-    const response = await generate(model, parts, { schema: TRANSCRIPT_SCHEMA, system: transcribePrompt(vocab), signal: opts?.signal });
+    const response = await generate(model, parts, {
+      schema: TRANSCRIPT_SCHEMA,
+      system: transcribePrompt(vocab),
+      signal: opts?.signal,
+      onAttempt: opts?.onAttempt,
+    });
     const map = {};
     for (const item of JSON.parse(response.text())) {
       if (item && item.id !== undefined) map[String(item.id).replace(/[[\]\s]/g, "")] = { text: String(item.text || "").trim() };
@@ -361,7 +368,7 @@ async function transcriptStep(rec, ctx) {
       ctx.progress("transcript", "running", `request ${batchNo} of ~${estimate}`);
       let result;
       try {
-        result = await transcribeBatch(batch, model, vocab, { signal: ctx.abortSignal });
+        result = await transcribeBatch(batch, model, vocab, { signal: ctx.abortSignal, onAttempt: () => ctx.pulse() });
       } catch (err) {
         if (ctx.abortSignal?.aborted || err instanceof JobStopped || err.name === "AbortError") throw err;
         // generate() already asked every key on every model in order, so there's nothing left to switch to here
@@ -532,7 +539,12 @@ async function summaryStep(rec, ctx) {
     for (;;) {
       if (await ctx.isLost?.({ forceCheck: true })) throw new JobStopped("another copy of the bot is processing this recording");
       try {
-        response = await generate(summaryModel, [{ text: `${sessionHeader(rec)}\n\nTranscript:\n${transcriptText(lines)}` }], { schema: SUMMARY_SCHEMA, system: SUMMARY_SYSTEM, signal: ctx.abortSignal });
+        response = await generate(summaryModel, [{ text: `${sessionHeader(rec)}\n\nTranscript:\n${transcriptText(lines)}` }], {
+          schema: SUMMARY_SCHEMA,
+          system: SUMMARY_SYSTEM,
+          signal: ctx.abortSignal,
+          onAttempt: () => ctx.pulse(),
+        });
         break;
       } catch (err) {
         if (ctx.abortSignal?.aborted || err instanceof JobStopped || err.name === "AbortError") throw err;

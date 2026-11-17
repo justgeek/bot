@@ -19,6 +19,7 @@ let client = null;
 const queue = [];
 const queuedAt = new Map(); // recording id -> when it was queued (the local worker's grace reads it)
 const takeFromRemote = new Set(); // ids the local scan found held by another live copy (the fast PC takes those over)
+const retryAt = new Map(); // recording id -> don't try to claim it again before this (another copy holds it)
 let running = null;
 let live = null; // the row being processed (its progress is only saved at checkpoints; the recordings page reads it from here)
 let stopping = false;
@@ -44,22 +45,59 @@ function enqueue(id) {
   pump();
 }
 
+// One pump at a time: two calls used to interleave around a claim (the same recording asked for twice, or two
+// jobs starting in this process). Every path below schedules the next pump itself, so a call ignored here is
+// never lost.
+let pumping = false;
 async function pump() {
+  if (pumping) return;
+  pumping = true;
+  try {
+    await pumpStep();
+  } finally {
+    pumping = false;
+  }
+}
+
+async function pumpStep() {
   if (running || stopping || !queue.length) return;
-  const id = queue[0];
-  if (await waitForLocalProcessor(id)) return;
-  const force = takeOver || takeFromRemote.has(id);
-  takeFromRemote.delete(id);
-  const claimed = await store.claimRecording(id, WORKER, CLAIM_MS, { force });
-  if (!claimed) {
-    // Another copy is on this one (its claim is still fresh): leave it to that one and look again in a few
-    // seconds. This used to retry immediately, which hammered Supabase with thousands of claim writes a minute
-    // (and those are what the free tier is measured in).
-    setTimeout(pump, 5000);
+  // Skip whatever another copy is still holding (it comes back after its own 5 s backoff), so one job that can't
+  // be claimed can never block the recordings behind it in the queue
+  const now = Date.now();
+  const id = queue.find((q) => (retryAt.get(q) || 0) <= now);
+  if (!id) {
+    const soonest = Math.min(...queue.map((q) => retryAt.get(q) || now));
+    setTimeout(pump, Math.max(1000, Math.min(15000, soonest - now)));
     return;
   }
-  queue.shift();
+  if (await waitForLocalProcessor(id)) return;
+  const force = takeOver || takeFromRemote.has(id);
+  const claimed = await store.claimRecording(id, WORKER, CLAIM_MS, { force });
+  if (!claimed) {
+    // Refused: another copy holds it, or there's nothing left to do on it. Either way this one waits 5 s (each
+    // try is a Supabase request, and a tight loop there burns the free tier) while the next recording starts.
+    retryAt.set(id, Date.now() + 5000);
+    const state = await store.getRecordingState(id).catch(() => null);
+    // Only when the database positively says there is no work left: no answer at all (a blip) keeps it in line
+    if (state && !["processing", "paused"].includes(state.status)) {
+      // Finished, deleted or still being recorded: out of the queue for good (the scan adds it again if it ever
+      // needs work, and a finished one never does)
+      const at = queue.indexOf(id);
+      if (at >= 0) queue.splice(at, 1);
+      retryAt.delete(id);
+      queuedAt.delete(id);
+      console.log(`[Rec] ${id}: ${state.status}, nothing to process`);
+      setImmediate(pump);
+      return;
+    }
+    setTimeout(pump, 0); // straight on to the next recording that's ready
+    return;
+  }
+  const qi = queue.indexOf(id);
+  if (qi >= 0) queue.splice(qi, 1);
+  retryAt.delete(id);
   queuedAt.delete(id);
+  takeFromRemote.delete(id);
   takeOver = false;
   running = id;
   if (localMode) {
@@ -125,7 +163,9 @@ async function startLocalWorker(c, { takeOver: take = false } = {}) {
   setInterval(() => beat(), 30000).unref();
   let lastIdleLog = 0;
   const scan = async () => {
-    if (stopping || running || queue.length) return;
+    // Only while this PC is actually working on something: a queue entry waiting out a claim backoff must not
+    // stop new recordings from being found (enqueue() already ignores one that's still queued)
+    if (stopping || running) return;
     try {
       // Scan rows: status and claim only. This runs every 30 s, and a full row carries the live transcript and
       // the speech map (megabytes on a long night), which was most of the Supabase egress.

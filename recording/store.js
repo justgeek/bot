@@ -58,15 +58,56 @@ const pick = (rec) => Object.fromEntries(ROW_COLUMNS.filter((k) => rec[k] !== un
 // they ask for those two numbers rather than the whole array. Supabase bills every byte it sends back.
 const LIGHT_OUTPUTS =
   "progress:outputs->progress, files:outputs->files, audioDeleted:outputs->audioDeleted, liveUntil:outputs->liveTranscript->untilMs, liveCount:outputs->liveTranscript->count";
+const LIGHT_OUTPUTS_WHOLE =
+  "progress:outputs->progress, files:outputs->files, audioDeleted:outputs->audioDeleted, liveTranscript:outputs->liveTranscript";
+// Not every PostgREST understands a nested JSON path in a select ("outputs->liveTranscript->untilMs"). The first
+// time one refuses it, the whole liveTranscript is asked for instead: a little more egress, but the list, the
+// queue scans and the page's poll must never come back empty over a select the server doesn't support.
+let liveScalarSelect = true;
 function rehydrateOutputs(row) {
   if (!row) return row;
-  const { progress, files, audioDeleted, liveUntil, liveCount, ...rest } = row;
+  const { progress, files, audioDeleted, liveUntil, liveCount, liveTranscript: wholeLive, ...rest } = row;
   const outputs = {};
   for (const [k, v] of [["progress", progress], ["files", files], ["audioDeleted", audioDeleted]]) {
     if (v != null) outputs[k] = v;
   }
   if (liveUntil != null || liveCount != null) outputs.liveTranscript = { untilMs: Number(liveUntil) || 0, count: Number(liveCount) || 0 };
+  else if (wholeLive != null) outputs.liveTranscript = wholeLive;
   return { ...rest, outputs };
+}
+
+// An error that means "PostgREST didn't like this select" rather than "the request never got there"
+const selectProblem = (error) =>
+  /^PGRST1/.test(String(error?.code || "")) ||
+  ["42703", "PGRST204"].includes(String(error?.code || "")) ||
+  /column|select|json|path|syntax/i.test(String(error?.message || ""));
+
+// One of the trimmed reads: tries the two tiny live-transcript fields, and the whole liveTranscript only if this
+// Supabase refuses the nested path. Returns null when there is no answer at all (the caller keeps its old
+// behaviour then); an empty result is [] (or null for `single`).
+async function runLight(label, build, { single = false } = {}) {
+  if (!supabase) return null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const trimmed = liveScalarSelect;
+    try {
+      const { data, error } = await build(trimmed ? LIGHT_OUTPUTS : LIGHT_OUTPUTS_WHOLE);
+      if (!error) return single ? data ?? null : data ?? [];
+      if (!missingTable(error)) console.error(`[Rec] ${label} failed:`, error.message || error);
+      if (attempt === 0 && trimmed && selectProblem(error)) {
+        liveScalarSelect = false;
+        console.warn(
+          "[Rec] This Supabase doesn't accept the trimmed live-transcript select (outputs->liveTranscript->untilMs); " +
+            "reading the whole liveTranscript from now on (a bit more egress, nothing missing)."
+        );
+        continue;
+      }
+      return null;
+    } catch (err) {
+      console.error(`[Rec] ${label} failed:`, err.message || err);
+      return null;
+    }
+  }
+  return null;
 }
 
 // ---------- Recordings ----------
@@ -86,10 +127,19 @@ async function getRecording(id, { fresh = false } = {}) {
 // Status and progress only, for the recordings page poll that runs every few seconds. Deliberately not
 // put in `memory`: a trimmed row must never be saved back over the audio blobs.
 async function getRecordingLight(id) {
-  const cols = "id, channel_name, status, started_at, ended_at, speakers, " + LIGHT_OUTPUTS;
-  const row = await run("getRecordingLight", () => supabase.from("recordings").select(cols).eq("id", id).maybeSingle());
+  const row = await runLight(
+    "getRecordingLight",
+    (live) => supabase.from("recordings").select(`id, channel_name, status, started_at, ended_at, speakers, ${live}`).eq("id", id).maybeSingle(),
+    { single: true }
+  );
   if (row) return rehydrateOutputs(row);
   return memory.get(id) || null;
+}
+
+// Status and claim only, for the queue when a claim is refused: is another copy on it, or is there nothing left
+// to do on it at all?
+async function getRecordingState(id) {
+  return run("getRecordingState", () => supabase.from("recordings").select("id, status, claimed_by, claim_expires_at").eq("id", id).maybeSingle());
 }
 
 // light: trimmed rows for the queue scans and retention (no peaks/speech). They are never cached in
@@ -98,14 +148,21 @@ async function getRecordingLight(id) {
 // transcript and the file list grow all night, so reading them on every poll is megabytes of egress a day.
 const SCAN_COLUMNS = "id, status, started_at, resume_after, claimed_by, claim_expires_at, claim_step";
 async function findRecordings(statuses, { light = false, scan = false } = {}) {
-  const cols = scan
-    ? SCAN_COLUMNS
-    : light
-    ? "id, status, started_at, ended_at, resume_after, drive_folder_id, claimed_by, claim_expires_at, claim_step, " + LIGHT_OUTPUTS
-    : "*";
-  const rows = await run("findRecordings", () => supabase.from("recordings").select(cols).in("status", statuses).order("started_at", { ascending: true }), []);
-  if (scan) return rows.map((r) => ({ ...r, outputs: {} }));
-  if (light) return rows.map(rehydrateOutputs);
+  if (scan) {
+    const rows = await run("findRecordings", () => supabase.from("recordings").select(SCAN_COLUMNS).in("status", statuses).order("started_at", { ascending: true }), []);
+    return rows.map((r) => ({ ...r, outputs: {} }));
+  }
+  if (light) {
+    const rows = await runLight("findRecordings", (live) =>
+      supabase
+        .from("recordings")
+        .select(`id, status, started_at, ended_at, resume_after, drive_folder_id, claimed_by, claim_expires_at, claim_step, ${live}`)
+        .in("status", statuses)
+        .order("started_at", { ascending: true })
+    );
+    return (rows || []).map(rehydrateOutputs);
+  }
+  const rows = await run("findRecordings", () => supabase.from("recordings").select("*").in("status", statuses).order("started_at", { ascending: true }), []);
   for (const r of rows) if (!memory.has(r.id)) memory.set(r.id, r);
   const ids = new Set(rows.map((r) => r.id));
   for (const r of memory.values()) if (statuses.includes(r.status) && !ids.has(r.id)) rows.push(r);
@@ -114,8 +171,14 @@ async function findRecordings(statuses, { light = false, scan = false } = {}) {
 
 // Newest first, without the bulky columns
 async function listRecordings(limit = 50) {
-  const cols = "id, channel_id, channel_name, started_by, started_at, ended_at, end_reason, status, speakers, drive_folder_id, options, claimed_by, claim_expires_at, " + LIGHT_OUTPUTS;
-  const rows = await run("listRecordings", () => supabase.from("recordings").select(cols).not("status", "in", "(deleted,discarded)").order("started_at", { ascending: false }).limit(limit), null);
+  const rows = await runLight("listRecordings", (live) =>
+    supabase
+      .from("recordings")
+      .select(`id, channel_id, channel_name, started_by, started_at, ended_at, end_reason, status, speakers, drive_folder_id, options, claimed_by, claim_expires_at, ${live}`)
+      .not("status", "in", "(deleted,discarded)")
+      .order("started_at", { ascending: false })
+      .limit(limit)
+  );
   if (rows) return rows.map(rehydrateOutputs);
   return [...memory.values()].filter((r) => !["deleted", "discarded"].includes(r.status)).sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at)).slice(0, limit);
 }
@@ -304,6 +367,7 @@ module.exports = {
   getRecording,
   findRecordings,
   getRecordingLight,
+  getRecordingState,
   listRecordings,
   recentSummaries,
   saveChunk,
