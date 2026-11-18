@@ -823,7 +823,7 @@
             if ($("progress") && p.progress) $("progress").innerHTML = progressHtml(rec);
             startPolling();
           }).catch(function () { if (current === rec) pollTimer = setTimeout(startPolling, 10000); });
-        }, document.hidden ? 15000 : 3000);
+        }, document.hidden ? 30000 : 10000);
       }
       // Reloads the open recording in place: same tab, and the player keeps going if it was already there
       function refresh() {

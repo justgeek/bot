@@ -2,7 +2,67 @@
 const { createClient } = require("@supabase/supabase-js");
 const { IDs } = require("./config");
 
-const clientOptions = { auth: { persistSession: false, autoRefreshToken: false } };
+// ---------- Egress meter ----------
+// Supabase bills every byte PostgREST sends back (5 GB on the free plan), so every read is counted here - by
+// table and by the columns it asked for - and printed with the log every 10 minutes. That way a day's egress
+// can be explained, and a select("*") that creeps back into a hot path shows up at the top of the list at once
+// instead of as a surprise on the usage page. Writes are not counted: PostgREST answers them with no body at
+// all (supabase-js only asks for the row back when a .select() follows the write).
+const egress = { since: Date.now(), reads: new Map() };
+const bytesText = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`);
+
+function recordRead(key, bytes) {
+  const e = egress.reads.get(key) || { bytes: 0, calls: 0 };
+  e.bytes += bytes;
+  e.calls++;
+  egress.reads.set(key, e);
+}
+
+// "recordings · whole row" / "recordings · id, status, outputs->progress": the columns asked for are what
+// decide the size, so the select is part of the label
+function readLabel(urlStr) {
+  let u;
+  try {
+    u = new URL(String(urlStr));
+  } catch {
+    return null;
+  }
+  const at = u.pathname.indexOf("/rest/v1/");
+  if (at < 0) return null; // auth/storage traffic is metered elsewhere (and is tiny here)
+  const table = u.pathname.slice(at + 9).split("/")[0] || "?";
+  const sel = u.searchParams.get("select") || "*";
+  return `${table} · ${sel === "*" ? "whole row" : sel.length > 44 ? `${sel.slice(0, 44)}…` : sel}`;
+}
+
+const meterFetch = async (input, init) => {
+  const method = String(init?.method || input?.method || "GET").toUpperCase();
+  const res = await globalThis.fetch(input, init);
+  if (method !== "GET" && method !== "HEAD") return res;
+  const label = readLabel(typeof input === "string" ? input : input?.url || "");
+  if (!label) return res;
+  // Content-Length when PostgREST sends one, otherwise a clone is measured (the caller's body is untouched)
+  const len = Number(res.headers.get("content-length"));
+  if (len > 0) recordRead(label, len);
+  else res.clone().arrayBuffer().then((b) => recordRead(label, b.byteLength), () => {});
+  return res;
+};
+
+function egressReport() {
+  const rows = [...egress.reads.entries()]
+    .map(([label, e]) => ({ label, bytes: e.bytes, calls: e.calls }))
+    .sort((a, b) => b.bytes - a.bytes);
+  return { since: new Date(egress.since).toISOString(), total: rows.reduce((n, r) => n + r.bytes, 0), rows };
+}
+
+function egressLog() {
+  const r = egressReport();
+  const hours = Math.max(0.02, (Date.now() - egress.since) / 3600e3);
+  if (!r.rows.length) return console.log(`[Egress] nothing read from Supabase in ${hours.toFixed(1)}h`);
+  const top = r.rows.slice(0, 8).map((x) => `   ${bytesText(x.bytes)}  (${x.calls} read${x.calls === 1 ? "" : "s"})  ${x.label}`);
+  console.log(`[Egress] ${bytesText(r.total)} read in ${hours.toFixed(1)}h (${bytesText(Math.round(r.total / hours))}/h):\n${top.join("\n")}`);
+}
+
+const clientOptions = { auth: { persistSession: false, autoRefreshToken: false }, global: { fetch: meterFetch } };
 if (typeof globalThis.WebSocket === "undefined") {
   try {
     clientOptions.realtime = { transport: require("ws") };
@@ -18,6 +78,9 @@ const supabase =
 
 if (!supabase) {
   console.warn("[DB] SUPABASE_URL / SUPABASE_KEY not set - database logging is disabled.");
+} else {
+  // Where the daily egress went, in the log: nothing else shows it per query
+  setInterval(egressLog, 10 * 60000).unref?.();
 }
 
 const UNTRACKED_CHANNELS = new Set([IDs.voice2]);
@@ -629,6 +692,8 @@ async function getRecentLogs(limit = 30, opts = {}) {
 
 module.exports = {
   supabase, // also used by recording/store.js
+  egressReport,
+  egressLog,
   isTrackedChannel,
   isAfkChannel,
   unionIntervals,

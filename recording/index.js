@@ -490,7 +490,10 @@ async function resumeAll() {
 async function housekeeping() {
   if (shuttingDown) return;
   try {
-    for (const rec of await store.findRecordings(["suspended"])) {
+    // Which rows to look at costs one tiny read; the whole rows are only asked for when there is one (a
+    // suspended row carries the live transcript, so reading it every 10 minutes for nothing is expensive)
+    const suspended = (await store.findRecordings(["suspended"], { scan: true })).length ? await store.findRecordings(["suspended"]) : [];
+    for (const rec of suspended) {
       const cutAt = Date.parse(rec.suspended_at || rec.heartbeat_at || rec.started_at);
       const channel = client.channels.cache.get(rec.channel_id);
       const humans = channel ? audio.countHumans(channel) : 0;

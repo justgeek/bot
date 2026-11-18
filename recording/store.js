@@ -136,6 +136,76 @@ async function getRecordingLight(id) {
   return memory.get(id) || null;
 }
 
+// Everything the recordings page draws (transcript, speakers, events, summaries, the live transcript) but not
+// the waveform: outputs.peaks is up to ~210 KB on a long recording and only /peaks needs it, so a page view
+// that took the whole row downloaded it every time for nothing.
+const VIEW_COLUMNS =
+  "id, guild_id, channel_id, channel_name, started_by, started_at, ended_at, end_reason, parts, panel_message_id, thread_id, " +
+  "status, options, events, speakers, report, summary_en, summary_ar, drive_folder_id, error, " +
+  "progress:outputs->progress, files:outputs->files, audioDeleted:outputs->audioDeleted, aliases:outputs->aliases, " +
+  "speech:outputs->speech, botSpeech:outputs->botSpeech, liveTranscript:outputs->liveTranscript";
+const VIEW_PARTS = ["progress", "files", "audioDeleted", "aliases", "speech", "botSpeech", "liveTranscript"];
+function rehydrateView(row) {
+  if (!row) return row;
+  const rest = { ...row };
+  const outputs = {};
+  for (const k of VIEW_PARTS) {
+    if (rest[k] != null) outputs[k] = rest[k];
+    delete rest[k];
+  }
+  return { ...rest, outputs };
+}
+async function getRecordingView(id) {
+  const row = await run("getRecordingView", () => supabase.from("recordings").select(VIEW_COLUMNS).eq("id", id).maybeSingle());
+  if (row) return rehydrateView(row);
+  return memory.get(id) || null; // a network blip: the copy from earlier is better than nothing
+}
+
+// The little a job running on this recording needs from the database: did another copy change the status or a
+// step? Its speech map, its tracks and the live transcript are already in memory (read once when the job
+// started), so they aren't asked for again before every step. That used to be six whole rows per job.
+const SYNC_COLUMNS = "id, status, options, resume_after, report, summary_en, summary_ar, progress:outputs->progress, files:outputs->files, posted:outputs->posted, audioDeleted:outputs->audioDeleted";
+async function getRecordingSync(id) {
+  const row = await run("getRecordingSync", () => supabase.from("recordings").select(SYNC_COLUMNS).eq("id", id).maybeSingle());
+  if (!row) return null;
+  const { progress, files, posted, audioDeleted, ...rest } = row;
+  const outputs = {};
+  for (const [k, v] of [["progress", progress], ["files", files], ["posted", posted], ["audioDeleted", audioDeleted]]) {
+    if (v != null) outputs[k] = v;
+  }
+  return { ...rest, outputs };
+}
+
+// Streaming one file needs its Drive id and nothing else (the row also carries the whole waveform)
+async function getRecordingAudio(id) {
+  const row = await run("getRecordingAudio", () =>
+    supabase.from("recordings").select("id, files:outputs->files, audioDeleted:outputs->audioDeleted").eq("id", id).maybeSingle()
+  );
+  if (!row) return memory.get(id) || null;
+  const outputs = {};
+  if (row.files != null) outputs.files = row.files;
+  if (row.audioDeleted != null) outputs.audioDeleted = row.audioDeleted;
+  return { id: row.id, outputs };
+}
+
+// The waveform itself, for the player
+async function getRecordingPeaks(id) {
+  const row = await run("getRecordingPeaks", () =>
+    supabase
+      .from("recordings")
+      .select("id, started_at, ended_at, peaks:outputs->peaks, files:outputs->files, audioDeleted:outputs->audioDeleted")
+      .eq("id", id)
+      .maybeSingle()
+  );
+  if (!row) return memory.get(id) || null;
+  const { peaks, files, audioDeleted, ...rest } = row;
+  const outputs = {};
+  if (peaks != null) outputs.peaks = peaks;
+  if (files != null) outputs.files = files;
+  if (audioDeleted != null) outputs.audioDeleted = audioDeleted;
+  return { ...rest, outputs };
+}
+
 // Status and claim only, for the queue when a claim is refused: is another copy on it, or is there nothing left
 // to do on it at all?
 async function getRecordingState(id) {
@@ -181,6 +251,22 @@ async function listRecordings(limit = 50) {
   );
   if (rows) return rows.map(rehydrateOutputs);
   return [...memory.values()].filter((r) => !["deleted", "discarded"].includes(r.status)).sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at)).slice(0, limit);
+}
+
+// Which recording, when, in which channel: what a result list or an answer's source line needs. Reading the
+// whole row for each hit (a search returns up to 50) used to pull in every waveform it touched.
+async function getRecordingHeads(ids) {
+  const uniq = [...new Set(ids.filter(Boolean))];
+  const map = new Map();
+  if (!uniq.length) return map;
+  const rows = await run(
+    "getRecordingHeads",
+    () => supabase.from("recordings").select("id, channel_name, started_at").in("id", uniq),
+    []
+  );
+  for (const r of rows) map.set(r.id, r);
+  for (const id of uniq) if (!map.has(id) && memory.has(id)) map.set(id, memory.get(id));
+  return map;
 }
 
 async function recentSummaries(sinceIso) {
@@ -367,8 +453,13 @@ module.exports = {
   getRecording,
   findRecordings,
   getRecordingLight,
+  getRecordingView,
+  getRecordingSync,
+  getRecordingAudio,
+  getRecordingPeaks,
   getRecordingState,
   listRecordings,
+  getRecordingHeads,
   recentSummaries,
   saveChunk,
   getChunks,

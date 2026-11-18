@@ -256,7 +256,7 @@ function makeCtx(rec, state = {}, abortController = null) {
     abortSignal: signal,
     isLost: async ({ forceCheck = false } = {}) => {
       if (state.lost || signal?.aborted) return true;
-      if (!localMode && (forceCheck || Date.now() - lastCheck > 2500)) {
+      if (!localMode && (forceCheck || Date.now() - lastCheck > 10000)) {
         lastCheck = Date.now();
         const mine = await store.renewClaim(rec.id, WORKER, CLAIM_MS, ctx.currentStep).catch(() => true);
         if (!mine) {
@@ -664,7 +664,7 @@ async function processRecording(id) {
     // carry on with the step. Stopping here restarted the track build from zero every time the other copy
     // helped itself to the job, which is why a recording never got past the first speaker.
     if (localMode) {
-      const row = await store.getRecording(id, { fresh: true }).catch(() => null);
+      const row = await store.getRecordingState(id).catch(() => null);
       if (row && ["done", "deleted", "discarded"].includes(row.status)) {
         state.lost = true;
         abortController.abort(new JobStopped(`already ${row.status}`));
@@ -690,11 +690,14 @@ async function processRecording(id) {
   // Each step is done once, by whichever copy is on the job: read what's saved before starting one
   const sync = async () => {
     if (state.lost || ctx.abortSignal?.aborted) throw new JobStopped("another copy of the bot is processing this recording");
-    const fresh = await store.getRecording(id, { fresh: true }).catch(() => null);
+    // Only what another copy can change (status, progress, files, summaries, the audio-removed flag). The speech
+    // map, the tracks and the live transcript are already in memory from the read that started the job; asking
+    // for the whole row again before every step was six rows of up to a megabyte each per recording.
+    const fresh = await store.getRecordingSync(id).catch(() => null);
     if (!fresh) return;
     if (["done", "deleted", "discarded"].includes(fresh.status)) throw new JobStopped(`already ${fresh.status}`);
     if (fresh.outputs) {
-      rec.outputs = out = fresh.outputs;
+      rec.outputs = out = { ...out, ...fresh.outputs };
       out.progress = out.progress || {};
       out.posted = out.posted || {};
     }

@@ -585,7 +585,9 @@ async function summaryStep(rec, ctx) {
 async function search(query, limit = 5) {
   const words = normalizeText(query).split(" ").filter((w) => w.length >= 2);
   const rows = await store.searchLines(words, limit);
-  for (const r of rows) r.started_at = (await store.getRecording(r.recording_id))?.started_at || new Date().toISOString();
+  // One small query for the times, instead of a whole recording row (waveform included) per hit
+  const heads = await store.getRecordingHeads(rows.map((r) => r.recording_id));
+  for (const r of rows) r.started_at = heads.get(r.recording_id)?.started_at || new Date().toISOString();
   return rows;
 }
 
@@ -616,8 +618,9 @@ async function ask(question) {
     parts.push("Summaries of the last 30 days:\n" + summaries.map((s) => `## ${localStamp(Date.parse(s.started_at))} Ã‚Â· ${s.channel_name}\n${s.summary_en}`).join("\n\n"));
   }
   let budget = MAX_ASK_CHARS - parts.join("\n").length;
+  const heads = await store.getRecordingHeads(ids.slice(0, 4));
   for (const id of ids.slice(0, 4)) {
-    const rec = await store.getRecording(id);
+    const rec = heads.get(id);
     const body = transcriptText(await store.getLines(id));
     if (!rec || !body) continue;
     const block = `Transcript of ${localStamp(Date.parse(rec.started_at))} Ã‚Â· ${rec.channel_name}:\n${body}`;

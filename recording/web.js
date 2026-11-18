@@ -51,6 +51,20 @@ module.exports = function registerRecordingsPage(app, client, opts = {}) {
     res.json({ ok: true });
   });
 
+  // What this process has read from Supabase since it started, by table and by the columns asked for. The
+  // free plan is 5 GB of egress, and Supabase's own page only shows the total per day: this says which query
+  // it was (it is also printed in the log every 10 minutes).
+  app.get("/api/recordings/egress", guard, (req, res) => {
+    const { egressReport } = require("../db");
+    const report = egressReport();
+    res.set("Cache-Control", "no-store");
+    res.json({
+      ...report,
+      process: processor.workerName,
+      rows: report.rows.map((r) => ({ ...r, pretty: r.bytes >= 1048576 ? `${(r.bytes / 1048576).toFixed(1)} MB` : `${Math.round(r.bytes / 1024)} KB` })),
+    });
+  });
+
   const fails = new Map();
   app.post("/api/recordings/login", require("express").json({ limit: "2kb" }), (req, res) => {
     touchViewer(req);
@@ -149,9 +163,19 @@ module.exports = function registerRecordingsPage(app, client, opts = {}) {
     res.sendFile(path.join(__dirname, "..", "recordings.html"));
   });
 
+  // The list is 300 rows and only changes when a recording starts or ends or a step finishes: a 20 s cache
+  // means a reload, a second tab or the page booting twice costs no Supabase reads at all
+  let listCache = { at: 0, rows: null };
+  async function listRows(limit) {
+    if (listCache.rows && Date.now() - listCache.at < 20000) return listCache.rows;
+    const rows = await store.listRecordings(limit);
+    listCache = { at: Date.now(), rows };
+    return rows;
+  }
+
   app.get("/api/recordings", guard, async (req, res) => {
     try {
-      const rows = await store.listRecordings(300);
+      const rows = await listRows(300);
       res.set("Cache-Control", "no-store");
       res.json({ recordings: rows.map((r) => summary(fresh(r))), drive: await driveQuota() });
     } catch (err) {
@@ -174,10 +198,16 @@ module.exports = function registerRecordingsPage(app, client, opts = {}) {
 
   app.get("/api/recordings/:id", guard, async (req, res) => {
     try {
-      const rec = fresh(await store.getRecording(String(req.params.id), { fresh: true }));
+      const id = String(req.params.id);
+      // A recording this process is recording or processing has fresher state in memory than in the database,
+      // and reading the row as well used to download the whole thing (waveform, speech map, live transcript)
+      // only to throw it away. The view read below leaves out the waveform, which only /peaks needs.
+      const local = recorder.activeRecording(id) || processor.liveRecording(id);
+      const rec = local ? fresh(local) : fresh(await store.getRecordingView(id));
       if (!rec || ["deleted", "discarded"].includes(rec.status)) return res.status(404).json({ error: "not_found" });
       const files = rec.outputs?.files || {};
-      let lines = await store.getLines(rec.id);
+      // While it's being recorded there are no saved lines yet: the live transcript below is the transcript
+      let lines = local ? [] : await store.getLines(rec.id);
       if (!lines.length && rec.outputs?.liveTranscript?.segments?.length) {
         lines = rec.outputs.liveTranscript.segments
           .filter((s) => s.text && s.text.trim())
@@ -224,7 +254,8 @@ module.exports = function registerRecordingsPage(app, client, opts = {}) {
             })
           );
         })(),
-        has_peaks: !!rec.outputs?.peaks,
+        // The waveform endpoint works the rest out; a finished mix always has one made for it
+        has_peaks: !!rec.outputs?.peaks || !!(files.mix?.id && !rec.outputs?.audioDeleted),
       });
     } catch (err) {
       console.error("[API] /api/recordings/:id failed:", err);
@@ -236,7 +267,10 @@ module.exports = function registerRecordingsPage(app, client, opts = {}) {
   // lines, no audio blobs - the full row is ~300 KB and this used to download it on every poll)
   app.get("/api/recordings/:id/progress", guard, async (req, res) => {
     try {
-      const rec = fresh(await store.getRecordingLight(String(req.params.id)));
+      const id = String(req.params.id);
+      // Being recorded or processed here: the row would only repeat what's in memory (and cost a read)
+      const local = recorder.activeRecording(id) || processor.liveRecording(id);
+      const rec = local ? fresh(local) : fresh(await store.getRecordingLight(id));
       if (!rec || ["deleted", "discarded"].includes(rec.status)) return res.status(404).json({ error: "not_found" });
       const s = summary(rec);
       const linesCount = liveTranscriptLines(rec);
@@ -263,31 +297,39 @@ module.exports = function registerRecordingsPage(app, client, opts = {}) {
   const peaksJobs = new Map();
   app.get("/api/recordings/:id/peaks", guard, async (req, res) => {
     try {
-      const rec = await store.getRecording(String(req.params.id));
+      const id = String(req.params.id);
+      const rec = await store.getRecordingPeaks(id);
       if (!rec) return res.status(404).json({ error: "not_found" });
       const durationMs = Date.parse(rec.ended_at) - Date.parse(rec.started_at);
+      let peaks = rec.outputs?.peaks;
       // Missing, or the coarser kind made before zooming existed
-      if (!rec.outputs?.peaks || rec.outputs.peaks.length < binsFor(durationMs) * 0.9) {
+      if (!peaks || peaks.length < binsFor(durationMs) * 0.9) {
         const mixId = rec.outputs?.files?.mix?.id;
-        if (!mixId || rec.outputs?.audioDeleted || !drive.enabled) return res.json({ peaks: rec.outputs?.peaks || null });
-        if (!peaksJobs.has(rec.id)) {
-          peaksJobs.set(rec.id, (async () => {
-            const file = path.join(WORK_DIR, `peaks_${rec.id}.ogg`);
+        if (!mixId || rec.outputs?.audioDeleted || !drive.enabled) return res.json({ peaks: peaks || null });
+        if (!peaksJobs.has(id)) {
+          peaksJobs.set(id, (async () => {
+            const file = path.join(WORK_DIR, `peaks_${id}.ogg`);
             fs.mkdirSync(WORK_DIR, { recursive: true });
             try {
               await drive.download(mixId, file);
-              rec.outputs.peaks = peaksFromOgg(file, durationMs);
-              await store.saveRecording(rec);
+              // The read above only has the waveform's parts: saving that back would drop the speech map and
+              // the live transcript, so the whole row comes in before the write (once per recording)
+              const full = (await store.getRecording(id, { fresh: true })) || null;
+              if (!full) return null;
+              full.outputs = full.outputs || {};
+              full.outputs.peaks = peaksFromOgg(file, durationMs);
+              await store.saveRecording(full);
+              return full.outputs.peaks;
             } finally {
               fs.unlink(file, () => { });
-              peaksJobs.delete(rec.id);
+              peaksJobs.delete(id);
             }
           })());
         }
-        await peaksJobs.get(rec.id);
+        peaks = (await peaksJobs.get(id)) || peaks;
       }
       res.set("Cache-Control", "private, max-age=86400");
-      res.json({ peaks: rec.outputs.peaks });
+      res.json({ peaks: peaks || null });
     } catch (err) {
       console.error("[API] /api/recordings/:id/peaks failed:", err.message || err);
       res.status(500).json({ error: "peaks_failed" });
@@ -296,7 +338,8 @@ module.exports = function registerRecordingsPage(app, client, opts = {}) {
 
   app.get("/api/recordings/:id/audio", guard, async (req, res) => {
     try {
-      const rec = await store.getRecording(String(req.params.id));
+      // Only the Drive ids: the row it used to read carried the whole waveform for a file stream
+      const rec = await store.getRecordingAudio(String(req.params.id));
       const files = rec?.outputs?.files || {};
       const track = String(req.query.track || "mix");
       const fileId = track === "mix" ? files.mix?.id : files.tracks?.[track]?.id;
