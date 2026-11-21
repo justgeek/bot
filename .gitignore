@@ -3,3 +3,5 @@ bottoken.txt
 .env
 /venv/*
 output.mp3
+/raw_input
+/output
