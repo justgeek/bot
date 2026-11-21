@@ -49,3 +49,36 @@ Mixing/encoding/uploading are now as fast as your CPU and connection. Transcript
 API calls (the recorder's own `RECORDING_GEMINI_API_KEY`), so they stay network- and free-tier-bound wherever the
 job runs - a faster PC doesn't speed those two up, it only stops them queueing behind a slow dyno. Transcribing a
 long night with a local model (Whisper on your GPU) would be a separate change to `recording/transcribe.js`.
+
+---
+
+## Mid-Recording Preview & Silence Removal (`npm run merge-raw`)
+
+If a recording is still ongoing (or you downloaded raw `.ogg` chunk files from Google Drive / the bot's temp folder) and you want to listen to what was said without waiting hours for the entire session to end and process:
+
+`merge_raw.bat` merges raw chunks from multiple speakers, synchronizes their timeline, normalizes audio levels, and removes all dead air/silence so you can play the conversation continuously mid-recording.
+
+### How to use:
+1. **Drag & Drop (Easiest)**: Drag your `.ogg` chunk files or a folder of chunks onto `merge_raw.bat`.
+2. **Drop folder**: Put the `.ogg` files into the `raw_input/` folder and double-click `merge_raw.bat` or run:
+   ```bash
+   npm run merge-raw
+   ```
+3. **CLI**:
+   ```bash
+   node scripts/merge_raw.js path/to/chunk1.ogg path/to/chunk2.ogg
+   node scripts/merge_raw.js "C:\Users\...\Downloads\raw_chunks"
+   ```
+
+### Features:
+- **Timeline Synchronization**: Automatically aligns speaker chunks by timestamp (e.g. `12600000 ms`), rebasing offsets so you don't hear hours of leading silence.
+- **Silence Removal**: Trims leading/trailing silence and collapses long conversational pauses (>0.5s down to 0.25s) so the dialogue plays smoothly like a podcast.
+- **Auto-Play**: Opens the final `.mp3` directly in your default player (Groove, VLC, Windows Media Player).
+- **Options**:
+  - `--threshold -45dB`: Adjust silence detection sensitivity (default: `-45dB`).
+  - `--min-silence 0.5`: Minimum pause in seconds before collapsing (default: `0.5`).
+  - `--keep-silence 0.25`: Seconds of natural pause to retain between sentences (default: `0.25`).
+  - `--no-silence`: Keep original real-time pauses intact without silence removal.
+  - `--no-play`: Do not auto-launch media player upon completion.
+  - `--ogg`: Output as `.ogg` instead of `.mp3`.
+

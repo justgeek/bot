@@ -34,6 +34,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node index.js",
     "worker": "node worker.js",
+    "merge-raw": "node scripts/merge_raw.js",
     "postinstall": ""
   },
   "author": "Moonscarlet",
